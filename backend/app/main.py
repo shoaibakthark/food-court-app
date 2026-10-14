@@ -9,15 +9,31 @@ from pydantic import BaseModel, field_validator
 from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app import crud, schemas, models
 
 
 # ============================================================
-# APP SETUP
+# APP SETUP & AUTOMATIC TABLE CREATION
 # ============================================================
 
 app = FastAPI(title="Food Court API")
+
+# Ensure all database tables exist on startup and seed default accounts
+try:
+    models.Base.metadata.create_all(bind=engine)
+    with SessionLocal() as db_init:
+        if db_init.query(models.User).count() == 0:
+            db_init.add_all([
+                models.User(username="admin", password="admin123", name="Administrator", role="admin"),
+                models.User(username="owner", password="owner123", name="Owner", role="owner"),
+                models.User(username="manager", password="manager123", name="Manager", role="manager"),
+            ])
+            db_init.commit()
+            print("Successfully initialized default users: admin, owner, manager")
+except Exception as init_err:
+    print(f"Database initialization notice: {init_err}")
+
 
 app.add_middleware(
     CORSMiddleware,
