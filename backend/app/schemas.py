@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import date
 from decimal import Decimal
 
@@ -74,6 +76,31 @@ class EventFoodItemCreate(BaseModel):
     price: Decimal = Field(
         ge=0
     )
+
+
+# ============================================================
+# EVENT DECOR ITEM
+# ============================================================
+
+class EventDecorItemCreate(BaseModel):
+
+    decor_item_id: int
+
+    quantity: int = Field(
+        gt=0
+    )
+
+    price: Decimal = Field(
+        ge=0
+    )
+
+
+class FoodItemCreate(BaseModel):
+    name: str
+    price: Decimal = Field(ge=0)
+    session_id: int
+
+
 class CreateEventRequest(BaseModel):
 
     customer: CustomerCreate
@@ -102,25 +129,6 @@ class CreateEventRequest(BaseModel):
 
     decor_items: list[EventDecorItemCreate] = Field(
         default_factory=list
-    )
-class FoodItemCreate(BaseModel):
-    name: str
-    price: Decimal = Field(ge=0)
-    session_id: int
-# ============================================================
-# EVENT DECOR ITEM
-# ============================================================
-
-class EventDecorItemCreate(BaseModel):
-
-    decor_item_id: int
-
-    quantity: int = Field(
-        gt=0
-    )
-
-    price: Decimal = Field(
-        ge=0
     )
 
 
