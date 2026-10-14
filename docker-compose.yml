@@ -27,7 +27,7 @@ services:
       db:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-minnu098}@db:5432/${POSTGRES_DB:-food_court}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-minnu098}@db:5432/${POSTGRES_DB:-food_court}
       SECRET_KEY: ${SECRET_KEY:-default_secret_key_change_in_production}
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     command: sh -c "alembic upgrade head || true && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
