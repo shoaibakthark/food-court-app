@@ -1,0 +1,61 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: foodcourt-db
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-food_court}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-minnu098}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-food_court}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - foodcourt-net
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: foodcourt-backend
+    restart: always
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-minnu098}@db:5432/${POSTGRES_DB:-food_court}
+      SECRET_KEY: ${SECRET_KEY:-default_secret_key_change_in_production}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+    command: sh -c "alembic upgrade head || true && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
+    ports:
+      - "8000:8000"
+    networks:
+      - foodcourt-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: foodcourt-frontend
+    restart: always
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      BACKEND_INTERNAL_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    networks:
+      - foodcourt-net
+
+volumes:
+  postgres_data:
+
+networks:
+  foodcourt-net:
+    driver: bridge
