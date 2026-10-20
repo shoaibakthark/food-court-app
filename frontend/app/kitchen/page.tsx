@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth, fetchWithAuth } from "../lib/auth";
 import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
+import { GoogleDriveBackupModal } from "../components/GoogleDriveBackupModal";
 import {
   SidebarUserCard,
   OwnerBanner,
@@ -107,6 +108,7 @@ export default function KitchenPage() {
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [showDriveModal, setShowDriveModal] = useState(false);
 
   const handleExportKitchenExcel = async () => {
     try {
@@ -585,6 +587,29 @@ export default function KitchenPage() {
                 </button>
 
                 {/* Button that adds a new staff */}
+                <button
+                  type="button"
+                  onClick={() => setShowDriveModal(true)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "8px 14px",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(37, 99, 235, 0.3)",
+                    transition: "all 0.15s ease",
+                  }}
+                  title="Upload and sync database backup to Google Drive"
+                >
+                  <span>☁️</span> Google Drive
+                </button>
+
                 <button
                   type="button"
                   onClick={handleExportKitchenExcel}
@@ -2397,6 +2422,7 @@ export default function KitchenPage() {
           </div>
         )}
       </div>
+      <GoogleDriveBackupModal isOpen={showDriveModal} onClose={() => setShowDriveModal(false)} />
     </main>
   );
 }

@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/auth";
 import { SidebarUserCard, OwnerBanner, NavLink, TopbarUserBadge, AppSidebar, MobileMenuButton } from "../components/AuthBar";
 import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
+import { GoogleDriveBackupModal } from "../components/GoogleDriveBackupModal";
 
 const API_URL = typeof window !== "undefined" ? "/api/py" : "http://127.0.0.1:8000";
 
@@ -55,6 +56,7 @@ export default function SettingsPage() {
   });
   const [exporting, setExporting] = useState(false);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [showDriveModal, setShowDriveModal] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
 
   const handleExportExcel = async () => {
@@ -211,6 +213,28 @@ export default function SettingsPage() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => setShowDriveModal(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                fontWeight: 700,
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: "0 3px 10px rgba(37, 99, 235, 0.35)",
+              }}
+              title="Sync complete database to Google Drive in Excel (.xlsx) format"
+            >
+              ☁️ Google Drive
+            </button>
+
             <button
               type="button"
               onClick={handleExportExcel}
@@ -714,6 +738,28 @@ export default function SettingsPage() {
                 <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
                   <button
                     type="button"
+                    onClick={() => setShowDriveModal(true)}
+                    style={{
+                      background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "11px 20px",
+                      fontWeight: 700,
+                      fontSize: "13.5px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 14px rgba(37, 99, 235, 0.4)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <span>☁️</span>
+                    <span>Backup to Google Drive</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={handleExportExcel}
                     disabled={exportingExcel}
                     style={{
@@ -762,6 +808,7 @@ export default function SettingsPage() {
           )}
         </div>
       </div>
+      <GoogleDriveBackupModal isOpen={showDriveModal} onClose={() => setShowDriveModal(false)} />
     </main>
   );
 }

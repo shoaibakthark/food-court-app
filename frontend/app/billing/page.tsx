@@ -7,6 +7,7 @@ import { useAuth } from "../lib/auth";
 import { AppSidebar, MobileMenuButton } from "../components/NavDrawer";
 import { TopbarUserBadge, OwnerBanner } from "../components/AuthBar";
 import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
+import { GoogleDriveBackupModal } from "../components/GoogleDriveBackupModal";
 
 const API_URL = typeof window !== "undefined" ? "/api/py" : "http://127.0.0.1:8000";
 
@@ -1857,6 +1858,7 @@ function BillingContent() {
           }
         }
       `}</style>
+      <GoogleDriveBackupModal isOpen={showDriveModal} onClose={() => setShowDriveModal(false)} />
     </main>
   );
 }

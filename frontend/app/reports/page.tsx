@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/auth";
 import { SidebarUserCard, OwnerBanner, NavLink, TopbarUserBadge, AppSidebar, MobileMenuButton } from "../components/AuthBar";
 import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
+import { GoogleDriveBackupModal } from "../components/GoogleDriveBackupModal";
 
 const API_URL = typeof window !== "undefined" ? "/api/py" : "http://127.0.0.1:8000";
 
@@ -86,6 +87,7 @@ export default function ReportsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [exportingExcel, setExportingExcel] = useState(false);
+  const [showDriveModal, setShowDriveModal] = useState(false);
 
   const handleExportExcel = async () => {
     try {
@@ -310,6 +312,28 @@ export default function ReportsPage() {
             </select>
 
             {/* Excel Backup Button */}
+            <button
+              type="button"
+              onClick={() => setShowDriveModal(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                fontWeight: 700,
+                fontSize: "12px",
+                cursor: "pointer",
+                boxShadow: "0 2px 6px rgba(37, 99, 235, 0.3)",
+              }}
+              title="Upload and sync database backup to Google Drive"
+            >
+              ☁️ Google Drive
+            </button>
+
             <button
               type="button"
               onClick={handleExportExcel}
@@ -972,6 +996,7 @@ export default function ReportsPage() {
           )}
         </div>
       </div>
+      <GoogleDriveBackupModal isOpen={showDriveModal} onClose={() => setShowDriveModal(false)} />
     </main>
   );
 }
