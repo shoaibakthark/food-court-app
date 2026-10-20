@@ -1765,98 +1765,6 @@ def create_expense_endpoint(
         raise HTTPException(status_code=500, detail=f"Failed to create expense: {str(e)}")
 
 
-@app.get("/expenses/{expense_id}")
-def get_single_expense(
-    expense_id: int,
-    db: Session = Depends(get_db),
-):
-    expense = crud.get_expense(db, expense_id)
-    if not expense:
-        raise HTTPException(status_code=404, detail="Expense not found")
-    ev = db.query(models.Event).filter(models.Event.id == expense.event_id).first() if expense.event_id else None
-    return {
-        "id": expense.id,
-        "title": expense.title,
-        "category": expense.category,
-        "amount": float(expense.amount),
-        "expense_date": str(expense.expense_date),
-        "event_id": expense.event_id,
-        "payment_method": expense.payment_method,
-        "vendor": expense.vendor,
-        "bill_number": expense.bill_number,
-        "note": expense.note,
-        "event_type": ev.event_type if ev else None,
-        "event_place": ev.place if ev else None,
-    }
-
-
-@app.put("/expenses/{expense_id}")
-def update_expense_endpoint(
-    expense_id: int,
-    payload: dict,
-    db: Session = Depends(get_db),
-):
-    try:
-        expense = crud.get_expense(db, expense_id)
-        if not expense:
-            raise HTTPException(status_code=404, detail="Expense not found")
-
-        if "title" in payload and payload["title"] is not None:
-            expense.title = str(payload["title"]).strip()
-        if "category" in payload and payload["category"] is not None:
-            expense.category = str(payload["category"]).strip()
-        if "amount" in payload and payload["amount"] is not None:
-            expense.amount = Decimal(str(payload["amount"]))
-        if "expense_date" in payload and payload["expense_date"] is not None:
-            from datetime import datetime
-            try:
-                expense.expense_date = datetime.strptime(str(payload["expense_date"])[:10], "%Y-%m-%d").date()
-            except ValueError:
-                pass
-        if "event_id" in payload:
-            raw_eid = payload["event_id"]
-            expense.event_id = int(raw_eid) if raw_eid else None
-        if "payment_method" in payload:
-            expense.payment_method = str(payload["payment_method"] or "Cash").strip()
-        if "vendor" in payload:
-            expense.vendor = str(payload["vendor"]).strip() if payload["vendor"] else None
-        if "bill_number" in payload:
-            expense.bill_number = str(payload["bill_number"]).strip() if payload["bill_number"] else None
-        if "note" in payload:
-            expense.note = str(payload["note"]).strip() if payload["note"] else None
-
-        db.commit()
-        db.refresh(expense)
-        return {
-            "id": expense.id,
-            "title": expense.title,
-            "category": expense.category,
-            "amount": float(expense.amount),
-            "expense_date": str(expense.expense_date),
-            "event_id": expense.event_id,
-            "payment_method": expense.payment_method,
-            "vendor": expense.vendor,
-            "bill_number": expense.bill_number,
-            "note": expense.note,
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(status_code=500, detail=f"Failed to update expense: {str(e)}")
-
-
-@app.delete("/expenses/{expense_id}")
-def delete_expense_endpoint(
-    expense_id: int,
-    db: Session = Depends(get_db),
-):
-    expense = crud.delete_expense(db, expense_id)
-    if not expense:
-        raise HTTPException(status_code=404, detail="Expense not found")
-    return {"message": "Expense deleted successfully"}
-
-
 # ============================================================
 # EXPENSE SETTLEMENTS (CLEAR LEDGER AMOUNTS)
 # ============================================================
@@ -1960,6 +1868,99 @@ def delete_expense_settlement(
         raise HTTPException(status_code=500, detail=f"Failed to delete settlement: {str(e)}")
 
 
+
+
+
+@app.get("/expenses/{expense_id}")
+def get_single_expense(
+    expense_id: int,
+    db: Session = Depends(get_db),
+):
+    expense = crud.get_expense(db, expense_id)
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    ev = db.query(models.Event).filter(models.Event.id == expense.event_id).first() if expense.event_id else None
+    return {
+        "id": expense.id,
+        "title": expense.title,
+        "category": expense.category,
+        "amount": float(expense.amount),
+        "expense_date": str(expense.expense_date),
+        "event_id": expense.event_id,
+        "payment_method": expense.payment_method,
+        "vendor": expense.vendor,
+        "bill_number": expense.bill_number,
+        "note": expense.note,
+        "event_type": ev.event_type if ev else None,
+        "event_place": ev.place if ev else None,
+    }
+
+
+@app.put("/expenses/{expense_id}")
+def update_expense_endpoint(
+    expense_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    try:
+        expense = crud.get_expense(db, expense_id)
+        if not expense:
+            raise HTTPException(status_code=404, detail="Expense not found")
+
+        if "title" in payload and payload["title"] is not None:
+            expense.title = str(payload["title"]).strip()
+        if "category" in payload and payload["category"] is not None:
+            expense.category = str(payload["category"]).strip()
+        if "amount" in payload and payload["amount"] is not None:
+            expense.amount = Decimal(str(payload["amount"]))
+        if "expense_date" in payload and payload["expense_date"] is not None:
+            from datetime import datetime
+            try:
+                expense.expense_date = datetime.strptime(str(payload["expense_date"])[:10], "%Y-%m-%d").date()
+            except ValueError:
+                pass
+        if "event_id" in payload:
+            raw_eid = payload["event_id"]
+            expense.event_id = int(raw_eid) if raw_eid else None
+        if "payment_method" in payload:
+            expense.payment_method = str(payload["payment_method"] or "Cash").strip()
+        if "vendor" in payload:
+            expense.vendor = str(payload["vendor"]).strip() if payload["vendor"] else None
+        if "bill_number" in payload:
+            expense.bill_number = str(payload["bill_number"]).strip() if payload["bill_number"] else None
+        if "note" in payload:
+            expense.note = str(payload["note"]).strip() if payload["note"] else None
+
+        db.commit()
+        db.refresh(expense)
+        return {
+            "id": expense.id,
+            "title": expense.title,
+            "category": expense.category,
+            "amount": float(expense.amount),
+            "expense_date": str(expense.expense_date),
+            "event_id": expense.event_id,
+            "payment_method": expense.payment_method,
+            "vendor": expense.vendor,
+            "bill_number": expense.bill_number,
+            "note": expense.note,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update expense: {str(e)}")
+
+
+@app.delete("/expenses/{expense_id}")
+def delete_expense_endpoint(
+    expense_id: int,
+    db: Session = Depends(get_db),
+):
+    expense = crud.delete_expense(db, expense_id)
+    if not expense:
+        raise HTTPException(status_code=404, detail="Expense not found")
+    return {"message": "Expense deleted successfully"}
 
 
 # ============================================================
