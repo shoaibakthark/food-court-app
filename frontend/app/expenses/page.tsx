@@ -5,7 +5,7 @@ import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth, fetchWithAuth } from "../lib/auth";
-import { SidebarUserCard, OwnerBanner, NavLink, TopbarUserBadge, AppSidebar, MobileMenuButton } from "../components/AuthBar";
+import { OwnerBanner, TopbarUserBadge, AppSidebar, MobileMenuButton } from "../components/AuthBar";
 
 const API_URL = typeof window !== "undefined" ? "/api/py" : "http://127.0.0.1:8000";
 
@@ -44,7 +44,7 @@ type EventOption = {
 
 type DatePreset = "all" | "today" | "this_week" | "this_month" | "last_month" | "custom";
 type LedgerTab = "general" | "vendors" | "settlement" | "audit";
-type LedgerEntryFilter = "all" | "bills" | "clearances";
+type LedgerEntryFilter = "all" | "paid" | "credit" | "clearances";
 
 const CATEGORIES = [
   "Raw Materials & Groceries",
@@ -57,6 +57,14 @@ const CATEGORIES = [
   "Gas & Utilities",
   "Staff Refreshments",
   "Miscellaneous",
+];
+
+const DIRECT_PAYMENT_METHODS = [
+  "Cash",
+  "UPI / GPay / PhonePe",
+  "Bank Transfer / NEFT",
+  "Company Card",
+  "Cheque",
 ];
 
 const CLEARANCE_PAYMENT_METHODS = [
@@ -91,6 +99,29 @@ function formatMonthYear(ymStr: string): string {
   return date.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 }
 
+function isCreditExpense(paymentMethod?: string | null): boolean {
+  if (!paymentMethod) return false;
+  const m = paymentMethod.toLowerCase().trim();
+  return m.includes("credit") || m.includes("account") || m.includes("due") || m.includes("payable");
+}
+
+type VendorAccount = {
+  name: string;
+  totalBilled: number;
+  totalCredit: number;
+  totalDirectPaid: number;
+  totalCleared: number;
+  pendingBalance: number;
+  billCount: number;
+  creditBillCount: number;
+  directPaidCount: number;
+  clearanceCount: number;
+  lastDate: string;
+  categories: Record<string, number>;
+  expenses: ExpenseRecord[];
+  settlements: ExpenseSettlementRecord[];
+};
+
 export default function ExpensesPage() {
   const router = useRouter();
   const { user, isOwner } = useAuth();
@@ -102,33 +133,33 @@ export default function ExpensesPage() {
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
-  // Active Ledger Tab
+  // Active Tab
   const [activeTab, setActiveTab] = useState<LedgerTab>("general");
 
   // Selected Vendor for Individual Account Ledger View
   const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
 
-  // Filters for Credit Ledger
-  const [entryTypeFilter, setEntryTypeFilter] = useState<LedgerEntryFilter>("all"); // all | bills | clearances
+  // Filters for Unified Ledger
+  const [entryTypeFilter, setEntryTypeFilter] = useState<LedgerEntryFilter>("all"); // all | paid | credit | clearances
   const [searchQuery, setSearchQuery] = useState("");
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [customStartDate, setCustomStartDate] = useState("");
   const [customEndDate, setCustomEndDate] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [allocationFilter, setAllocationFilter] = useState("All"); // All | Event | Overhead
-  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc"); // desc = latest first, asc = oldest first
+  const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
-  // Filters for Vendor / Settlement Accounts
+  // Filters for Vendor Accounts Tab
   const [vendorSearch, setVendorSearch] = useState("");
   const [vendorStatusFilter, setVendorStatusFilter] = useState<"all" | "due" | "settled">("all");
 
-  // Modal State for Add / Edit Expense (Credit Bill)
+  // Modal State for Add / Edit Expense
   const [modalOpen, setModalOpen] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   // Form Fields for Add / Edit Expense
-  const [formType, setFormType] = useState<"credit" | "paid">("credit"); // DEFAULT TO CREDIT PURCHASE!
+  const [formType, setFormType] = useState<"paid" | "credit">("paid"); // Default: Direct Paid
   const [formTitle, setFormTitle] = useState("");
   const [formCategory, setFormCategory] = useState(CATEGORIES[0]);
   const [formAmount, setFormAmount] = useState("");
@@ -139,7 +170,7 @@ export default function ExpensesPage() {
   const [formBillNumber, setFormBillNumber] = useState("");
   const [formNote, setFormNote] = useState("");
 
-  // Modal State for CREDIT BALANCE CLEARANCE (Settlement)
+  // Modal State for CREDIT CLEARANCE (Settlement)
   const [settleModalOpen, setSettleModalOpen] = useState(false);
   const [settling, setSettling] = useState(false);
   const [settleVendor, setSettleVendor] = useState("");
@@ -211,7 +242,7 @@ export default function ExpensesPage() {
     return Array.from(set).sort();
   }, [expenses, settlements]);
 
-  // Helper date boundary calculators
+  // Date boundary calculations
   const dateBoundaries = useMemo(() => {
     const today = new Date();
     const todayStr = today.toISOString().slice(0, 10);
@@ -234,43 +265,33 @@ export default function ExpensesPage() {
     };
   }, []);
 
-  // Settlement totals mapped by vendor (normalized to lowercase for robust matching)
+  // Settlement totals mapped by vendor (normalized to lowercase)
   const settlementsByVendor = useMemo(() => {
     const map: Record<string, number> = {};
     settlements.forEach((s) => {
-      const v = (s.vendor?.trim() || "Direct / Unassigned Vendor").toLowerCase();
+      const v = (s.vendor?.trim() || "Direct / Cash Outflows").toLowerCase();
       map[v] = (map[v] || 0) + (s.amount || 0);
     });
     return map;
   }, [settlements]);
 
-  // Grouped Vendor Accounts & Balances (Accounts Payable / Supplier Credit)
+  // Grouped Vendor Accounts & Balances (Accounts Payable / Supplier Khata)
   const vendorAccounts = useMemo(() => {
-    const map: Record<
-      string,
-      {
-        name: string;
-        totalIncurred: number;
-        totalCleared: number;
-        pendingBalance: number;
-        billCount: number;
-        clearanceCount: number;
-        lastDate: string;
-        categories: Record<string, number>;
-        expenses: ExpenseRecord[];
-        settlements: ExpenseSettlementRecord[];
-      }
-    > = {};
+    const map: Record<string, VendorAccount> = {};
 
     expenses.forEach((e) => {
-      const vName = (e.vendor && e.vendor.trim()) || "Direct / Unassigned Vendor";
+      const vName = (e.vendor && e.vendor.trim()) || "Direct / Cash Outflows";
       if (!map[vName]) {
         map[vName] = {
           name: vName,
-          totalIncurred: 0,
+          totalBilled: 0,
+          totalCredit: 0,
+          totalDirectPaid: 0,
           totalCleared: 0,
           pendingBalance: 0,
           billCount: 0,
+          creditBillCount: 0,
+          directPaidCount: 0,
           clearanceCount: 0,
           lastDate: "",
           categories: {},
@@ -280,8 +301,17 @@ export default function ExpensesPage() {
       }
       const item = map[vName];
       const amt = e.amount || 0;
-      item.totalIncurred += amt;
+      item.totalBilled += amt;
       item.billCount += 1;
+
+      if (isCreditExpense(e.payment_method)) {
+        item.totalCredit += amt;
+        item.creditBillCount += 1;
+      } else {
+        item.totalDirectPaid += amt;
+        item.directPaidCount += 1;
+      }
+
       const d = e.expense_date ? e.expense_date.slice(0, 10) : "";
       if (d > item.lastDate) item.lastDate = d;
       const cat = e.category || "Miscellaneous";
@@ -290,14 +320,18 @@ export default function ExpensesPage() {
     });
 
     settlements.forEach((s) => {
-      const vName = (s.vendor && s.vendor.trim()) || "Direct / Unassigned Vendor";
+      const vName = (s.vendor && s.vendor.trim()) || "Direct / Cash Outflows";
       if (!map[vName]) {
         map[vName] = {
           name: vName,
-          totalIncurred: 0,
+          totalBilled: 0,
+          totalCredit: 0,
+          totalDirectPaid: 0,
           totalCleared: 0,
           pendingBalance: 0,
           billCount: 0,
+          creditBillCount: 0,
+          directPaidCount: 0,
           clearanceCount: 0,
           lastDate: "",
           categories: {},
@@ -312,13 +346,14 @@ export default function ExpensesPage() {
       item.settlements.push(s);
     });
 
-    // Populate settlements cleared and calculate pending credit balance
+    // Populate settlements cleared and calculate pending credit balance:
+    // Only goods purchased on credit generate a pending balance!
     Object.values(map).forEach((item) => {
       item.totalCleared = settlementsByVendor[item.name.toLowerCase()] || 0;
-      item.pendingBalance = Math.max(0, item.totalIncurred - item.totalCleared);
+      item.pendingBalance = Math.max(0, item.totalCredit - item.totalCleared);
     });
 
-    return Object.values(map).sort((a, b) => b.totalIncurred - a.totalIncurred);
+    return Object.values(map).sort((a, b) => b.pendingBalance - a.pendingBalance || b.totalCredit - a.totalCredit || b.totalBilled - a.totalBilled);
   }, [expenses, settlements, settlementsByVendor]);
 
   // Filtered Vendor Accounts for the Vendors / Accounts Payable Tab
@@ -345,69 +380,77 @@ export default function ExpensesPage() {
     const vendorObj = vendorAccounts.find((v) => v.name === selectedVendor);
     if (!vendorObj) return null;
 
-    // Combine all bills and clearances for this vendor chronologically
     const allVendorItems: Array<{
       id: string;
       rawId: number;
-      kind: "bill" | "clearance";
+      kind: "credit_bill" | "paid_expense" | "clearance";
       date: string;
       refNumber: string;
       title: string;
       category: string;
       paymentMode: string;
-      incurred: number;
-      cleared: number;
+      totalAmount: number;
+      creditIncurred: number;
+      creditCleared: number;
+      runningCreditBalance: number;
       note?: string | null;
       rawExpense?: ExpenseRecord;
       rawSettlement?: ExpenseSettlementRecord;
     }> = [];
 
     vendorObj.expenses.forEach((e) => {
+      const isCredit = isCreditExpense(e.payment_method);
+      const amt = e.amount || 0;
       allVendorItems.push({
         id: `exp-${e.id}`,
         rawId: e.id,
-        kind: "bill",
+        kind: isCredit ? "credit_bill" : "paid_expense",
         date: e.expense_date ? e.expense_date.slice(0, 10) : "",
         refNumber: e.bill_number ? `#${e.bill_number}` : `EXP-${String(e.id).padStart(4, "0")}`,
         title: e.title,
         category: e.category,
-        paymentMode: e.payment_method || "Credit (On Account)",
-        incurred: e.amount || 0,
-        cleared: 0,
+        paymentMode: e.payment_method || (isCredit ? "Credit (On Account)" : "Cash"),
+        totalAmount: amt,
+        creditIncurred: isCredit ? amt : 0,
+        creditCleared: 0,
+        runningCreditBalance: 0,
         note: e.note,
         rawExpense: e,
       });
     });
 
     vendorObj.settlements.forEach((s) => {
+      const amt = s.amount || 0;
       allVendorItems.push({
         id: `set-${s.id}`,
         rawId: s.id,
         kind: "clearance",
         date: s.settlement_date ? s.settlement_date.slice(0, 10) : "",
         refNumber: s.reference_no ? `#${s.reference_no}` : `SETTLE-${String(s.id).padStart(4, "0")}`,
-        title: `Credit Balance Clearance (${s.payment_mode})`,
+        title: `Credit Clearance Payment (${s.payment_mode})`,
         category: "Vendor Settlement",
         paymentMode: s.payment_mode,
-        incurred: 0,
-        cleared: s.amount || 0,
+        totalAmount: amt,
+        creditIncurred: 0,
+        creditCleared: amt,
+        runningCreditBalance: 0,
         note: s.note,
         rawSettlement: s,
       });
     });
 
-    // Sort chronologically to compute exact running credit balance
+    // Sort chronologically
     allVendorItems.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return a.kind === "bill" ? -1 : 1;
+      return a.kind === "clearance" ? 1 : -1;
     });
 
     let running = 0;
     const computed = allVendorItems.map((item) => {
-      running += item.incurred - item.cleared;
+      running += item.creditIncurred - item.creditCleared;
       return {
         ...item,
-        runningCreditBalance: running,
+        runningCreditBalance: Math.max(0, running),
       };
     });
 
@@ -421,6 +464,10 @@ export default function ExpensesPage() {
   const metrics = useMemo(() => {
     let totalExpense = 0;
     let mtdExpense = 0;
+    let directPaidTotal = 0;
+    let directPaidCount = 0;
+    let creditIncurredTotal = 0;
+    let creditIncurredCount = 0;
     let eventSpecific = 0;
     let overhead = 0;
     let totalSettled = 0;
@@ -433,6 +480,14 @@ export default function ExpensesPage() {
       const d = e.expense_date ? e.expense_date.slice(0, 10) : "";
       if (d.startsWith(dateBoundaries.currentYearMonth)) {
         mtdExpense += amt;
+      }
+
+      if (isCreditExpense(e.payment_method)) {
+        creditIncurredTotal += amt;
+        creditIncurredCount += 1;
+      } else {
+        directPaidTotal += amt;
+        directPaidCount += 1;
       }
 
       if (e.event_id) {
@@ -452,35 +507,38 @@ export default function ExpensesPage() {
       }
     });
 
-    const netLedgerBalance = Math.max(0, totalExpense - totalSettled);
+    const netCreditDue = Math.max(0, creditIncurredTotal - totalSettled);
 
     return {
       totalExpense,
       mtdExpense,
+      directPaidTotal,
+      directPaidCount,
+      creditIncurredTotal,
+      creditIncurredCount,
       totalSettled,
       mtdCleared,
-      netLedgerBalance,
+      netCreditDue,
       eventSpecific,
       overhead,
     };
   }, [expenses, settlements, dateBoundaries.currentYearMonth]);
 
-  // ========================================================
-  // UNIFIED CREDIT & EXPENSE LEDGER (Chronological journal of Bills + Clearances)
-  // ========================================================
+  // UNIFIED EXPENSE & CREDIT LEDGER (Bills + Clearances)
   const unifiedLedgerEntries = useMemo(() => {
     type LedgerRow = {
       id: string;
       rawId: number;
-      kind: "bill" | "clearance";
+      kind: "credit_bill" | "paid_expense" | "clearance";
       date: string;
       refNumber: string;
       title: string;
       category: string;
       vendor: string;
       paymentMode: string;
-      incurredAmount: number;
-      clearedAmount: number;
+      totalAmount: number;
+      creditIncurred: number;
+      creditCleared: number;
       runningCreditBalance: number;
       eventId?: number | null;
       eventType?: string | null;
@@ -491,11 +549,15 @@ export default function ExpensesPage() {
 
     const combined: LedgerRow[] = [];
 
-    // 1. Add Expenses (Credit Bills)
+    // 1. Add Expenses (Both Credit Bills and Direct Paid Expenses)
     expenses.forEach((e) => {
       const expDate = e.expense_date ? e.expense_date.slice(0, 10) : "";
+      const isCredit = isCreditExpense(e.payment_method);
 
-      // Apply Filters
+      if (entryTypeFilter === "credit" && !isCredit) return;
+      if (entryTypeFilter === "paid" && isCredit) return;
+      if (entryTypeFilter === "clearances") return;
+
       if (datePreset === "today" && expDate !== dateBoundaries.todayStr) return;
       if (datePreset === "this_week" && (expDate < dateBoundaries.thisWeekStart || expDate > dateBoundaries.todayStr)) return;
       if (datePreset === "this_month" && !expDate.startsWith(dateBoundaries.currentYearMonth)) return;
@@ -520,18 +582,20 @@ export default function ExpensesPage() {
         if (!match) return;
       }
 
+      const amt = e.amount || 0;
       combined.push({
         id: `exp-${e.id}`,
         rawId: e.id,
-        kind: "bill",
+        kind: isCredit ? "credit_bill" : "paid_expense",
         date: expDate,
         refNumber: e.bill_number ? `#${e.bill_number}` : `EXP-${String(e.id).padStart(4, "0")}`,
         title: e.title,
         category: e.category,
-        vendor: e.vendor?.trim() || "Direct / Unassigned Vendor",
-        paymentMode: e.payment_method || "Credit (On Account)",
-        incurredAmount: e.amount || 0,
-        clearedAmount: 0,
+        vendor: e.vendor?.trim() || "Direct / No Vendor",
+        paymentMode: e.payment_method || (isCredit ? "Credit (On Account)" : "Cash"),
+        totalAmount: amt,
+        creditIncurred: isCredit ? amt : 0,
+        creditCleared: 0,
         runningCreditBalance: 0,
         eventId: e.event_id,
         eventType: e.event_type,
@@ -541,75 +605,69 @@ export default function ExpensesPage() {
     });
 
     // 2. Add Settlements (Credit Clearances)
-    settlements.forEach((s) => {
-      const sDate = s.settlement_date ? s.settlement_date.slice(0, 10) : "";
+    if (entryTypeFilter !== "credit" && entryTypeFilter !== "paid") {
+      settlements.forEach((s) => {
+        const sDate = s.settlement_date ? s.settlement_date.slice(0, 10) : "";
 
-      // Apply Filters
-      if (datePreset === "today" && sDate !== dateBoundaries.todayStr) return;
-      if (datePreset === "this_week" && (sDate < dateBoundaries.thisWeekStart || sDate > dateBoundaries.todayStr)) return;
-      if (datePreset === "this_month" && !sDate.startsWith(dateBoundaries.currentYearMonth)) return;
-      if (datePreset === "last_month" && !sDate.startsWith(dateBoundaries.lastYearMonth)) return;
-      if (datePreset === "custom") {
-        if (customStartDate && sDate < customStartDate) return;
-        if (customEndDate && sDate > customEndDate) return;
-      }
+        if (datePreset === "today" && sDate !== dateBoundaries.todayStr) return;
+        if (datePreset === "this_week" && (sDate < dateBoundaries.thisWeekStart || sDate > dateBoundaries.todayStr)) return;
+        if (datePreset === "this_month" && !sDate.startsWith(dateBoundaries.currentYearMonth)) return;
+        if (datePreset === "last_month" && !sDate.startsWith(dateBoundaries.lastYearMonth)) return;
+        if (datePreset === "custom") {
+          if (customStartDate && sDate < customStartDate) return;
+          if (customEndDate && sDate > customEndDate) return;
+        }
 
-      if (categoryFilter !== "All" && categoryFilter !== "Vendor Settlement") return;
+        if (categoryFilter !== "All" && categoryFilter !== "Vendor Settlement") return;
 
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase().trim();
-        const match =
-          (s.vendor && s.vendor.toLowerCase().includes(q)) ||
-          (s.reference_no && s.reference_no.toLowerCase().includes(q)) ||
-          (s.note && s.note.toLowerCase().includes(q));
-        if (!match) return;
-      }
+        if (searchQuery.trim()) {
+          const q = searchQuery.toLowerCase().trim();
+          const match =
+            (s.vendor && s.vendor.toLowerCase().includes(q)) ||
+            (s.reference_no && s.reference_no.toLowerCase().includes(q)) ||
+            (s.note && s.note.toLowerCase().includes(q));
+          if (!match) return;
+        }
 
-      combined.push({
-        id: `set-${s.id}`,
-        rawId: s.id,
-        kind: "clearance",
-        date: sDate,
-        refNumber: s.reference_no ? `#${s.reference_no}` : `SETTLE-${String(s.id).padStart(4, "0")}`,
-        title: `Credit Clearance Payment (${s.payment_mode})`,
-        category: "Vendor Settlement",
-        vendor: s.vendor?.trim() || "Direct / Unassigned Vendor",
-        paymentMode: s.payment_mode,
-        incurredAmount: 0,
-        clearedAmount: s.amount || 0,
-        runningCreditBalance: 0,
-        note: s.note,
-        rawSettlement: s,
+        const amt = s.amount || 0;
+        combined.push({
+          id: `set-${s.id}`,
+          rawId: s.id,
+          kind: "clearance",
+          date: sDate,
+          refNumber: s.reference_no ? `#${s.reference_no}` : `SETTLE-${String(s.id).padStart(4, "0")}`,
+          title: `Credit Clearance Payment (${s.payment_mode})`,
+          category: "Vendor Settlement",
+          vendor: s.vendor?.trim() || "Direct / No Vendor",
+          paymentMode: s.payment_mode,
+          totalAmount: amt,
+          creditIncurred: 0,
+          creditCleared: amt,
+          runningCreditBalance: 0,
+          note: s.note,
+          rawSettlement: s,
+        });
       });
-    });
+    }
 
-    // Sort chronologically (oldest to newest) to calculate running net credit balance accurately
     combined.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
-      return a.kind === "bill" ? -1 : 1;
+      return a.kind === "clearance" ? 1 : -1;
     });
 
     let running = 0;
     const withRunning = combined.map((entry) => {
-      running += entry.incurredAmount - entry.clearedAmount;
+      running += entry.creditIncurred - entry.creditCleared;
       return {
         ...entry,
-        runningCreditBalance: running,
+        runningCreditBalance: Math.max(0, running),
       };
     });
 
-    // Apply Entry Type filter (Bills only or Clearances only)
-    const filtered = withRunning.filter((item) => {
-      if (entryTypeFilter === "bills") return item.kind === "bill";
-      if (entryTypeFilter === "clearances") return item.kind === "clearance";
-      return true;
-    });
-
-    // Reverse if display sequence is newest first
     if (sortOrder === "desc") {
-      return [...filtered].reverse();
+      return [...withRunning].reverse();
     }
-    return filtered;
+    return withRunning;
   }, [
     expenses,
     settlements,
@@ -626,16 +684,19 @@ export default function ExpensesPage() {
 
   // Active Ledger Totals
   const activeLedgerTotals = useMemo(() => {
-    let totalIncurred = 0;
+    let totalSpend = 0;
+    let totalCredit = 0;
     let totalCleared = 0;
     unifiedLedgerEntries.forEach((e) => {
-      totalIncurred += e.incurredAmount;
-      totalCleared += e.clearedAmount;
+      totalSpend += e.totalAmount;
+      totalCredit += e.creditIncurred;
+      totalCleared += e.creditCleared;
     });
     return {
-      totalIncurred,
+      totalSpend,
+      totalCredit,
       totalCleared,
-      netBalance: Math.max(0, totalIncurred - totalCleared),
+      netDue: Math.max(0, totalCredit - totalCleared),
       count: unifiedLedgerEntries.length,
     };
   }, [unifiedLedgerEntries]);
@@ -646,7 +707,9 @@ export default function ExpensesPage() {
       string,
       {
         monthKey: string;
-        totalIncurred: number;
+        totalBilled: number;
+        totalDirectPaid: number;
+        totalCredit: number;
         totalCleared: number;
         netDue: number;
         count: number;
@@ -656,28 +719,34 @@ export default function ExpensesPage() {
     expenses.forEach((e) => {
       const d = e.expense_date ? e.expense_date.slice(0, 7) : "Unknown";
       if (!monthsMap[d]) {
-        monthsMap[d] = { monthKey: d, totalIncurred: 0, totalCleared: 0, netDue: 0, count: 0 };
+        monthsMap[d] = { monthKey: d, totalBilled: 0, totalDirectPaid: 0, totalCredit: 0, totalCleared: 0, netDue: 0, count: 0 };
       }
-      monthsMap[d].totalIncurred += e.amount || 0;
+      const amt = e.amount || 0;
+      monthsMap[d].totalBilled += amt;
       monthsMap[d].count += 1;
+      if (isCreditExpense(e.payment_method)) {
+        monthsMap[d].totalCredit += amt;
+      } else {
+        monthsMap[d].totalDirectPaid += amt;
+      }
     });
 
     settlements.forEach((s) => {
       const d = s.settlement_date ? s.settlement_date.slice(0, 7) : "Unknown";
       if (!monthsMap[d]) {
-        monthsMap[d] = { monthKey: d, totalIncurred: 0, totalCleared: 0, netDue: 0, count: 0 };
+        monthsMap[d] = { monthKey: d, totalBilled: 0, totalDirectPaid: 0, totalCredit: 0, totalCleared: 0, netDue: 0, count: 0 };
       }
       monthsMap[d].totalCleared += s.amount || 0;
     });
 
     Object.values(monthsMap).forEach((m) => {
-      m.netDue = Math.max(0, m.totalIncurred - m.totalCleared);
+      m.netDue = Math.max(0, m.totalCredit - m.totalCleared);
     });
 
     return Object.values(monthsMap).sort((a, b) => b.monthKey.localeCompare(a.monthKey));
   }, [expenses, settlements]);
 
-  // Category Breakdown Ledger Grouping
+  // Category Breakdown
   const categoryLedger = useMemo(() => {
     const map: Record<
       string,
@@ -729,16 +798,16 @@ export default function ExpensesPage() {
       .sort((a, b) => b.total - a.total);
   }, [expenses, metrics.totalExpense]);
 
-  // Open Add Expense Modal (Credit Bill)
-  const openAddModal = (presetEventId?: number, defaultVendor?: string) => {
+  // Open Add Expense Modal
+  const openAddModal = (presetEventId?: number, defaultVendor?: string, forceType?: "paid" | "credit") => {
     setEditingExpenseId(null);
-    setFormType("credit"); // DEFAULTS TO CREDIT PURCHASE!
+    setFormType(forceType || "paid"); // Defaults to Direct Paid
     setFormTitle("");
     setFormCategory(CATEGORIES[0]);
     setFormAmount("");
     setFormDate(new Date().toISOString().slice(0, 10));
     setFormEventId(presetEventId ?? "");
-    setFormPaymentMethod("Cash");
+    setFormPaymentMethod(forceType === "credit" ? "Credit (On Account)" : "Cash");
     setFormVendor(defaultVendor || selectedVendor || "");
     setFormBillNumber("");
     setFormNote("");
@@ -748,7 +817,7 @@ export default function ExpensesPage() {
   // Open Edit Expense Modal
   const openEditModal = (exp: ExpenseRecord) => {
     setEditingExpenseId(exp.id);
-    const isCredit = (exp.payment_method || "").toLowerCase().includes("credit");
+    const isCredit = isCreditExpense(exp.payment_method);
     setFormType(isCredit ? "credit" : "paid");
     setFormTitle(exp.title);
     setFormCategory(exp.category || CATEGORIES[0]);
@@ -771,20 +840,20 @@ export default function ExpensesPage() {
 
   // Open CREDIT BALANCE CLEARANCE (Settlement) Modal
   const openClearSettlementModal = (vendorName?: string, presetAmount?: number) => {
-    // 1. Determine target vendor:
-    //    Use passed vendorName, or find first vendor with pending credit due > 0, or first vendor in list
     const dueVendor = vendorAccounts.find((v) => v.pendingBalance > 0)?.name;
-    const targetVendor = (vendorName && vendorName.trim()) || dueVendor || (vendorAccounts[0]?.name ?? "");
+    const targetVendor =
+      (vendorName && vendorName.trim() && !vendorName.toLowerCase().includes("direct") ? vendorName.trim() : "") ||
+      dueVendor ||
+      (vendorAccounts.find((v) => v.name !== "Direct / Cash Outflows")?.name ?? vendorAccounts[0]?.name ?? "");
+
     const vendorData = vendorAccounts.find((v) => v.name.toLowerCase() === targetVendor.toLowerCase());
 
-    // 2. Set mode: if targetVendor exists and is not empty but not in vendorAccounts, use custom input
-    if (targetVendor && !vendorData && targetVendor !== "Direct / Unassigned Vendor") {
+    if (targetVendor && !vendorData && !targetVendor.toLowerCase().includes("direct")) {
       setIsCustomVendor(true);
     } else {
       setIsCustomVendor(false);
     }
 
-    // 3. Amount: if presetAmount provided, use it; else if vendor has pendingBalance > 0, use it
     let amountToSet = "";
     if (presetAmount !== undefined && presetAmount > 0) {
       amountToSet = String(presetAmount);
@@ -801,7 +870,7 @@ export default function ExpensesPage() {
     setSettleModalOpen(true);
   };
 
-  // Submit Add / Edit Expense (Credit Bill or Paid Expense)
+  // Submit Add / Edit Expense
   const handleSaveExpense = async (e: FormEvent) => {
     e.preventDefault();
     const title = formTitle.trim();
@@ -810,7 +879,7 @@ export default function ExpensesPage() {
       return;
     }
     const amt = parseFloat(formAmount);
-    if (!amt || amt <= 0) {
+    if (!amt || isNaN(amt) || amt <= 0) {
       alert("Please enter a valid expense amount greater than zero.");
       return;
     }
@@ -848,26 +917,6 @@ export default function ExpensesPage() {
         throw new Error(errorData?.detail || "Failed to save expense");
       }
 
-      // If user chose "Paid Immediately" and not editing, also record immediate clearance
-      if (!editingExpenseId && formType === "paid" && vendorName) {
-        try {
-          await fetchWithAuth(`${API_URL}/expenses/settlements`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              vendor: vendorName,
-              amount: amt,
-              settlement_date: formDate,
-              payment_mode: formPaymentMethod,
-              reference_no: formBillNumber.trim() || null,
-              note: `Direct immediate settlement for ${title}`,
-            }),
-          });
-        } catch (settleErr) {
-          console.warn("Failed to auto-record settlement:", settleErr);
-        }
-      }
-
       setSuccessMsg(
         editingExpenseId
           ? `Expense updated successfully.`
@@ -885,7 +934,7 @@ export default function ExpensesPage() {
     }
   };
 
-  // Submit CREDIT BALANCE CLEARANCE (Settlement)
+  // Submit CREDIT CLEARANCE (Settlement)
   const handleSaveSettlement = async (e: FormEvent) => {
     e.preventDefault();
     const vendor = settleVendor.trim();
@@ -933,7 +982,7 @@ export default function ExpensesPage() {
     }
   };
 
-  // Delete Settlement (Revert clearance)
+  // Void Settlement
   const handleDeleteSettlement = async (id: number, vendor: string, amt: number) => {
     if (!window.confirm(`Are you sure you want to void this credit clearance of ₹${formatMoney(amt)} for ${vendor}? This will restore the vendor's pending credit balance.`)) {
       return;
@@ -965,24 +1014,25 @@ export default function ExpensesPage() {
     }
   };
 
-  // Print Statement trigger
   const handlePrintLedger = () => {
     window.print();
   };
 
   return (
-    <main className="dashboard">
+    <main className="dashboard" style={{ background: "#ffffff", minHeight: "100vh" }}>
       <AppSidebar activeRoute="/expenses" />
 
       {/* Main Content */}
-      <div className="main-content">
+      <div className="main-content" style={{ background: "#ffffff", minHeight: "100vh" }}>
         {/* Topbar */}
         <header
           className="topbar no-print"
           style={{
-            minHeight: "74px",
+            minHeight: "72px",
             height: "auto",
             padding: "12px 24px",
+            background: "#ffffff",
+            borderBottom: "1px solid #e2e8f0",
             gap: "12px",
             display: "flex",
             alignItems: "center",
@@ -994,37 +1044,68 @@ export default function ExpensesPage() {
             <MobileMenuButton />
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#1e0836", lineHeight: 1.2 }}>
-                  Expense & Vendor Credit Ledger
+                <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 800, color: "#0f172a", lineHeight: 1.2 }}>
+                  Expense & Ledger Management
                 </h1>
                 <span
                   style={{
                     fontSize: "11px",
-                    color: "#dc2626",
-                    background: "#fef2f2",
-                    border: "1px solid #fecaca",
+                    color: "#334155",
+                    background: "#f1f5f9",
+                    border: "1px solid #e2e8f0",
                     padding: "2px 8px",
                     borderRadius: "10px",
                     fontWeight: 700,
                     whiteSpace: "nowrap",
                   }}
                 >
-                  {expenses.length} Credit Bills
+                  {expenses.length} Total Expenses
                 </span>
+                {metrics.netCreditDue > 0 ? (
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: "#dc2626",
+                      background: "#fef2f2",
+                      border: "1px solid #fecaca",
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      fontWeight: 800,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    🔴 ₹{formatMoney(metrics.netCreditDue)} Supplier Credit Due
+                  </span>
+                ) : (
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: "#059669",
+                      background: "#ecfdf5",
+                      border: "1px solid #a7f3d0",
+                      padding: "2px 8px",
+                      borderRadius: "10px",
+                      fontWeight: 800,
+                      whiteSpace: "nowrap",
+                    }}
+                  >
+                    ✓ All Supplier Credit Cleared
+                  </span>
+                )}
               </div>
-              <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#8a7b9b" }}>
-                Manage supplier credit purchases, accounts payable, and credit balance clearances
+              <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748b" }}>
+                Track direct paid expenses (Cash / UPI) and manage supplier credit purchases & clearances
               </p>
             </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 auto" }}>
             {/* Quick search input */}
-            <div className="search-box">
-              <span style={{ color: "#8a7b9b", fontSize: "14px" }}>🔍</span>
+            <div className="search-box" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px" }}>
+              <span style={{ color: "#64748b", fontSize: "14px" }}>🔍</span>
               <input
                 type="text"
-                placeholder="Search vendor, bill #, item..."
+                placeholder="Search vendor, item, bill #..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
@@ -1033,14 +1114,14 @@ export default function ExpensesPage() {
                   outline: "none",
                   width: "100%",
                   fontSize: "13px",
-                  color: "#1e0836",
+                  color: "#0f172a",
                 }}
               />
               {searchQuery && (
                 <button
                   type="button"
                   onClick={() => setSearchQuery("")}
-                  style={{ border: "none", background: "transparent", color: "#8a7b9b", cursor: "pointer", fontSize: "14px" }}
+                  style={{ border: "none", background: "transparent", color: "#64748b", cursor: "pointer", fontSize: "14px" }}
                 >
                   ✕
                 </button>
@@ -1056,20 +1137,20 @@ export default function ExpensesPage() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
-                  background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                  background: "#059669",
                   color: "#ffffff",
                   border: "none",
                   borderRadius: "8px",
-                  padding: "8px 14px",
+                  padding: "9px 15px",
                   fontWeight: 700,
                   fontSize: "12px",
                   cursor: "pointer",
                   whiteSpace: "nowrap",
                   flexShrink: 0,
-                  boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
+                  boxShadow: "0 1px 3px rgba(5, 150, 105, 0.2)",
                 }}
               >
-                <span>🤝</span> Clear Credit Balance
+                <span>🤝</span> Clear Supplier Credit
               </button>
             )}
 
@@ -1082,22 +1163,21 @@ export default function ExpensesPage() {
                 alignItems: "center",
                 gap: "6px",
                 background: "#ffffff",
-                color: "#5b21b6",
-                border: "1px solid #ddd6fe",
+                color: "#475569",
+                border: "1px solid #cbd5e1",
                 borderRadius: "8px",
-                padding: "8px 14px",
+                padding: "9px 14px",
                 fontWeight: 700,
                 fontSize: "12px",
                 cursor: "pointer",
                 whiteSpace: "nowrap",
                 flexShrink: 0,
-                boxShadow: "0 1px 4px rgba(124, 58, 237, 0.08)",
               }}
             >
-              <span>🖨️</span> Print Ledger
+              <span>🖨️</span> Print Statement
             </button>
 
-            {/* Add Credit Expense Button */}
+            {/* Add Expense Button */}
             {!isOwner && (
               <button
                 type="button"
@@ -1106,20 +1186,20 @@ export default function ExpensesPage() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
-                  background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+                  background: "#2563eb",
                   color: "#ffffff",
                   border: "none",
                   borderRadius: "8px",
-                  padding: "8px 16px",
+                  padding: "9px 16px",
                   fontWeight: 700,
                   fontSize: "12px",
                   cursor: "pointer",
                   whiteSpace: "nowrap",
                   flexShrink: 0,
-                  boxShadow: "0 4px 14px rgba(220, 38, 38, 0.35)",
+                  boxShadow: "0 2px 6px rgba(37, 99, 235, 0.25)",
                 }}
               >
-                <span>+</span> Add Credit Expense
+                <span>+</span> Record Expense
               </button>
             )}
 
@@ -1144,22 +1224,24 @@ export default function ExpensesPage() {
               </h1>
               <h2 style={{ margin: "4px 0", fontSize: "16px", color: "#444" }}>
                 {selectedVendor
-                  ? `Vendor Credit Account Statement: ${selectedVendor}`
-                  : "Supplier Credit & Outflows Ledger"}
+                  ? `Vendor Account Statement: ${selectedVendor}`
+                  : "Expenses & Supplier Credit Ledger"}
               </h2>
               <p style={{ margin: 0, fontSize: "12px", color: "#666" }}>
-                Total Credit Incurred: ₹{formatMoney(metrics.totalExpense)} • Total Cleared: ₹{formatMoney(metrics.totalSettled)} • Outstanding Due: ₹{formatMoney(metrics.netLedgerBalance)}
+                Total Expenditure: ₹{formatMoney(metrics.totalExpense)} • Direct Paid: ₹{formatMoney(metrics.directPaidTotal)} • Credit Taken: ₹{formatMoney(metrics.creditIncurredTotal)} • Outstanding Due: ₹{formatMoney(metrics.netCreditDue)}
               </p>
             </div>
             <div style={{ textAlign: "right", fontSize: "12px", color: "#555" }}>
               <div>Generated: {new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
-              <div>Net Outstanding Credit Due: ₹{formatMoney(metrics.netLedgerBalance)}</div>
+              <div style={{ fontWeight: 800, color: metrics.netCreditDue > 0 ? "#b91c1c" : "#047857" }}>
+                Net Supplier Credit Due: ₹{formatMoney(metrics.netCreditDue)}
+              </div>
             </div>
           </div>
         </div>
 
         {/* Content Body */}
-        <div className="page-content" style={{ background: "#faf8fd", minHeight: "calc(100vh - 74px)", padding: "24px 28px 60px" }}>
+        <div className="page-content" style={{ background: "#ffffff", minHeight: "calc(100vh - 72px)", padding: "24px 28px 80px" }}>
           <OwnerBanner />
 
           {/* Notifications */}
@@ -1167,9 +1249,9 @@ export default function ExpensesPage() {
             <div
               className="no-print"
               style={{
-                background: "#e8f8f0",
-                border: "1px solid #a3e6c0",
-                color: "#0d6832",
+                background: "#ecfdf5",
+                border: "1px solid #a7f3d0",
+                color: "#065f46",
                 padding: "12px 18px",
                 borderRadius: "8px",
                 marginBottom: "20px",
@@ -1183,7 +1265,7 @@ export default function ExpensesPage() {
               <button
                 type="button"
                 onClick={() => setSuccessMsg(null)}
-                style={{ border: "none", background: "transparent", color: "#0d6832", cursor: "pointer" }}
+                style={{ border: "none", background: "transparent", color: "#065f46", cursor: "pointer" }}
               >
                 ✕
               </button>
@@ -1207,163 +1289,117 @@ export default function ExpensesPage() {
             </div>
           )}
 
-          {/* 4 CORE CREDIT METRICS CARDS */}
+          {/* 4 CLEAR FINANCIAL METRIC CARDS */}
           <div
             className="no-print"
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-              gap: "18px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+              gap: "16px",
               marginBottom: "24px",
             }}
           >
-            {/* 1. Total Credit Taken (All Bills) */}
+            {/* 1. Total Expenses */}
             <div
               style={{
                 background: "#ffffff",
-                border: "1px solid #ebe4f5",
-                borderRadius: "14px",
-                padding: "20px",
-                boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
+                border: "1px solid #e2e8f0",
+                borderRadius: "12px",
+                padding: "18px 20px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
                 position: "relative",
-                overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                minHeight: "125px",
+                minHeight: "120px",
               }}
             >
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: "3px",
-                  background: "linear-gradient(90deg, #7c3aed 0%, #a855f7 100%)",
-                }}
-              />
-              <div style={{ fontSize: "12px", color: "#6d28d9", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Total Credit Incurred
+              <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                Total Expenditure
               </div>
-              <div style={{ fontSize: "26px", fontWeight: 800, color: "#1e0836", marginTop: "8px" }}>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#0f172a", marginTop: "6px" }}>
                 ₹{formatMoney(metrics.totalExpense)}
               </div>
-              <div style={{ fontSize: "12px", color: "#7a6e8a", marginTop: "6px" }}>
-                Across {expenses.length} bills from suppliers
+              <div style={{ fontSize: "12px", color: "#64748b", marginTop: "6px" }}>
+                Across {expenses.length} purchases ({formatMoney(metrics.directPaidTotal)} cash, {formatMoney(metrics.creditIncurredTotal)} credit)
               </div>
             </div>
 
-            {/* 2. Total Credit Cleared (Paid) */}
+            {/* 2. Direct Paid (Cash / UPI / Bank) */}
             <div
               style={{
                 background: "#ffffff",
-                border: "1px solid #ebe4f5",
-                borderRadius: "14px",
-                padding: "20px",
-                boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
+                border: "1px solid #e2e8f0",
+                borderRadius: "12px",
+                padding: "18px 20px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
                 position: "relative",
-                overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                minHeight: "125px",
+                minHeight: "120px",
               }}
             >
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: "3px",
-                  background: "linear-gradient(90deg, #10b981 0%, #34d399 100%)",
-                }}
-              />
-              <div style={{ fontSize: "12px", color: "#047857", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Total Credit Cleared
+              <div style={{ fontSize: "12px", color: "#0284c7", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                Direct Paid (Cash / UPI)
               </div>
-              <div style={{ fontSize: "26px", fontWeight: 800, color: "#065f46", marginTop: "8px" }}>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#0369a1", marginTop: "6px" }}>
+                ₹{formatMoney(metrics.directPaidTotal)}
+              </div>
+              <div style={{ fontSize: "12px", color: "#0284c7", marginTop: "6px" }}>
+                {metrics.directPaidCount} cash / digital payments (Settled immediately)
+              </div>
+            </div>
+
+            {/* 3. Supplier Credit Cleared */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e2e8f0",
+                borderRadius: "12px",
+                padding: "18px 20px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                position: "relative",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                minHeight: "120px",
+              }}
+            >
+              <div style={{ fontSize: "12px", color: "#059669", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                Supplier Credit Cleared
+              </div>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#047857", marginTop: "6px" }}>
                 ₹{formatMoney(metrics.totalSettled)}
               </div>
-              <div style={{ fontSize: "12px", color: "#047857", marginTop: "6px" }}>
-                {settlements.length} payments cleared to vendors
+              <div style={{ fontSize: "12px", color: "#059669", marginTop: "6px" }}>
+                {settlements.length} settlement payments to suppliers
               </div>
             </div>
 
-            {/* 3. Outstanding Credit Balance Due */}
+            {/* 4. Net Supplier Credit Due */}
             <div
               style={{
-                background: "#ffffff",
-                border: "1px solid #fee2e2",
-                borderRadius: "14px",
-                padding: "20px",
-                boxShadow: "0 2px 10px rgba(220, 38, 38, 0.06)",
+                background: metrics.netCreditDue > 0 ? "#fffafb" : "#ffffff",
+                border: metrics.netCreditDue > 0 ? "1px solid #fecaca" : "1px solid #e2e8f0",
+                borderRadius: "12px",
+                padding: "18px 20px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
                 position: "relative",
-                overflow: "hidden",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                minHeight: "125px",
+                minHeight: "120px",
               }}
             >
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: "4px",
-                  background: "linear-gradient(90deg, #ef4444 0%, #dc2626 100%)",
-                }}
-              />
-              <div style={{ fontSize: "12px", color: "#b91c1c", fontWeight: 800, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Net Credit Balance Due
+              <div style={{ fontSize: "12px", color: metrics.netCreditDue > 0 ? "#b91c1c" : "#059669", fontWeight: 800, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                Net Supplier Credit Due
               </div>
-              <div style={{ fontSize: "28px", fontWeight: 900, color: metrics.netLedgerBalance > 0 ? "#b91c1c" : "#059669", marginTop: "8px" }}>
-                ₹{formatMoney(metrics.netLedgerBalance)}
+              <div style={{ fontSize: "28px", fontWeight: 900, color: metrics.netCreditDue > 0 ? "#dc2626" : "#059669", marginTop: "6px" }}>
+                ₹{formatMoney(metrics.netCreditDue)}
               </div>
-              <div style={{ fontSize: "12px", color: "#b91c1c", marginTop: "6px", fontWeight: 600 }}>
-                {pendingVendorsCount > 0 ? `${pendingVendorsCount} suppliers waiting for payment` : "All credit balances settled"}
-              </div>
-            </div>
-
-            {/* 4. This Month Credit Activity */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #ebe4f5",
-                borderRadius: "14px",
-                padding: "20px",
-                boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
-                position: "relative",
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                minHeight: "125px",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: "3px",
-                  background: "linear-gradient(90deg, #0284c7 0%, #38bdf8 100%)",
-                }}
-              />
-              <div style={{ fontSize: "12px", color: "#0369a1", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                This Month (MTD)
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "8px", marginTop: "8px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "18px", fontWeight: 800, color: "#1e0836" }}>
-                  Billed: ₹{formatMoney(metrics.mtdExpense)}
-                </span>
-              </div>
-              <div style={{ fontSize: "12px", color: "#047857", marginTop: "6px", fontWeight: 600 }}>
-                Cleared: ₹{formatMoney(metrics.mtdCleared)}
+              <div style={{ fontSize: "12px", color: metrics.netCreditDue > 0 ? "#b91c1c" : "#059669", marginTop: "6px", fontWeight: 600 }}>
+                {pendingVendorsCount > 0 ? `${pendingVendorsCount} suppliers waiting for payment` : "✓ All supplier accounts fully settled"}
               </div>
             </div>
           </div>
@@ -1375,7 +1411,7 @@ export default function ExpensesPage() {
               display: "flex",
               alignItems: "center",
               gap: "8px",
-              borderBottom: "2px solid #e9e3f3",
+              borderBottom: "2px solid #e2e8f0",
               marginBottom: "20px",
               flexWrap: "wrap",
             }}
@@ -1389,12 +1425,12 @@ export default function ExpensesPage() {
               style={{
                 background: activeTab === "general" ? "#fff" : "transparent",
                 border: "none",
-                borderBottom: activeTab === "general" ? "3px solid #7c3aed" : "3px solid transparent",
+                borderBottom: activeTab === "general" ? "3px solid #2563eb" : "3px solid transparent",
                 padding: "12px 16px",
                 borderRadius: "8px 8px 0 0",
                 fontSize: "14px",
                 fontWeight: activeTab === "general" ? 800 : 600,
-                color: activeTab === "general" ? "#7c3aed" : "#6c5e7e",
+                color: activeTab === "general" ? "#2563eb" : "#64748b",
                 cursor: "pointer",
                 display: "inline-flex",
                 alignItems: "center",
@@ -1402,7 +1438,7 @@ export default function ExpensesPage() {
                 marginBottom: "-2px",
               }}
             >
-              <span>📜</span> Credit & Expense Ledger ({unifiedLedgerEntries.length})
+              <span>📜</span> Unified Expenses Ledger ({unifiedLedgerEntries.length})
             </button>
 
             <button
@@ -1414,12 +1450,12 @@ export default function ExpensesPage() {
               style={{
                 background: activeTab === "vendors" ? "#fff" : "transparent",
                 border: "none",
-                borderBottom: activeTab === "vendors" ? "3px solid #7c3aed" : "3px solid transparent",
+                borderBottom: activeTab === "vendors" ? "3px solid #2563eb" : "3px solid transparent",
                 padding: "12px 16px",
                 borderRadius: "8px 8px 0 0",
                 fontSize: "14px",
                 fontWeight: activeTab === "vendors" ? 800 : 600,
-                color: activeTab === "vendors" ? "#7c3aed" : "#6c5e7e",
+                color: activeTab === "vendors" ? "#2563eb" : "#64748b",
                 cursor: "pointer",
                 display: "inline-flex",
                 alignItems: "center",
@@ -1427,7 +1463,7 @@ export default function ExpensesPage() {
                 marginBottom: "-2px",
               }}
             >
-              <span>🏪</span> Vendor Credit Accounts ({vendorAccounts.length})
+              <span>🏪</span> Supplier Accounts & Khata ({vendorAccounts.length})
             </button>
 
             <button
@@ -1437,14 +1473,14 @@ export default function ExpensesPage() {
                 setSelectedVendor(null);
               }}
               style={{
-                background: activeTab === "settlement" ? "#ecfdf5" : "transparent",
+                background: activeTab === "settlement" ? "#fff" : "transparent",
                 border: "none",
                 borderBottom: activeTab === "settlement" ? "3px solid #059669" : "3px solid transparent",
                 padding: "12px 16px",
                 borderRadius: "8px 8px 0 0",
                 fontSize: "14px",
                 fontWeight: activeTab === "settlement" ? 800 : 600,
-                color: activeTab === "settlement" ? "#047857" : "#6c5e7e",
+                color: activeTab === "settlement" ? "#059669" : "#64748b",
                 cursor: "pointer",
                 display: "inline-flex",
                 alignItems: "center",
@@ -1452,7 +1488,7 @@ export default function ExpensesPage() {
                 marginBottom: "-2px",
               }}
             >
-              <span>🤝</span> Credit Balance Clearances ({settlements.length})
+              <span>🤝</span> Credit Clearances ({settlements.length})
             </button>
 
             <button
@@ -1464,12 +1500,12 @@ export default function ExpensesPage() {
               style={{
                 background: activeTab === "audit" ? "#fff" : "transparent",
                 border: "none",
-                borderBottom: activeTab === "audit" ? "3px solid #7c3aed" : "3px solid transparent",
+                borderBottom: activeTab === "audit" ? "3px solid #2563eb" : "3px solid transparent",
                 padding: "12px 16px",
                 borderRadius: "8px 8px 0 0",
                 fontSize: "14px",
                 fontWeight: activeTab === "audit" ? 800 : 600,
-                color: activeTab === "audit" ? "#7c3aed" : "#6c5e7e",
+                color: activeTab === "audit" ? "#2563eb" : "#64748b",
                 cursor: "pointer",
                 display: "inline-flex",
                 alignItems: "center",
@@ -1482,7 +1518,7 @@ export default function ExpensesPage() {
           </div>
 
           {/* ======================================================== */}
-          {/* TAB 1: UNIFIED CREDIT & EXPENSE LEDGER */}
+          {/* TAB 1: UNIFIED EXPENSES LEDGER */}
           {/* ======================================================== */}
           {activeTab === "general" && (
             <div>
@@ -1491,27 +1527,28 @@ export default function ExpensesPage() {
                 className="no-print"
                 style={{
                   background: "#ffffff",
-                  border: "1px solid #ebe4f5",
-                  borderRadius: "14px",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "12px",
                   padding: "14px 18px",
-                  boxShadow: "0 2px 8px rgba(124, 58, 237, 0.03)",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
                   marginBottom: "20px",
                   display: "flex",
                   flexDirection: "column",
                   gap: "12px",
                 }}
               >
-                {/* Row 1: Entry Type Filter (All vs Credit Bills vs Clearances) & Sequence */}
+                {/* Row 1: Entry Type Filter */}
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>
-                      Show:
+                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>
+                      Filter By:
                     </span>
                     {(
                       [
                         { id: "all", label: `All Transactions (${unifiedLedgerEntries.length})` },
-                        { id: "bills", label: `🔴 Credit Bills Only (${expenses.length})` },
-                        { id: "clearances", label: `🟢 Credit Clearances Only (${settlements.length})` },
+                        { id: "paid", label: `✓ Direct Paid (${metrics.directPaidCount})` },
+                        { id: "credit", label: `🔴 Credit Purchases (${metrics.creditIncurredCount})` },
+                        { id: "clearances", label: `🟢 Credit Clearances (${settlements.length})` },
                       ] as const
                     ).map((t) => {
                       const active = entryTypeFilter === t.id;
@@ -1523,9 +1560,9 @@ export default function ExpensesPage() {
                           style={{
                             padding: "5px 12px",
                             borderRadius: "20px",
-                            border: active ? "1px solid #7c3aed" : "1px solid #e2d9ec",
-                            background: active ? "#7c3aed" : "#fcfaff",
-                            color: active ? "#ffffff" : "#4c3a60",
+                            border: active ? "1px solid #2563eb" : "1px solid #cbd5e1",
+                            background: active ? "#2563eb" : "#ffffff",
+                            color: active ? "#ffffff" : "#334155",
                             fontSize: "12px",
                             fontWeight: active ? 700 : 500,
                             cursor: "pointer",
@@ -1539,32 +1576,29 @@ export default function ExpensesPage() {
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "12px", color: "#6d5b83", fontWeight: 600 }}>Ledger Sequence:</span>
+                    <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>Sequence:</span>
                     <button
                       type="button"
                       onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
                       style={{
                         padding: "5px 12px",
                         borderRadius: "6px",
-                        border: "1px solid #dcd7e5",
-                        background: "#fcfaff",
+                        border: "1px solid #cbd5e1",
+                        background: "#ffffff",
                         fontSize: "12px",
-                        color: "#1e0836",
+                        color: "#0f172a",
                         fontWeight: 700,
                         cursor: "pointer",
-                        display: "inline-flex",
-                        alignItems: "center",
-                        gap: "4px",
                       }}
                     >
-                      {sortOrder === "desc" ? "Newest First ▾" : "Oldest First (Ascending) ▴"}
+                      {sortOrder === "desc" ? "Newest First ▾" : "Oldest First ▴"}
                     </button>
                   </div>
                 </div>
 
                 {/* Row 2: Period Presets */}
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px" }}>
-                  <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase", marginRight: "4px" }}>
+                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase", marginRight: "4px" }}>
                     Period:
                   </span>
                   {(
@@ -1586,9 +1620,9 @@ export default function ExpensesPage() {
                         style={{
                           padding: "4px 10px",
                           borderRadius: "16px",
-                          border: active ? "1px solid #4c1d95" : "1px solid #e2d9ec",
-                          background: active ? "#4c1d95" : "#fcfaff",
-                          color: active ? "#ffffff" : "#4c3a60",
+                          border: active ? "1px solid #0f172a" : "1px solid #cbd5e1",
+                          background: active ? "#0f172a" : "#ffffff",
+                          color: active ? "#ffffff" : "#475569",
                           fontSize: "11px",
                           fontWeight: active ? 700 : 500,
                           cursor: "pointer",
@@ -1608,20 +1642,20 @@ export default function ExpensesPage() {
                       alignItems: "center",
                       gap: "12px",
                       padding: "10px 14px",
-                      background: "#f8f5fd",
+                      background: "#f8fafc",
                       borderRadius: "8px",
-                      border: "1px dashed #d8cce8",
+                      border: "1px dashed #cbd5e1",
                       flexWrap: "wrap",
                     }}
                   >
-                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#6d28d9" }}>Custom Dates:</span>
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#2563eb" }}>Custom Dates:</span>
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                       <span style={{ fontSize: "12px", color: "#555" }}>From:</span>
                       <input
                         type="date"
                         value={customStartDate}
                         onChange={(e) => setCustomStartDate(e.target.value)}
-                        style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #dcd7e5", fontSize: "12px" }}
+                        style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
                       />
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1630,7 +1664,7 @@ export default function ExpensesPage() {
                         type="date"
                         value={customEndDate}
                         onChange={(e) => setCustomEndDate(e.target.value)}
-                        style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #dcd7e5", fontSize: "12px" }}
+                        style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
                       />
                     </div>
                   </div>
@@ -1640,7 +1674,7 @@ export default function ExpensesPage() {
                 <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
                   <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>Category:</span>
+                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Category:</span>
                       <select
                         value={categoryFilter}
                         onChange={(e) => setCategoryFilter(e.target.value)}
@@ -1648,10 +1682,10 @@ export default function ExpensesPage() {
                           height: "32px",
                           padding: "0 10px",
                           borderRadius: "6px",
-                          border: "1px solid #e2d9ec",
-                          background: "#fcfaff",
+                          border: "1px solid #cbd5e1",
+                          background: "#ffffff",
                           fontSize: "12px",
-                          color: "#1e0836",
+                          color: "#0f172a",
                           outline: "none",
                         }}
                       >
@@ -1665,7 +1699,7 @@ export default function ExpensesPage() {
                     </div>
 
                     <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>Allocation:</span>
+                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Allocation:</span>
                       <select
                         value={allocationFilter}
                         onChange={(e) => setAllocationFilter(e.target.value)}
@@ -1673,10 +1707,10 @@ export default function ExpensesPage() {
                           height: "32px",
                           padding: "0 10px",
                           borderRadius: "6px",
-                          border: "1px solid #e2d9ec",
-                          background: "#fcfaff",
+                          border: "1px solid #cbd5e1",
+                          background: "#ffffff",
                           fontSize: "12px",
-                          color: "#1e0836",
+                          color: "#0f172a",
                           outline: "none",
                         }}
                       >
@@ -1717,23 +1751,27 @@ export default function ExpensesPage() {
 
                   {/* Summary of Active Filtered Entries */}
                   <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                    <div style={{ fontSize: "12px", color: "#6d5b83" }}>
-                      Credit: <strong style={{ color: "#b91c1c" }}>+₹{formatMoney(activeLedgerTotals.totalIncurred)}</strong>
+                    <div style={{ fontSize: "12px", color: "#64748b" }}>
+                      Total Spend: <strong style={{ color: "#0f172a" }}>₹{formatMoney(activeLedgerTotals.totalSpend)}</strong>
                     </div>
-                    <div style={{ fontSize: "12px", color: "#6d5b83" }}>
-                      Cleared: <strong style={{ color: "#047857" }}>-₹{formatMoney(activeLedgerTotals.totalCleared)}</strong>
+                    <div style={{ fontSize: "12px", color: "#64748b" }}>
+                      Credit Taken: <strong style={{ color: "#dc2626" }}>₹{formatMoney(activeLedgerTotals.totalCredit)}</strong>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#64748b" }}>
+                      Credit Cleared: <strong style={{ color: "#059669" }}>₹{formatMoney(activeLedgerTotals.totalCleared)}</strong>
                     </div>
                     <div
                       style={{
                         fontSize: "13px",
                         fontWeight: 800,
-                        color: activeLedgerTotals.netBalance > 0 ? "#b91c1c" : "#059669",
-                        background: activeLedgerTotals.netBalance > 0 ? "#fee2e2" : "#d1fae5",
-                        padding: "4px 10px",
+                        color: activeLedgerTotals.netDue > 0 ? "#dc2626" : "#059669",
+                        background: activeLedgerTotals.netDue > 0 ? "#fef2f2" : "#ecfdf5",
+                        border: activeLedgerTotals.netDue > 0 ? "1px solid #fecaca" : "1px solid #a7f3d0",
+                        padding: "3px 10px",
                         borderRadius: "8px",
                       }}
                     >
-                      Due: ₹{formatMoney(activeLedgerTotals.netBalance)}
+                      Credit Due: ₹{formatMoney(activeLedgerTotals.netDue)}
                     </div>
                   </div>
                 </div>
@@ -1743,41 +1781,40 @@ export default function ExpensesPage() {
               <div
                 style={{
                   background: "#ffffff",
-                  borderRadius: "14px",
-                  border: "1px solid #ebe4f5",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
                   overflow: "hidden",
-                  boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
+                  boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
                 }}
               >
                 {loading ? (
-                  <div style={{ padding: "48px", textAlign: "center", color: "#7a6e8a" }}>
-                    Loading credit & outflows ledger...
+                  <div style={{ padding: "48px", textAlign: "center", color: "#64748b" }}>
+                    Loading expenses and credit ledger...
                   </div>
                 ) : unifiedLedgerEntries.length === 0 ? (
                   <div style={{ padding: "50px 20px", textAlign: "center" }}>
                     <div style={{ fontSize: "36px", marginBottom: "12px" }}>💳</div>
-                    <h3 style={{ margin: "0 0 6px 0", color: "#1e0836" }}>No ledger entries found</h3>
-                    <p style={{ color: "#7a6e8a", fontSize: "14px", margin: "0 0 16px 0" }}>
+                    <h3 style={{ margin: "0 0 6px 0", color: "#0f172a" }}>No expenses found</h3>
+                    <p style={{ color: "#64748b", fontSize: "14px", margin: "0 0 16px 0" }}>
                       {searchQuery || categoryFilter !== "All" || datePreset !== "all"
                         ? "No records match your active search or filters."
-                        : "Start recording credit purchases and bills from your suppliers."}
+                        : "Start recording your direct paid expenses or supplier credit purchases."}
                     </p>
                     {!isOwner && (
                       <button
                         type="button"
                         onClick={() => openAddModal()}
                         style={{
-                          background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+                          background: "#2563eb",
                           color: "#ffffff",
                           border: "none",
                           padding: "8px 18px",
                           borderRadius: "8px",
                           fontWeight: 700,
                           cursor: "pointer",
-                          boxShadow: "0 4px 14px rgba(220, 38, 38, 0.35)",
                         }}
                       >
-                        + Record First Credit Expense
+                        + Record Expense
                       </button>
                     )}
                   </div>
@@ -1796,60 +1833,63 @@ export default function ExpensesPage() {
                       <thead>
                         <tr
                           style={{
-                            background: "linear-gradient(180deg, #fbf9fe 0%, #f4effa 100%)",
-                            borderBottom: "2px solid #ece4f5",
-                            color: "#542b80",
+                            background: "#f8fafc",
+                            borderBottom: "2px solid #e2e8f0",
+                            color: "#334155",
                             fontWeight: 700,
                           }}
                         >
-                          <th style={{ padding: "14px 18px" }}>Date</th>
-                          <th style={{ padding: "14px 18px" }}>Bill / Ref #</th>
-                          <th style={{ padding: "14px 18px" }}>Supplier / Vendor</th>
-                          <th style={{ padding: "14px 18px" }}>Particulars / Item Description</th>
-                          <th style={{ padding: "14px 18px" }}>Status / Type</th>
-                          <th style={{ padding: "14px 18px", textAlign: "right" }}>Credit Incurred (+₹)</th>
-                          <th style={{ padding: "14px 18px", textAlign: "right" }}>Credit Cleared (-₹)</th>
+                          <th style={{ padding: "12px 16px" }}>Date</th>
+                          <th style={{ padding: "12px 16px" }}>Voucher / Bill #</th>
+                          <th style={{ padding: "12px 16px" }}>Payee / Vendor</th>
+                          <th style={{ padding: "12px 16px" }}>Particulars / Description</th>
+                          <th style={{ padding: "12px 16px" }}>Payment Type</th>
+                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Total Amount (₹)</th>
+                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Impact</th>
                           <th
                             style={{
-                              padding: "14px 18px",
+                              padding: "12px 16px",
                               textAlign: "right",
-                              background: "rgba(124, 58, 237, 0.05)",
-                              color: "#6d28d9",
+                              background: "#f1f5f9",
+                              color: "#0f172a",
                             }}
                           >
                             Net Credit Due (₹)
                           </th>
-                          <th className="no-print" style={{ padding: "14px 18px", textAlign: "center" }}>
+                          <th className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>
                             Actions
                           </th>
                         </tr>
                       </thead>
                       <tbody>
                         {unifiedLedgerEntries.map((row) => {
-                          const isBill = row.kind === "bill";
+                          const isCredit = row.kind === "credit_bill";
+                          const isClearance = row.kind === "clearance";
+                          const isPaid = row.kind === "paid_expense";
+
                           return (
                             <tr
                               key={row.id}
                               style={{
-                                borderBottom: "1px solid #f2eff7",
-                                background: isBill ? "#ffffff" : "#f0fdf4",
+                                borderBottom: "1px solid #f1f5f9",
+                                background: isClearance ? "#f0fdf4" : isCredit ? "#fffafb" : "#ffffff",
                                 transition: "background 0.15s ease",
                               }}
                             >
                               {/* Date */}
-                              <td style={{ padding: "14px 18px", fontWeight: 600, color: "#24103f", whiteSpace: "nowrap" }}>
+                              <td style={{ padding: "12px 16px", fontWeight: 600, color: "#0f172a", whiteSpace: "nowrap" }}>
                                 {formatDate(row.date)}
                               </td>
 
                               {/* Bill / Ref # */}
-                              <td style={{ padding: "14px 18px", fontFamily: "monospace", color: "#6b5b7e", fontSize: "12px", whiteSpace: "nowrap" }}>
+                              <td style={{ padding: "12px 16px", fontFamily: "monospace", color: "#64748b", fontSize: "12px", whiteSpace: "nowrap" }}>
                                 <span
                                   style={{
                                     padding: "2px 6px",
                                     borderRadius: "4px",
-                                    border: isBill ? "1px solid #fecaca" : "1px solid #a7f3d0",
-                                    background: isBill ? "#fff5f5" : "#ecfdf5",
-                                    color: isBill ? "#b91c1c" : "#047857",
+                                    border: isClearance ? "1px solid #a7f3d0" : isCredit ? "1px solid #fecaca" : "1px solid #e2e8f0",
+                                    background: isClearance ? "#ecfdf5" : isCredit ? "#fef2f2" : "#f8fafc",
+                                    color: isClearance ? "#047857" : isCredit ? "#dc2626" : "#475569",
                                     fontWeight: 700,
                                   }}
                                 >
@@ -1858,35 +1898,39 @@ export default function ExpensesPage() {
                               </td>
 
                               {/* Vendor / Supplier */}
-                              <td style={{ padding: "14px 18px", color: "#1e0836", fontWeight: 700 }}>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedVendor(row.vendor);
-                                    setActiveTab("vendors");
-                                  }}
-                                  style={{
-                                    border: "none",
-                                    background: "transparent",
-                                    padding: 0,
-                                    color: "#7c3aed",
-                                    fontWeight: 700,
-                                    cursor: "pointer",
-                                    textDecoration: "underline",
-                                    textAlign: "left",
-                                    fontSize: "13px",
-                                  }}
-                                  title="View full vendor statement"
-                                >
-                                  {row.vendor}
-                                </button>
+                              <td style={{ padding: "12px 16px", color: "#0f172a", fontWeight: 700 }}>
+                                {row.vendor !== "Direct / No Vendor" ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedVendor(row.vendor);
+                                      setActiveTab("vendors");
+                                    }}
+                                    style={{
+                                      border: "none",
+                                      background: "transparent",
+                                      padding: 0,
+                                      color: "#2563eb",
+                                      fontWeight: 700,
+                                      cursor: "pointer",
+                                      textDecoration: "underline",
+                                      textAlign: "left",
+                                      fontSize: "13px",
+                                    }}
+                                    title="View vendor account statement"
+                                  >
+                                    {row.vendor}
+                                  </button>
+                                ) : (
+                                  <span style={{ color: "#64748b", fontWeight: 500 }}>{row.vendor}</span>
+                                )}
                               </td>
 
                               {/* Particulars */}
-                              <td style={{ padding: "14px 18px" }}>
-                                <div style={{ fontWeight: 600, color: "#1e0836" }}>{row.title}</div>
+                              <td style={{ padding: "12px 16px" }}>
+                                <div style={{ fontWeight: 600, color: "#0f172a" }}>{row.title}</div>
                                 {row.note && (
-                                  <div style={{ fontSize: "11px", color: "#7a6e8a", marginTop: "2px", maxWidth: "260px" }}>
+                                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px", maxWidth: "260px" }}>
                                     {row.note}
                                   </div>
                                 )}
@@ -1896,10 +1940,10 @@ export default function ExpensesPage() {
                                       href={`/events/${row.eventId}`}
                                       style={{
                                         fontSize: "11px",
-                                        color: "#4f46e5",
+                                        color: "#2563eb",
                                         fontWeight: 700,
                                         textDecoration: "none",
-                                        background: "#eef2ff",
+                                        background: "#eff6ff",
                                         padding: "2px 6px",
                                         borderRadius: "4px",
                                         display: "inline-block",
@@ -1912,8 +1956,8 @@ export default function ExpensesPage() {
                               </td>
 
                               {/* Status / Type */}
-                              <td style={{ padding: "14px 18px", whiteSpace: "nowrap" }}>
-                                {isBill ? (
+                              <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                                {isCredit && (
                                   <span
                                     style={{
                                       display: "inline-block",
@@ -1921,14 +1965,15 @@ export default function ExpensesPage() {
                                       fontWeight: 700,
                                       padding: "3px 8px",
                                       borderRadius: "4px",
-                                      background: "#fee2e2",
-                                      color: "#991b1b",
+                                      background: "#fef2f2",
+                                      color: "#dc2626",
                                       border: "1px solid #fecaca",
                                     }}
                                   >
-                                    🔴 Credit Bill (Payable)
+                                    🔴 Credit (On Account)
                                   </span>
-                                ) : (
+                                )}
+                                {isPaid && (
                                   <span
                                     style={{
                                       display: "inline-block",
@@ -1936,8 +1981,24 @@ export default function ExpensesPage() {
                                       fontWeight: 700,
                                       padding: "3px 8px",
                                       borderRadius: "4px",
-                                      background: "#d1fae5",
-                                      color: "#065f46",
+                                      background: "#f1f5f9",
+                                      color: "#0369a1",
+                                      border: "1px solid #e2e8f0",
+                                    }}
+                                  >
+                                    ✓ Paid ({row.paymentMode})
+                                  </span>
+                                )}
+                                {isClearance && (
+                                  <span
+                                    style={{
+                                      display: "inline-block",
+                                      fontSize: "11px",
+                                      fontWeight: 700,
+                                      padding: "3px 8px",
+                                      borderRadius: "4px",
+                                      background: "#ecfdf5",
+                                      color: "#059669",
                                       border: "1px solid #a7f3d0",
                                     }}
                                   >
@@ -1946,43 +2007,48 @@ export default function ExpensesPage() {
                                 )}
                               </td>
 
-                              {/* Credit Incurred */}
+                              {/* Total Amount */}
                               <td
                                 style={{
-                                  padding: "14px 18px",
+                                  padding: "12px 16px",
                                   textAlign: "right",
                                   fontWeight: 800,
-                                  color: row.incurredAmount > 0 ? "#b91c1c" : "#9ca3af",
-                                  fontSize: "14px",
+                                  color: "#0f172a",
+                                  fontSize: "13px",
                                   whiteSpace: "nowrap",
                                 }}
                               >
-                                {row.incurredAmount > 0 ? `+ ₹${formatMoney(row.incurredAmount)}` : "-"}
+                                ₹{formatMoney(row.totalAmount)}
                               </td>
 
-                              {/* Credit Cleared */}
+                              {/* Credit Impact */}
                               <td
                                 style={{
-                                  padding: "14px 18px",
+                                  padding: "12px 16px",
                                   textAlign: "right",
-                                  fontWeight: 800,
-                                  color: row.clearedAmount > 0 ? "#047857" : "#9ca3af",
-                                  fontSize: "14px",
+                                  fontWeight: 700,
+                                  fontSize: "13px",
                                   whiteSpace: "nowrap",
                                 }}
                               >
-                                {row.clearedAmount > 0 ? `- ₹${formatMoney(row.clearedAmount)}` : "-"}
+                                {isCredit ? (
+                                  <span style={{ color: "#dc2626" }}>+₹{formatMoney(row.creditIncurred)}</span>
+                                ) : isClearance ? (
+                                  <span style={{ color: "#059669" }}>-₹{formatMoney(row.creditCleared)}</span>
+                                ) : (
+                                  <span style={{ color: "#94a3b8", fontSize: "12px" }}>Settled (₹0 Due)</span>
+                                )}
                               </td>
 
-                              {/* Net Credit Due (Running Balance) */}
+                              {/* Net Credit Due */}
                               <td
                                 style={{
-                                  padding: "14px 18px",
+                                  padding: "12px 16px",
                                   textAlign: "right",
-                                  fontWeight: 900,
-                                  color: row.runningCreditBalance > 0 ? "#b91c1c" : "#047857",
-                                  fontSize: "14px",
-                                  background: "rgba(124, 58, 237, 0.03)",
+                                  fontWeight: 800,
+                                  color: row.runningCreditBalance > 0 ? "#dc2626" : "#059669",
+                                  fontSize: "13px",
+                                  background: "#f8fafc",
                                   whiteSpace: "nowrap",
                                 }}
                               >
@@ -1990,18 +2056,18 @@ export default function ExpensesPage() {
                               </td>
 
                               {/* Actions */}
-                              <td className="no-print" style={{ padding: "14px 18px", textAlign: "center", whiteSpace: "nowrap" }}>
+                              <td className="no-print" style={{ padding: "12px 16px", textAlign: "center", whiteSpace: "nowrap" }}>
                                 <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
-                                  {!isOwner && isBill && row.rawExpense && (
+                                  {!isOwner && row.rawExpense && (
                                     <>
-                                      {(() => {
+                                      {isCredit && (() => {
                                         const vAcc = vendorAccounts.find((v) => v.name.toLowerCase() === row.vendor.toLowerCase());
-                                        const isDue = (vAcc ? vAcc.pendingBalance > 0 : row.incurredAmount > 0);
+                                        const isDue = (vAcc ? vAcc.pendingBalance > 0 : row.creditIncurred > 0);
                                         return (
                                           <button
                                             type="button"
-                                            onClick={() => openClearSettlementModal(row.vendor, row.incurredAmount)}
-                                            title={isDue ? `Clear outstanding credit balance for ${row.vendor}` : `${row.vendor} account is fully settled`}
+                                            onClick={() => openClearSettlementModal(row.vendor, row.creditIncurred)}
+                                            title={isDue ? `Clear credit balance for ${row.vendor}` : `${row.vendor} account is fully settled`}
                                             style={{
                                               padding: "4px 8px",
                                               borderRadius: "4px",
@@ -2023,8 +2089,8 @@ export default function ExpensesPage() {
                                         style={{
                                           padding: "4px 8px",
                                           borderRadius: "4px",
-                                          background: "#f0edf5",
-                                          color: "#24103f",
+                                          background: "#f1f5f9",
+                                          color: "#334155",
                                           border: "none",
                                           fontSize: "12px",
                                           fontWeight: 600,
@@ -2039,8 +2105,8 @@ export default function ExpensesPage() {
                                         style={{
                                           padding: "4px 8px",
                                           borderRadius: "4px",
-                                          background: "#fee2e2",
-                                          color: "#b91c1c",
+                                          background: "#fef2f2",
+                                          color: "#dc2626",
                                           border: "none",
                                           fontSize: "12px",
                                           fontWeight: 600,
@@ -2052,16 +2118,16 @@ export default function ExpensesPage() {
                                     </>
                                   )}
 
-                                  {!isOwner && !isBill && (
+                                  {!isOwner && isClearance && (
                                     <button
                                       type="button"
-                                      onClick={() => handleDeleteSettlement(row.rawId, row.vendor, row.clearedAmount)}
+                                      onClick={() => handleDeleteSettlement(row.rawId, row.vendor, row.creditCleared)}
                                       title="Void this clearance and restore credit balance"
                                       style={{
                                         padding: "4px 8px",
                                         borderRadius: "4px",
-                                        background: "#fee2e2",
-                                        color: "#b91c1c",
+                                        background: "#fef2f2",
+                                        color: "#dc2626",
                                         border: "none",
                                         fontSize: "11px",
                                         fontWeight: 700,
@@ -2082,32 +2148,34 @@ export default function ExpensesPage() {
                       <tfoot>
                         <tr
                           style={{
-                            background: "#fdfcfe",
-                            borderTop: "2px solid #ddd6fe",
+                            background: "#f8fafc",
+                            borderTop: "2px solid #cbd5e1",
                             fontWeight: 800,
-                            color: "#1e0836",
+                            color: "#0f172a",
                           }}
                         >
-                          <td colSpan={5} style={{ padding: "14px 18px", fontSize: "13px" }}>
+                          <td colSpan={5} style={{ padding: "12px 16px", fontSize: "13px" }}>
                             Audited Summary ({activeLedgerTotals.count} Transactions)
                           </td>
-                          <td style={{ padding: "14px 18px", textAlign: "right", fontSize: "15px", color: "#b91c1c" }}>
-                            + ₹{formatMoney(activeLedgerTotals.totalIncurred)}
+                          <td style={{ padding: "12px 16px", textAlign: "right", fontSize: "14px", color: "#0f172a" }}>
+                            ₹{formatMoney(activeLedgerTotals.totalSpend)}
                           </td>
-                          <td style={{ padding: "14px 18px", textAlign: "right", fontSize: "15px", color: "#047857" }}>
-                            - ₹{formatMoney(activeLedgerTotals.totalCleared)}
+                          <td style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px" }}>
+                            <span style={{ color: "#dc2626" }}>+₹{formatMoney(activeLedgerTotals.totalCredit)}</span>
+                            {" / "}
+                            <span style={{ color: "#059669" }}>-₹{formatMoney(activeLedgerTotals.totalCleared)}</span>
                           </td>
                           <td
                             style={{
-                              padding: "14px 18px",
+                              padding: "12px 16px",
                               textAlign: "right",
-                              fontSize: "16px",
+                              fontSize: "15px",
                               fontWeight: 900,
-                              color: activeLedgerTotals.netBalance > 0 ? "#b91c1c" : "#059669",
-                              background: "rgba(124, 58, 237, 0.08)",
+                              color: activeLedgerTotals.netDue > 0 ? "#dc2626" : "#059669",
+                              background: "#f1f5f9",
                             }}
                           >
-                            ₹{formatMoney(activeLedgerTotals.netBalance)}
+                            ₹{formatMoney(activeLedgerTotals.netDue)}
                           </td>
                           <td className="no-print" />
                         </tr>
@@ -2120,22 +2188,21 @@ export default function ExpensesPage() {
           )}
 
           {/* ======================================================== */}
-          {/* TAB 2: VENDOR CREDIT ACCOUNTS (ACCOUNTS PAYABLE) */}
+          {/* TAB 2: VENDOR CREDIT ACCOUNTS (KHATA / SUPPLIER LEDGER) */}
           {/* ======================================================== */}
           {activeTab === "vendors" && (
             <div>
-              {/* If an individual vendor account statement is selected */}
               {selectedVendorData ? (
+                /* Individual Vendor Account Statement */
                 <div>
-                  {/* Vendor Account Header */}
                   <div
                     style={{
                       background: "#ffffff",
-                      borderRadius: "14px",
-                      border: "1px solid #ebe4f5",
+                      borderRadius: "12px",
+                      border: "1px solid #e2e8f0",
                       padding: "20px 24px",
                       marginBottom: "20px",
-                      boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.04)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
@@ -2151,24 +2218,24 @@ export default function ExpensesPage() {
                           style={{
                             border: "none",
                             background: "transparent",
-                            color: "#7c3aed",
+                            color: "#2563eb",
                             fontWeight: 700,
                             fontSize: "13px",
                             cursor: "pointer",
                             padding: 0,
                           }}
                         >
-                          ← Back to All Vendor Accounts
+                          ← Back to All Accounts
                         </button>
                       </div>
                       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                         <span style={{ fontSize: "24px" }}>🏪</span>
                         <div>
-                          <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 800, color: "#1e0836" }}>
+                          <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 800, color: "#0f172a" }}>
                             {selectedVendorData.name}
                           </h2>
-                          <span style={{ fontSize: "12px", color: "#8a7b9b" }}>
-                            Vendor Credit Account Statement • {selectedVendorData.billCount} bills • {selectedVendorData.clearanceCount} clearances
+                          <span style={{ fontSize: "12px", color: "#64748b" }}>
+                            {selectedVendorData.billCount} total purchases ({selectedVendorData.creditBillCount} credit bills, {selectedVendorData.directPaidCount} direct paid) • {selectedVendorData.clearanceCount} clearances
                           </span>
                         </div>
                       </div>
@@ -2176,34 +2243,43 @@ export default function ExpensesPage() {
 
                     <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
                       <div style={{ textAlign: "right" }}>
-                        <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>
-                          Total Credit Taken
+                        <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>
+                          Total Purchases
                         </span>
-                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#1e0836" }}>
-                          ₹{formatMoney(selectedVendorData.totalIncurred)}
+                        <div style={{ fontSize: "18px", fontWeight: 800, color: "#0f172a" }}>
+                          ₹{formatMoney(selectedVendorData.totalBilled)}
                         </div>
                       </div>
 
                       <div style={{ textAlign: "right" }}>
-                        <span style={{ fontSize: "11px", color: "#047857", fontWeight: 700, textTransform: "uppercase" }}>
-                          Total Cleared
+                        <span style={{ fontSize: "11px", color: "#dc2626", fontWeight: 700, textTransform: "uppercase" }}>
+                          Credit Taken
                         </span>
-                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#047857" }}>
+                        <div style={{ fontSize: "18px", fontWeight: 800, color: "#dc2626" }}>
+                          ₹{formatMoney(selectedVendorData.totalCredit)}
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: "right" }}>
+                        <span style={{ fontSize: "11px", color: "#059669", fontWeight: 700, textTransform: "uppercase" }}>
+                          Credit Cleared
+                        </span>
+                        <div style={{ fontSize: "18px", fontWeight: 800, color: "#059669" }}>
                           ₹{formatMoney(selectedVendorData.totalCleared)}
                         </div>
                       </div>
 
                       <div style={{ textAlign: "right" }}>
-                        <span style={{ fontSize: "11px", color: "#b91c1c", fontWeight: 800, textTransform: "uppercase" }}>
-                          Current Credit Due
+                        <span style={{ fontSize: "11px", color: selectedVendorData.pendingBalance > 0 ? "#dc2626" : "#059669", fontWeight: 800, textTransform: "uppercase" }}>
+                          Outstanding Due
                         </span>
-                        <div style={{ fontSize: "24px", fontWeight: 900, color: selectedVendorData.pendingBalance > 0 ? "#b91c1c" : "#059669" }}>
+                        <div style={{ fontSize: "24px", fontWeight: 900, color: selectedVendorData.pendingBalance > 0 ? "#dc2626" : "#059669" }}>
                           ₹{formatMoney(selectedVendorData.pendingBalance)}
                         </div>
                       </div>
 
                       <div className="no-print" style={{ display: "flex", gap: "8px" }}>
-                        {!isOwner && (
+                        {!isOwner && selectedVendorData.pendingBalance > 0 && (
                           <button
                             type="button"
                             onClick={() => openClearSettlementModal(selectedVendorData.name, selectedVendorData.pendingBalance)}
@@ -2211,34 +2287,33 @@ export default function ExpensesPage() {
                               padding: "8px 14px",
                               borderRadius: "8px",
                               border: "none",
-                              background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                              background: "#059669",
                               color: "#fff",
                               fontWeight: 700,
                               fontSize: "12px",
                               cursor: "pointer",
-                              boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
                             }}
                           >
-                            🤝 Clear Credit Balance
+                            🤝 Clear Due Balance
                           </button>
                         )}
 
                         {!isOwner && (
                           <button
                             type="button"
-                            onClick={() => openAddModal(undefined, selectedVendorData.name)}
+                            onClick={() => openAddModal(undefined, selectedVendorData.name, "credit")}
                             style={{
                               padding: "8px 14px",
                               borderRadius: "8px",
                               border: "none",
-                              background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+                              background: "#dc2626",
                               color: "#fff",
                               fontWeight: 700,
                               fontSize: "12px",
                               cursor: "pointer",
                             }}
                           >
-                            + Add Bill
+                            + Add Credit Bill
                           </button>
                         )}
 
@@ -2248,9 +2323,9 @@ export default function ExpensesPage() {
                           style={{
                             padding: "8px 14px",
                             borderRadius: "8px",
-                            border: "1px solid #ddd6fe",
+                            border: "1px solid #cbd5e1",
                             background: "#fff",
-                            color: "#6d28d9",
+                            color: "#475569",
                             fontWeight: 700,
                             fontSize: "12px",
                             cursor: "pointer",
@@ -2262,101 +2337,100 @@ export default function ExpensesPage() {
                     </div>
                   </div>
 
-                  {/* Vendor Statement Ledger Table */}
+                  {/* Statement Items Table */}
                   <div
                     style={{
                       background: "#ffffff",
-                      borderRadius: "14px",
-                      border: "1px solid #ebe4f5",
+                      borderRadius: "12px",
+                      border: "1px solid #e2e8f0",
                       overflow: "hidden",
-                      boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
                     }}
                   >
                     <div style={{ overflowX: "auto" }}>
                       <table className="ledger-table" style={{ width: "100%", minWidth: "850px", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
                         <thead>
-                          <tr style={{ background: "linear-gradient(180deg, #fbf9fe 0%, #f4effa 100%)", borderBottom: "2px solid #ece4f5", color: "#542b80", fontWeight: 700 }}>
-                            <th style={{ padding: "14px 18px" }}>Date</th>
-                            <th style={{ padding: "14px 18px" }}>Ref / Bill #</th>
-                            <th style={{ padding: "14px 18px" }}>Particulars</th>
-                            <th style={{ padding: "14px 18px" }}>Transaction Kind</th>
-                            <th style={{ padding: "14px 18px", textAlign: "right" }}>Bill (+₹)</th>
-                            <th style={{ padding: "14px 18px", textAlign: "right" }}>Cleared (-₹)</th>
-                            <th style={{ padding: "14px 18px", textAlign: "right", background: "rgba(124, 58, 237, 0.05)", color: "#6d28d9" }}>
-                              Balance Due (₹)
+                          <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0", color: "#334155", fontWeight: 700 }}>
+                            <th style={{ padding: "12px 16px" }}>Date</th>
+                            <th style={{ padding: "12px 16px" }}>Ref / Bill #</th>
+                            <th style={{ padding: "12px 16px" }}>Particulars</th>
+                            <th style={{ padding: "12px 16px" }}>Transaction Type</th>
+                            <th style={{ padding: "12px 16px", textAlign: "right" }}>Bill Amount (₹)</th>
+                            <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Cleared (-₹)</th>
+                            <th style={{ padding: "12px 16px", textAlign: "right", background: "#f1f5f9", color: "#0f172a" }}>
+                              Running Due (₹)
                             </th>
-                            <th className="no-print" style={{ padding: "14px 18px", textAlign: "center" }}>Actions</th>
+                            <th className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {selectedVendorData.statementItems.map((entry) => (
-                            <tr key={entry.id} style={{ borderBottom: "1px solid #f2eff7", background: entry.kind === "bill" ? "#ffffff" : "#f0fdf4" }}>
-                              <td style={{ padding: "14px 18px", fontWeight: 600, color: "#24103f", whiteSpace: "nowrap" }}>
-                                {formatDate(entry.date)}
-                              </td>
-                              <td style={{ padding: "14px 18px", fontFamily: "monospace", color: "#6b5b7e" }}>
-                                {entry.refNumber}
-                              </td>
-                              <td style={{ padding: "14px 18px" }}>
-                                <div style={{ fontWeight: 700, color: "#1e0836" }}>{entry.title}</div>
-                                {entry.note && <div style={{ fontSize: "11px", color: "#7a6e8a", marginTop: "2px" }}>{entry.note}</div>}
-                              </td>
-                              <td style={{ padding: "14px 18px" }}>
-                                {entry.kind === "bill" ? (
-                                  <span style={{ padding: "2px 6px", borderRadius: "4px", background: "#fee2e2", color: "#991b1b", fontSize: "11px", fontWeight: 700 }}>
-                                    🔴 Credit Bill
-                                  </span>
-                                ) : (
-                                  <span style={{ padding: "2px 6px", borderRadius: "4px", background: "#d1fae5", color: "#065f46", fontSize: "11px", fontWeight: 700 }}>
-                                    🟢 Cleared ({entry.paymentMode})
-                                  </span>
-                                )}
-                              </td>
-                              <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 800, color: entry.incurred > 0 ? "#b91c1c" : "#9ca3af" }}>
-                                {entry.incurred > 0 ? `+ ₹${formatMoney(entry.incurred)}` : "-"}
-                              </td>
-                              <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 800, color: entry.cleared > 0 ? "#047857" : "#9ca3af" }}>
-                                {entry.cleared > 0 ? `- ₹${formatMoney(entry.cleared)}` : "-"}
-                              </td>
-                              <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 900, color: entry.runningCreditBalance > 0 ? "#b91c1c" : "#047857", background: "rgba(124, 58, 237, 0.03)" }}>
-                                ₹{formatMoney(entry.runningCreditBalance)}
-                              </td>
-                              <td className="no-print" style={{ padding: "14px 18px", textAlign: "center" }}>
-                                {!isOwner && entry.kind === "bill" && entry.rawExpense && (
-                                  <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                          {selectedVendorData.statementItems.map((entry) => {
+                            const isCredit = entry.kind === "credit_bill";
+                            const isClearance = entry.kind === "clearance";
+
+                            return (
+                              <tr key={entry.id} style={{ borderBottom: "1px solid #f1f5f9", background: isClearance ? "#f0fdf4" : isCredit ? "#fffafb" : "#ffffff" }}>
+                                <td style={{ padding: "12px 16px", fontWeight: 600, color: "#0f172a", whiteSpace: "nowrap" }}>
+                                  {formatDate(entry.date)}
+                                </td>
+                                <td style={{ padding: "12px 16px", fontFamily: "monospace", color: "#64748b" }}>
+                                  {entry.refNumber}
+                                </td>
+                                <td style={{ padding: "12px 16px" }}>
+                                  <div style={{ fontWeight: 700, color: "#0f172a" }}>{entry.title}</div>
+                                  {entry.note && <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px" }}>{entry.note}</div>}
+                                </td>
+                                <td style={{ padding: "12px 16px" }}>
+                                  {isCredit ? (
+                                    <span style={{ padding: "2px 6px", borderRadius: "4px", background: "#fef2f2", color: "#dc2626", fontSize: "11px", fontWeight: 700 }}>
+                                      🔴 Credit (On Account)
+                                    </span>
+                                  ) : isClearance ? (
+                                    <span style={{ padding: "2px 6px", borderRadius: "4px", background: "#ecfdf5", color: "#059669", fontSize: "11px", fontWeight: 700 }}>
+                                      🟢 Cleared ({entry.paymentMode})
+                                    </span>
+                                  ) : (
+                                    <span style={{ padding: "2px 6px", borderRadius: "4px", background: "#f1f5f9", color: "#0369a1", fontSize: "11px", fontWeight: 700 }}>
+                                      ✓ Paid ({entry.paymentMode})
+                                    </span>
+                                  )}
+                                </td>
+                                <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, color: isCredit ? "#dc2626" : "#0f172a" }}>
+                                  {entry.totalAmount > 0 ? `₹${formatMoney(entry.totalAmount)}` : "-"}
+                                </td>
+                                <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, color: entry.creditCleared > 0 ? "#059669" : "#94a3b8" }}>
+                                  {entry.creditCleared > 0 ? `- ₹${formatMoney(entry.creditCleared)}` : "-"}
+                                </td>
+                                <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 900, color: entry.runningCreditBalance > 0 ? "#dc2626" : "#059669", background: "#f8fafc" }}>
+                                  ₹{formatMoney(entry.runningCreditBalance)}
+                                </td>
+                                <td className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>
+                                  {!isOwner && isCredit && entry.rawExpense && (
                                     <button
                                       type="button"
-                                      onClick={() => openClearSettlementModal(selectedVendorData.name, entry.incurred)}
+                                      onClick={() => openClearSettlementModal(selectedVendorData.name, entry.totalAmount)}
                                       style={{ padding: "4px 8px", borderRadius: "4px", background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
                                     >
-                                      Clear
+                                      Clear 🤝
                                     </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => openEditModal(entry.rawExpense!)}
-                                      style={{ padding: "4px 8px", borderRadius: "4px", background: "#f0edf5", color: "#24103f", border: "none", fontSize: "12px", cursor: "pointer" }}
-                                    >
-                                      Edit
-                                    </button>
-                                  </div>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                         <tfoot>
-                          <tr style={{ background: "#fdfcfe", borderTop: "2px solid #ddd6fe", fontWeight: 800, color: "#1e0836" }}>
-                            <td colSpan={4} style={{ padding: "14px 18px" }}>
-                              Total Taken: ₹{formatMoney(selectedVendorData.totalIncurred)} • Total Cleared: ₹{formatMoney(selectedVendorData.totalCleared)}
+                          <tr style={{ background: "#f8fafc", borderTop: "2px solid #cbd5e1", fontWeight: 800, color: "#0f172a" }}>
+                            <td colSpan={4} style={{ padding: "12px 16px" }}>
+                              Total Purchased: ₹{formatMoney(selectedVendorData.totalBilled)} • Credit Taken: ₹{formatMoney(selectedVendorData.totalCredit)} • Cleared: ₹{formatMoney(selectedVendorData.totalCleared)}
                             </td>
-                            <td style={{ padding: "14px 18px", textAlign: "right", color: "#b91c1c" }}>
-                              + ₹{formatMoney(selectedVendorData.totalIncurred)}
+                            <td style={{ padding: "12px 16px", textAlign: "right", color: "#dc2626" }}>
+                              Credit: ₹{formatMoney(selectedVendorData.totalCredit)}
                             </td>
-                            <td style={{ padding: "14px 18px", textAlign: "right", color: "#047857" }}>
+                            <td style={{ padding: "12px 16px", textAlign: "right", color: "#059669" }}>
                               - ₹{formatMoney(selectedVendorData.totalCleared)}
                             </td>
-                            <td style={{ padding: "14px 18px", textAlign: "right", color: selectedVendorData.pendingBalance > 0 ? "#b91c1c" : "#059669", fontSize: "15px", background: "rgba(124, 58, 237, 0.08)" }}>
-                              ₹{formatMoney(selectedVendorData.pendingBalance)}
+                            <td style={{ padding: "12px 16px", textAlign: "right", color: selectedVendorData.pendingBalance > 0 ? "#dc2626" : "#059669", fontSize: "15px", background: "#f1f5f9" }}>
+                              Due: ₹{formatMoney(selectedVendorData.pendingBalance)}
                             </td>
                             <td className="no-print" />
                           </tr>
@@ -2366,17 +2440,16 @@ export default function ExpensesPage() {
                   </div>
                 </div>
               ) : (
-                /* All Vendor Accounts Overview Grid & Table */
+                /* All Vendor Accounts Overview Grid */
                 <div>
                   {/* Search and Status Filter */}
                   <div
                     style={{
                       background: "#ffffff",
-                      borderRadius: "14px",
-                      border: "1px solid #ebe4f5",
+                      borderRadius: "12px",
+                      border: "1px solid #e2e8f0",
                       padding: "14px 18px",
                       marginBottom: "20px",
-                      boxShadow: "0 2px 8px rgba(124, 58, 237, 0.03)",
                       display: "flex",
                       alignItems: "center",
                       justifyContent: "space-between",
@@ -2386,8 +2459,8 @@ export default function ExpensesPage() {
                   >
                     <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>
-                          Account Status:
+                        <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>
+                          Status:
                         </span>
                         <select
                           value={vendorStatusFilter}
@@ -2396,29 +2469,29 @@ export default function ExpensesPage() {
                             height: "34px",
                             padding: "0 10px",
                             borderRadius: "8px",
-                            border: "1px solid #dcd7e5",
-                            background: "#fcfaff",
+                            border: "1px solid #cbd5e1",
+                            background: "#ffffff",
                             fontSize: "12px",
-                            color: "#1e0836",
+                            color: "#0f172a",
                             fontWeight: 600,
                           }}
                         >
-                          <option value="all">All Suppliers ({vendorAccounts.length})</option>
-                          <option value="due">Pending Credit Due Only ({pendingVendorsCount})</option>
-                          <option value="settled">Fully Cleared Only ({vendorAccounts.length - pendingVendorsCount})</option>
+                          <option value="all">All Accounts ({vendorAccounts.length})</option>
+                          <option value="due">Credit Due Only ({pendingVendorsCount})</option>
+                          <option value="settled">Fully Settled Only ({vendorAccounts.length - pendingVendorsCount})</option>
                         </select>
                       </div>
 
                       <input
                         type="text"
-                        placeholder="Search supplier / vendor..."
+                        placeholder="Search supplier..."
                         value={vendorSearch}
                         onChange={(e) => setVendorSearch(e.target.value)}
                         style={{
                           height: "34px",
                           padding: "0 12px",
                           borderRadius: "8px",
-                          border: "1px solid #dcd7e5",
+                          border: "1px solid #cbd5e1",
                           fontSize: "12px",
                           width: "220px",
                         }}
@@ -2433,7 +2506,7 @@ export default function ExpensesPage() {
                           display: "inline-flex",
                           alignItems: "center",
                           gap: "6px",
-                          background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                          background: "#059669",
                           color: "#ffffff",
                           border: "none",
                           borderRadius: "8px",
@@ -2441,10 +2514,9 @@ export default function ExpensesPage() {
                           fontWeight: 700,
                           fontSize: "12px",
                           cursor: "pointer",
-                          boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
                         }}
                       >
-                        <span>🤝</span> Clear Credit Balance
+                        <span>🤝</span> Clear Supplier Credit
                       </button>
                     )}
                   </div>
@@ -2454,7 +2526,7 @@ export default function ExpensesPage() {
                     style={{
                       display: "grid",
                       gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-                      gap: "18px",
+                      gap: "16px",
                       marginBottom: "24px",
                     }}
                   >
@@ -2466,10 +2538,10 @@ export default function ExpensesPage() {
                           key={v.name}
                           style={{
                             background: "#ffffff",
-                            borderRadius: "14px",
-                            border: isDue ? "1px solid #fecaca" : "1px solid #ebe4f5",
-                            padding: "20px",
-                            boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
+                            borderRadius: "12px",
+                            border: isDue ? "1px solid #fecaca" : "1px solid #e2e8f0",
+                            padding: "18px 20px",
+                            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
                             display: "flex",
                             flexDirection: "column",
                             justifyContent: "space-between",
@@ -2483,9 +2555,9 @@ export default function ExpensesPage() {
                                   style={{
                                     width: "36px",
                                     height: "36px",
-                                    borderRadius: "10px",
-                                    background: isDue ? "#fee2e2" : "#ecfdf5",
-                                    color: isDue ? "#dc2626" : "#059669",
+                                    borderRadius: "8px",
+                                    background: isDue ? "#fef2f2" : "#f1f5f9",
+                                    color: isDue ? "#dc2626" : "#0369a1",
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
@@ -2496,54 +2568,56 @@ export default function ExpensesPage() {
                                   {v.name.charAt(0).toUpperCase()}
                                 </div>
                                 <div>
-                                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#1e0836" }}>
+                                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#0f172a" }}>
                                     {v.name}
                                   </h3>
-                                  <span style={{ fontSize: "11px", color: "#7a6e8a" }}>
-                                    {v.billCount} bills logged
+                                  <span style={{ fontSize: "11px", color: "#64748b" }}>
+                                    {v.billCount} purchases ({v.creditBillCount} on credit)
                                   </span>
                                 </div>
                               </div>
 
                               <span
                                 style={{
-                                  fontSize: "10px",
+                                  fontSize: "11px",
                                   fontWeight: 800,
                                   padding: "3px 8px",
                                   borderRadius: "10px",
-                                  background: isDue ? "#fee2e2" : "#d1fae5",
-                                  color: isDue ? "#b91c1c" : "#065f46",
-                                  border: isDue ? "1px solid #fca5a5" : "1px solid #a7f3d0",
+                                  background: isDue ? "#fef2f2" : "#ecfdf5",
+                                  color: isDue ? "#dc2626" : "#059669",
+                                  border: isDue ? "1px solid #fecaca" : "1px solid #a7f3d0",
                                 }}
                               >
-                                {isDue ? `₹${formatMoney(v.pendingBalance)} Due` : "✓ All Cleared"}
+                                {isDue ? `₹${formatMoney(v.pendingBalance)} Due` : "✓ Settled"}
                               </span>
                             </div>
 
                             <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                              <span style={{ fontSize: "12px", color: "#6d5b83" }}>Total Credit Taken:</span>
-                              <span style={{ fontSize: "15px", fontWeight: 700, color: "#1e0836" }}>
-                                ₹{formatMoney(v.totalIncurred)}
+                              <span style={{ fontSize: "12px", color: "#64748b" }}>Total Purchases:</span>
+                              <span style={{ fontSize: "14px", fontWeight: 700, color: "#0f172a" }}>
+                                ₹{formatMoney(v.totalBilled)}
                               </span>
                             </div>
 
                             <div style={{ marginTop: "4px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                              <span style={{ fontSize: "12px", color: "#047857" }}>Credit Cleared:</span>
-                              <span style={{ fontSize: "14px", fontWeight: 700, color: "#047857" }}>
+                              <span style={{ fontSize: "12px", color: "#dc2626" }}>Credit Taken:</span>
+                              <span style={{ fontSize: "13px", fontWeight: 700, color: "#dc2626" }}>
+                                ₹{formatMoney(v.totalCredit)}
+                              </span>
+                            </div>
+
+                            <div style={{ marginTop: "4px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                              <span style={{ fontSize: "12px", color: "#059669" }}>Credit Cleared:</span>
+                              <span style={{ fontSize: "13px", fontWeight: 700, color: "#059669" }}>
                                 ₹{formatMoney(v.totalCleared)}
                               </span>
                             </div>
 
-                            <div style={{ marginTop: "4px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                              <span style={{ fontSize: "12px", color: "#b91c1c", fontWeight: 700 }}>Outstanding Due:</span>
-                              <span style={{ fontSize: "16px", fontWeight: 900, color: isDue ? "#b91c1c" : "#059669" }}>
+                            <div style={{ marginTop: "6px", paddingTop: "6px", borderTop: "1px dashed #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                              <span style={{ fontSize: "12px", color: isDue ? "#dc2626" : "#059669", fontWeight: 700 }}>Outstanding Due:</span>
+                              <span style={{ fontSize: "16px", fontWeight: 900, color: isDue ? "#dc2626" : "#059669" }}>
                                 ₹{formatMoney(v.pendingBalance)}
                               </span>
-                            </div>
-
-                            <div style={{ marginTop: "8px", fontSize: "11px", color: "#8a7b9b", display: "flex", justifyContent: "space-between" }}>
-                              <span>Supply Category:</span>
-                              <span style={{ fontWeight: 600, color: "#4c1d95" }}>{topCat}</span>
                             </div>
                           </div>
 
@@ -2557,16 +2631,11 @@ export default function ExpensesPage() {
                                   padding: "8px 12px",
                                   borderRadius: "8px",
                                   border: "none",
-                                  background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                                  background: "#059669",
                                   color: "#ffffff",
                                   fontWeight: 700,
                                   fontSize: "12px",
                                   cursor: "pointer",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  gap: "4px",
-                                  boxShadow: "0 2px 6px rgba(5, 150, 105, 0.3)",
                                 }}
                               >
                                 🤝 Clear Balance
@@ -2580,16 +2649,12 @@ export default function ExpensesPage() {
                                 flex: 1,
                                 padding: "8px 12px",
                                 borderRadius: "8px",
-                                border: "1px solid #ddd6fe",
-                                background: "#fcfaff",
-                                color: "#6d28d9",
+                                border: "1px solid #cbd5e1",
+                                background: "#ffffff",
+                                color: "#2563eb",
                                 fontWeight: 700,
                                 fontSize: "12px",
                                 cursor: "pointer",
-                                display: "flex",
-                                alignItems: "center",
-                                justifyContent: "center",
-                                gap: "4px",
                               }}
                             >
                               Statement →
@@ -2605,24 +2670,23 @@ export default function ExpensesPage() {
           )}
 
           {/* ======================================================== */}
-          {/* TAB 3: CREDIT BALANCE CLEARANCE HISTORY */}
+          {/* TAB 3: CREDIT BALANCE CLEARANCES HISTORY */}
           {/* ======================================================== */}
           {activeTab === "settlement" && (
             <div>
               <div
                 style={{
                   background: "#ffffff",
-                  borderRadius: "14px",
-                  border: "1px solid #ebe4f5",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
                   overflow: "hidden",
-                  boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
                 }}
               >
                 <div
                   style={{
-                    padding: "18px 24px",
-                    borderBottom: "1px solid #ebe4f5",
-                    background: "#fcfaff",
+                    padding: "16px 20px",
+                    borderBottom: "1px solid #e2e8f0",
+                    background: "#f8fafc",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
@@ -2631,16 +2695,16 @@ export default function ExpensesPage() {
                   }}
                 >
                   <div>
-                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#1e0836" }}>
-                      Credit Balance Clearance History ({settlements.length})
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#0f172a" }}>
+                      Credit Clearance Payments History ({settlements.length})
                     </h3>
-                    <span style={{ fontSize: "12px", color: "#8a7b9b" }}>
-                      Permanent record of payments made to suppliers to clear credit balances
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                      Permanent record of payments made to suppliers to settle credit purchases
                     </span>
                   </div>
 
                   <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <span style={{ fontSize: "13px", fontWeight: 800, color: "#047857", background: "#ecfdf5", padding: "4px 10px", borderRadius: "8px" }}>
+                    <span style={{ fontSize: "13px", fontWeight: 800, color: "#059669", background: "#ecfdf5", border: "1px solid #a7f3d0", padding: "4px 10px", borderRadius: "8px" }}>
                       Total Cleared: ₹{formatMoney(metrics.totalSettled)}
                     </span>
 
@@ -2649,7 +2713,7 @@ export default function ExpensesPage() {
                         type="button"
                         onClick={() => openClearSettlementModal()}
                         style={{
-                          background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                          background: "#059669",
                           color: "#fff",
                           border: "none",
                           borderRadius: "8px",
@@ -2657,29 +2721,28 @@ export default function ExpensesPage() {
                           fontWeight: 700,
                           fontSize: "12px",
                           cursor: "pointer",
-                          boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
                         }}
                       >
-                        + Clear Credit Balance
+                        + Clear Supplier Credit
                       </button>
                     )}
                   </div>
                 </div>
 
                 {settlements.length === 0 ? (
-                  <div style={{ padding: "48px", textAlign: "center", color: "#7a6e8a" }}>
-                    No credit clearances recorded yet. Click <strong>"Clear Credit Balance"</strong> to record a payment to a supplier.
+                  <div style={{ padding: "48px", textAlign: "center", color: "#64748b" }}>
+                    No credit clearances recorded yet. Click <strong>"Clear Supplier Credit"</strong> to settle an outstanding supplier balance.
                   </div>
                 ) : (
                   <div style={{ overflowX: "auto" }}>
                     <table style={{ width: "100%", minWidth: "850px", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
                       <thead>
-                        <tr style={{ background: "#f8f5fc", borderBottom: "2px solid #ece4f5", color: "#542b80", fontWeight: 700 }}>
+                        <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0", color: "#334155", fontWeight: 700 }}>
                           <th style={{ padding: "12px 16px" }}>Clearance Date</th>
                           <th style={{ padding: "12px 16px" }}>Voucher #</th>
-                          <th style={{ padding: "12px 16px" }}>Vendor / Payee</th>
+                          <th style={{ padding: "12px 16px" }}>Supplier / Payee</th>
                           <th style={{ padding: "12px 16px" }}>Payment Mode</th>
-                          <th style={{ padding: "12px 16px" }}>Reference / Cheque #</th>
+                          <th style={{ padding: "12px 16px" }}>Reference #</th>
                           <th style={{ padding: "12px 16px" }}>Remarks</th>
                           <th style={{ padding: "12px 16px", textAlign: "right" }}>Amount Cleared (₹)</th>
                           <th className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>Actions</th>
@@ -2687,28 +2750,28 @@ export default function ExpensesPage() {
                       </thead>
                       <tbody>
                         {settlements.map((s) => (
-                          <tr key={s.id} style={{ borderBottom: "1px solid #f2eff7" }}>
-                            <td style={{ padding: "12px 16px", fontWeight: 600, color: "#1e0836" }}>
+                          <tr key={s.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: "12px 16px", fontWeight: 600, color: "#0f172a" }}>
                               {formatDate(s.settlement_date)}
                             </td>
-                            <td style={{ padding: "12px 16px", fontFamily: "monospace", color: "#6d28d9", fontWeight: 700 }}>
+                            <td style={{ padding: "12px 16px", fontFamily: "monospace", color: "#2563eb", fontWeight: 700 }}>
                               SETTLE-{String(s.id).padStart(4, "0")}
                             </td>
-                            <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1e0836" }}>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0f172a" }}>
                               {s.vendor}
                             </td>
                             <td style={{ padding: "12px 16px" }}>
-                              <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#ecfdf5", color: "#047857", fontWeight: 600, fontSize: "11px" }}>
+                              <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#ecfdf5", color: "#059669", fontWeight: 600, fontSize: "11px" }}>
                                 {s.payment_mode}
                               </span>
                             </td>
-                            <td style={{ padding: "12px 16px", color: "#6b5b7e", fontFamily: "monospace" }}>
+                            <td style={{ padding: "12px 16px", color: "#64748b", fontFamily: "monospace" }}>
                               {s.reference_no ? `#${s.reference_no}` : "-"}
                             </td>
-                            <td style={{ padding: "12px 16px", color: "#6b5b7e" }}>
+                            <td style={{ padding: "12px 16px", color: "#64748b" }}>
                               {s.note || "-"}
                             </td>
-                            <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, color: "#047857", fontSize: "14px" }}>
+                            <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, color: "#059669", fontSize: "14px" }}>
                               ✓ ₹{formatMoney(s.amount)}
                             </td>
                             <td className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>
@@ -2721,8 +2784,8 @@ export default function ExpensesPage() {
                                     padding: "3px 8px",
                                     borderRadius: "4px",
                                     border: "none",
-                                    background: "#fee2e2",
-                                    color: "#b91c1c",
+                                    background: "#fef2f2",
+                                    color: "#dc2626",
                                     fontSize: "11px",
                                     fontWeight: 700,
                                     cursor: "pointer",
@@ -2743,51 +2806,54 @@ export default function ExpensesPage() {
           )}
 
           {/* ======================================================== */}
-          {/* TAB 4: MONTHLY & CATEGORY AUDIT LEDGER */}
+          {/* TAB 4: MONTHLY & CATEGORY AUDIT */}
           {/* ======================================================== */}
           {activeTab === "audit" && (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "24px" }}>
-              {/* Monthly Ledger Table */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "20px" }}>
+              {/* Monthly Audit Table */}
               <div
                 style={{
                   background: "#ffffff",
-                  borderRadius: "14px",
-                  border: "1px solid #ebe4f5",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
                   overflow: "hidden",
-                  boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
                 }}
               >
-                <div style={{ padding: "16px 20px", borderBottom: "1px solid #ebe4f5", background: "#fcfaff" }}>
-                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#1e0836" }}>
-                    📅 Monthly Credit Outflow Audit
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#0f172a" }}>
+                    📅 Monthly Expenditure & Credit Audit
                   </h3>
-                  <span style={{ fontSize: "12px", color: "#8a7b9b" }}>
-                    Month-by-month credit bills incurred and cleared
+                  <span style={{ fontSize: "12px", color: "#64748b" }}>
+                    Month-by-month spend, direct paid, credit taken & credit cleared
                   </span>
                 </div>
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
                     <thead>
-                      <tr style={{ background: "#f8f5fc", borderBottom: "1px solid #ebe4f5", color: "#542b80", fontWeight: 700 }}>
+                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#334155", fontWeight: 700 }}>
                         <th style={{ padding: "12px 16px" }}>Month</th>
-                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Billed (+₹)</th>
-                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Cleared (-₹)</th>
-                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Net Due (₹)</th>
+                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Total Spend (₹)</th>
+                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Taken (₹)</th>
+                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Cleared (₹)</th>
+                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Due (₹)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {monthlyLedger.map((m) => (
-                        <tr key={m.monthKey} style={{ borderBottom: "1px solid #f2eff7" }}>
-                          <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1e0836" }}>
+                        <tr key={m.monthKey} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0f172a" }}>
                             {formatMonthYear(m.monthKey)}
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#b91c1c", fontWeight: 700 }}>
-                            + ₹{formatMoney(m.totalIncurred)}
+                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#0f172a", fontWeight: 700 }}>
+                            ₹{formatMoney(m.totalBilled)}
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#047857", fontWeight: 700 }}>
+                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#dc2626", fontWeight: 700 }}>
+                            ₹{formatMoney(m.totalCredit)}
+                          </td>
+                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#059669", fontWeight: 700 }}>
                             - ₹{formatMoney(m.totalCleared)}
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: m.netDue > 0 ? "#b91c1c" : "#059669", fontWeight: 800 }}>
+                          <td style={{ padding: "12px 16px", textAlign: "right", color: m.netDue > 0 ? "#dc2626" : "#059669", fontWeight: 800 }}>
                             ₹{formatMoney(m.netDue)}
                           </td>
                         </tr>
@@ -2797,28 +2863,27 @@ export default function ExpensesPage() {
                 </div>
               </div>
 
-              {/* Category Breakdown Ledger Table */}
+              {/* Category Breakdown Table */}
               <div
                 style={{
                   background: "#ffffff",
-                  borderRadius: "14px",
-                  border: "1px solid #ebe4f5",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
                   overflow: "hidden",
-                  boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
                 }}
               >
-                <div style={{ padding: "16px 20px", borderBottom: "1px solid #ebe4f5", background: "#fcfaff" }}>
-                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#1e0836" }}>
-                    🏷️ Category-wise Credit Breakdown
+                <div style={{ padding: "14px 18px", borderBottom: "1px solid #e2e8f0", background: "#f8fafc" }}>
+                  <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#0f172a" }}>
+                    🏷️ Category-wise Spend Breakdown
                   </h3>
-                  <span style={{ fontSize: "12px", color: "#8a7b9b" }}>
-                    Where credit purchases are allocated
+                  <span style={{ fontSize: "12px", color: "#64748b" }}>
+                    Where expenditures are allocated across supply categories
                   </span>
                 </div>
                 <div style={{ overflowX: "auto" }}>
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
                     <thead>
-                      <tr style={{ background: "#f8f5fc", borderBottom: "1px solid #ebe4f5", color: "#542b80", fontWeight: 700 }}>
+                      <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#334155", fontWeight: 700 }}>
                         <th style={{ padding: "12px 16px" }}>Category</th>
                         <th style={{ padding: "12px 16px", textAlign: "right" }}>Total (₹)</th>
                         <th style={{ padding: "12px 16px" }}>Share %</th>
@@ -2827,24 +2892,24 @@ export default function ExpensesPage() {
                     </thead>
                     <tbody>
                       {categoryLedger.map((c) => (
-                        <tr key={c.category} style={{ borderBottom: "1px solid #f2eff7" }}>
-                          <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1e0836" }}>
+                        <tr key={c.category} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0f172a" }}>
                             {c.category}
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#b91c1c", fontWeight: 800 }}>
+                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#0f172a", fontWeight: 800 }}>
                             ₹{formatMoney(c.total)}
                           </td>
                           <td style={{ padding: "12px 16px", minWidth: "120px" }}>
                             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                              <div style={{ flex: 1, background: "#f0edf5", height: "6px", borderRadius: "3px", overflow: "hidden" }}>
-                                <div style={{ width: `${Math.min(100, c.percentage)}%`, height: "100%", background: "#7c3aed" }} />
+                              <div style={{ flex: 1, background: "#f1f5f9", height: "6px", borderRadius: "3px", overflow: "hidden" }}>
+                                <div style={{ width: `${Math.min(100, c.percentage)}%`, height: "100%", background: "#2563eb" }} />
                               </div>
-                              <span style={{ fontSize: "11px", fontWeight: 700, color: "#6d28d9", width: "38px" }}>
+                              <span style={{ fontSize: "11px", fontWeight: 700, color: "#2563eb", width: "38px" }}>
                                 {c.percentage.toFixed(1)}%
                               </span>
                             </div>
                           </td>
-                          <td style={{ padding: "12px 16px", color: "#4b5563", fontSize: "12px" }}>
+                          <td style={{ padding: "12px 16px", color: "#475569", fontSize: "12px" }}>
                             {c.topVendor}
                           </td>
                         </tr>
@@ -2867,7 +2932,7 @@ export default function ExpensesPage() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(18, 8, 32, 0.65)",
+            background: "rgba(15, 23, 42, 0.6)",
             backdropFilter: "blur(4px)",
             display: "flex",
             alignItems: "center",
@@ -2878,23 +2943,23 @@ export default function ExpensesPage() {
         >
           <div
             style={{
-              background: "#fff",
-              borderRadius: "16px",
+              background: "#ffffff",
+              borderRadius: "14px",
               width: "100%",
               maxWidth: "540px",
               maxHeight: "90vh",
               display: "flex",
               flexDirection: "column",
-              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.25)",
+              boxShadow: "0 20px 40px rgba(0, 0, 0, 0.2)",
               overflow: "hidden",
             }}
           >
             {/* Modal Header */}
             <div
               style={{
-                padding: "20px 24px",
-                background: "linear-gradient(135deg, #064e3b 0%, #065f46 100%)",
-                color: "#fff",
+                padding: "18px 22px",
+                background: "#065f46",
+                color: "#ffffff",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
@@ -2902,7 +2967,7 @@ export default function ExpensesPage() {
               }}
             >
               <div>
-                <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800 }}>
                   🤝 Clear Supplier Credit Balance
                 </h3>
                 <span style={{ fontSize: "12px", color: "#a7f3d0" }}>
@@ -2913,7 +2978,7 @@ export default function ExpensesPage() {
                 type="button"
                 onClick={() => setSettleModalOpen(false)}
                 style={{
-                  background: "rgba(255, 255, 255, 0.15)",
+                  background: "rgba(255, 255, 255, 0.2)",
                   border: "none",
                   color: "#fff",
                   borderRadius: "50%",
@@ -2928,12 +2993,12 @@ export default function ExpensesPage() {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveSettlement} style={{ padding: "24px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
+            <form onSubmit={handleSaveSettlement} style={{ padding: "20px 22px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
               {/* Select or Type Vendor */}
               <div style={{ marginBottom: "16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                  <label style={{ fontSize: "13px", fontWeight: 700, color: "#1e0836" }}>
-                    Select Supplier / Vendor Account *
+                  <label style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>
+                    Supplier / Vendor Account *
                   </label>
                   <button
                     type="button"
@@ -2943,7 +3008,7 @@ export default function ExpensesPage() {
                     style={{
                       background: "transparent",
                       border: "none",
-                      color: "#6d28d9",
+                      color: "#2563eb",
                       fontSize: "12px",
                       fontWeight: 600,
                       cursor: "pointer",
@@ -2976,19 +3041,21 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
+                      border: "1px solid #cbd5e1",
                       fontSize: "13px",
-                      background: "#fff",
+                      background: "#ffffff",
                       fontWeight: 600,
-                      color: "#1e0836",
+                      color: "#0f172a",
                     }}
                   >
                     <option value="">-- Select Vendor Account to Clear --</option>
-                    {vendorAccounts.map((v) => (
-                      <option key={v.name} value={v.name}>
-                        {v.name} {v.pendingBalance > 0 ? `— ₹${formatMoney(v.pendingBalance)} Due` : "— Fully Settled (₹0 Due)"}
-                      </option>
-                    ))}
+                    {vendorAccounts
+                      .filter((v) => v.name !== "Direct / Cash Outflows")
+                      .map((v) => (
+                        <option key={v.name} value={v.name}>
+                          {v.name} {v.pendingBalance > 0 ? `— ₹${formatMoney(v.pendingBalance)} Due` : "— Fully Settled (₹0 Due)"}
+                        </option>
+                      ))}
                     <option value="__CUSTOM__">➕ Enter Custom / Other Vendor Name...</option>
                   </select>
                 ) : (
@@ -3012,11 +3079,11 @@ export default function ExpensesPage() {
                         width: "100%",
                         padding: "10px 12px",
                         borderRadius: "8px",
-                        border: "1px solid #7c3aed",
+                        border: "1px solid #2563eb",
                         fontSize: "13px",
-                        background: "#fff",
+                        background: "#ffffff",
                         fontWeight: 600,
-                        color: "#1e0836",
+                        color: "#0f172a",
                       }}
                     />
                     <datalist id="settle-vendor-datalist">
@@ -3030,8 +3097,8 @@ export default function ExpensesPage() {
                 {/* Quick Chips for Outstanding Due Accounts */}
                 {vendorAccounts.filter((v) => v.pendingBalance > 0).length > 0 && (
                   <div style={{ marginTop: "10px" }}>
-                    <div style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, marginBottom: "4px" }}>
-                      QUICK SELECT DUE SUPPLIERS:
+                    <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, marginBottom: "4px" }}>
+                      SUPPLIERS WAITING FOR PAYMENT:
                     </div>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                       {vendorAccounts
@@ -3075,8 +3142,8 @@ export default function ExpensesPage() {
               {activeModalVendorAccount && (
                 <div
                   style={{
-                    background: activeModalVendorAccount.pendingBalance > 0 ? "#f0fdf4" : "#fbfcfe",
-                    border: activeModalVendorAccount.pendingBalance > 0 ? "1px solid #bbf7d0" : "1px solid #e2e8f0",
+                    background: activeModalVendorAccount.pendingBalance > 0 ? "#fef2f2" : "#f0fdf4",
+                    border: activeModalVendorAccount.pendingBalance > 0 ? "1px solid #fecaca" : "1px solid #a7f3d0",
                     borderRadius: "10px",
                     padding: "12px 16px",
                     marginBottom: "16px",
@@ -3087,26 +3154,26 @@ export default function ExpensesPage() {
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Total Billed</div>
-                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#1e293b", marginTop: "2px" }}>
-                      ₹{formatMoney(activeModalVendorAccount.totalIncurred)}
+                    <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Credit Taken</div>
+                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#0f172a", marginTop: "2px" }}>
+                      ₹{formatMoney(activeModalVendorAccount.totalCredit)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: "11px", color: "#047857", fontWeight: 600 }}>Already Cleared</div>
-                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#047857", marginTop: "2px" }}>
+                    <div style={{ fontSize: "11px", color: "#059669", fontWeight: 600 }}>Already Cleared</div>
+                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#059669", marginTop: "2px" }}>
                       ₹{formatMoney(activeModalVendorAccount.totalCleared)}
                     </div>
                   </div>
                   <div>
-                    <div style={{ fontSize: "11px", color: activeModalVendorAccount.pendingBalance > 0 ? "#b91c1c" : "#047857", fontWeight: 700 }}>
+                    <div style={{ fontSize: "11px", color: activeModalVendorAccount.pendingBalance > 0 ? "#dc2626" : "#059669", fontWeight: 700 }}>
                       {activeModalVendorAccount.pendingBalance > 0 ? "Outstanding Due" : "Status"}
                     </div>
                     <div
                       style={{
                         fontSize: "15px",
                         fontWeight: 900,
-                        color: activeModalVendorAccount.pendingBalance > 0 ? "#b91c1c" : "#047857",
+                        color: activeModalVendorAccount.pendingBalance > 0 ? "#dc2626" : "#059669",
                         marginTop: "2px",
                       }}
                     >
@@ -3119,7 +3186,7 @@ export default function ExpensesPage() {
               {/* Clearance Amount & Quick Full Balance Button */}
               <div style={{ marginBottom: "16px" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
-                  <label style={{ fontSize: "13px", fontWeight: 700, color: "#1e0836" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>
                     Clearance Amount (₹) *
                   </label>
                   {activeModalVendorAccount && activeModalVendorAccount.pendingBalance > 0 && (
@@ -3149,7 +3216,7 @@ export default function ExpensesPage() {
                     type="number"
                     step="0.01"
                     min="1"
-                    placeholder="e.g. 15000"
+                    placeholder="Enter amount to clear..."
                     value={settleAmount}
                     onChange={(e) => setSettleAmount(e.target.value)}
                     required
@@ -3157,11 +3224,11 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px 10px 28px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
+                      border: "1px solid #cbd5e1",
                       fontSize: "16px",
                       fontWeight: 800,
-                      color: "#047857",
-                      background: "#fff",
+                      color: "#059669",
+                      background: "#ffffff",
                     }}
                   />
                 </div>
@@ -3170,7 +3237,7 @@ export default function ExpensesPage() {
               {/* Settlement Date & Mode row */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
                     Clearance Date *
                   </label>
                   <input
@@ -3182,15 +3249,15 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
+                      border: "1px solid #cbd5e1",
                       fontSize: "13px",
-                      background: "#fff",
+                      background: "#ffffff",
                     }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
                     Payment Mode *
                   </label>
                   <select
@@ -3200,9 +3267,9 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
+                      border: "1px solid #cbd5e1",
                       fontSize: "13px",
-                      background: "#fff",
+                      background: "#ffffff",
                     }}
                   >
                     {CLEARANCE_PAYMENT_METHODS.map((pm) => (
@@ -3216,7 +3283,7 @@ export default function ExpensesPage() {
 
               {/* Reference Number */}
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
                   Cheque / Transaction / Voucher # (Optional)
                 </label>
                 <input
@@ -3228,36 +3295,36 @@ export default function ExpensesPage() {
                     width: "100%",
                     padding: "10px 12px",
                     borderRadius: "8px",
-                    border: "1px solid #d8d3e2",
+                    border: "1px solid #cbd5e1",
                     fontSize: "13px",
-                    background: "#fff",
+                    background: "#ffffff",
                   }}
                 />
               </div>
 
               {/* Notes */}
               <div style={{ marginBottom: "24px" }}>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
                   Remarks / Clearance Note
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Cleared October grocery credit"
+                  placeholder="e.g. Cleared October vegetable supply balance"
                   value={settleNote}
                   onChange={(e) => setSettleNote(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
                     borderRadius: "8px",
-                    border: "1px solid #d8d3e2",
+                    border: "1px solid #cbd5e1",
                     fontSize: "13px",
-                    background: "#fff",
+                    background: "#ffffff",
                   }}
                 />
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", position: "sticky", bottom: 0, background: "#fff", paddingTop: "14px", borderTop: "1px solid #f1f5f9", marginTop: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", position: "sticky", bottom: 0, background: "#ffffff", paddingTop: "14px", borderTop: "1px solid #f1f5f9", marginTop: "auto" }}>
                 <button
                   type="button"
                   onClick={() => setSettleModalOpen(false)}
@@ -3265,9 +3332,9 @@ export default function ExpensesPage() {
                   style={{
                     padding: "10px 18px",
                     borderRadius: "8px",
-                    border: "1px solid #dcd7e5",
-                    background: "#fff",
-                    color: "#5d4e70",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#475569",
                     fontWeight: 600,
                     fontSize: "13px",
                     cursor: "pointer",
@@ -3283,12 +3350,12 @@ export default function ExpensesPage() {
                     padding: "10px 22px",
                     borderRadius: "8px",
                     border: "none",
-                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                    background: "#059669",
                     color: "#ffffff",
                     fontWeight: 700,
                     fontSize: "13px",
                     cursor: settling ? "not-allowed" : "pointer",
-                    boxShadow: "0 4px 14px rgba(5, 150, 105, 0.35)",
+                    boxShadow: "0 2px 6px rgba(5, 150, 105, 0.25)",
                   }}
                 >
                   {settling ? "Clearing..." : "✓ Confirm Credit Clearance"}
@@ -3300,7 +3367,7 @@ export default function ExpensesPage() {
       )}
 
       {/* ======================================================== */}
-      {/* ADD / EDIT EXPENSE (CREDIT BILL) MODAL */}
+      {/* ADD / EDIT EXPENSE MODAL (PAID OR CREDIT) */}
       {/* ======================================================== */}
       {modalOpen && (
         <div
@@ -3308,7 +3375,7 @@ export default function ExpensesPage() {
           style={{
             position: "fixed",
             inset: 0,
-            background: "rgba(18, 8, 32, 0.65)",
+            background: "rgba(15, 23, 42, 0.6)",
             backdropFilter: "blur(4px)",
             display: "flex",
             alignItems: "center",
@@ -3319,42 +3386,49 @@ export default function ExpensesPage() {
         >
           <div
             style={{
-              background: "#fff",
-              borderRadius: "16px",
+              background: "#ffffff",
+              borderRadius: "14px",
               width: "100%",
               maxWidth: "560px",
               maxHeight: "90vh",
               display: "flex",
               flexDirection: "column",
-              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.25)",
+              boxShadow: "0 20px 40px rgba(0, 0, 0, 0.2)",
               overflow: "hidden",
             }}
           >
             {/* Modal Header */}
             <div
               style={{
-                padding: "20px 24px",
-                background: "linear-gradient(135deg, #991b1b 0%, #7f1d1d 100%)",
-                color: "#fff",
+                padding: "18px 22px",
+                background: formType === "credit" ? "#991b1b" : "#1e40af",
+                color: "#ffffff",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
                 flexShrink: 0,
+                transition: "background 0.2s ease",
               }}
             >
               <div>
-                <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>
-                  {editingExpenseId ? "Edit Expense / Bill" : "Record Supplier Credit Bill"}
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800 }}>
+                  {editingExpenseId
+                    ? "Edit Expense Record"
+                    : formType === "credit"
+                    ? "📋 Record Supplier Credit Bill (Khata)"
+                    : "💵 Record Direct Paid Expense"}
                 </h3>
-                <span style={{ fontSize: "12px", color: "#fca5a5" }}>
-                  Record purchases on credit or direct outflows
+                <span style={{ fontSize: "12px", color: formType === "credit" ? "#fca5a5" : "#bfdbfe" }}>
+                  {formType === "credit"
+                    ? "Purchased on credit — will add to supplier's outstanding ledger"
+                    : "Direct payment via Cash, UPI, Card, or Bank transfer"}
                 </span>
               </div>
               <button
                 type="button"
                 onClick={() => setModalOpen(false)}
                 style={{
-                  background: "rgba(255, 255, 255, 0.15)",
+                  background: "rgba(255, 255, 255, 0.2)",
                   border: "none",
                   color: "#fff",
                   borderRadius: "50%",
@@ -3369,23 +3443,26 @@ export default function ExpensesPage() {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveExpense} style={{ padding: "24px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
-              {/* Expense Type Toggle: Credit Purchase (Default) vs Paid Immediately */}
+            <form onSubmit={handleSaveExpense} style={{ padding: "20px 22px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
+              {/* Expense Type Toggle: Direct Paid vs Credit Purchase */}
               {!editingExpenseId && (
-                <div style={{ marginBottom: "18px" }}>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#4c1d95", marginBottom: "8px", textTransform: "uppercase" }}>
-                    Purchase / Payment Type *
+                <div style={{ marginBottom: "16px" }}>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "6px", textTransform: "uppercase" }}>
+                    Payment & Purchase Type *
                   </label>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                     <button
                       type="button"
-                      onClick={() => setFormType("credit")}
+                      onClick={() => {
+                        setFormType("paid");
+                        setFormPaymentMethod("Cash");
+                      }}
                       style={{
-                        padding: "10px",
+                        padding: "10px 14px",
                         borderRadius: "8px",
-                        border: formType === "credit" ? "2px solid #dc2626" : "1px solid #e2d9ec",
-                        background: formType === "credit" ? "#fef2f2" : "#ffffff",
-                        color: formType === "credit" ? "#991b1b" : "#4b5563",
+                        border: formType === "paid" ? "2px solid #059669" : "1px solid #cbd5e1",
+                        background: formType === "paid" ? "#ecfdf5" : "#ffffff",
+                        color: formType === "paid" ? "#065f46" : "#475569",
                         fontWeight: 700,
                         fontSize: "13px",
                         cursor: "pointer",
@@ -3393,20 +3470,24 @@ export default function ExpensesPage() {
                         alignItems: "center",
                         justifyContent: "center",
                         gap: "6px",
+                        boxShadow: formType === "paid" ? "0 2px 6px rgba(5, 150, 105, 0.15)" : "none",
                       }}
                     >
-                      <span>🔴</span> Credit (Pay Later / On Account)
+                      <span>💵</span> Direct Paid (Cash / UPI)
                     </button>
 
                     <button
                       type="button"
-                      onClick={() => setFormType("paid")}
+                      onClick={() => {
+                        setFormType("credit");
+                        setFormPaymentMethod("Credit (On Account)");
+                      }}
                       style={{
-                        padding: "10px",
+                        padding: "10px 14px",
                         borderRadius: "8px",
-                        border: formType === "paid" ? "2px solid #059669" : "1px solid #e2d9ec",
-                        background: formType === "paid" ? "#ecfdf5" : "#ffffff",
-                        color: formType === "paid" ? "#065f46" : "#4b5563",
+                        border: formType === "credit" ? "2px solid #dc2626" : "1px solid #cbd5e1",
+                        background: formType === "credit" ? "#fef2f2" : "#ffffff",
+                        color: formType === "credit" ? "#991b1b" : "#475569",
                         fontWeight: 700,
                         fontSize: "13px",
                         cursor: "pointer",
@@ -3414,10 +3495,16 @@ export default function ExpensesPage() {
                         alignItems: "center",
                         justifyContent: "center",
                         gap: "6px",
+                        boxShadow: formType === "credit" ? "0 2px 6px rgba(220, 38, 38, 0.15)" : "none",
                       }}
                     >
-                      <span>🟢</span> Direct Paid (Immediate Cash/UPI)
+                      <span>📋</span> Credit Purchase (Khata)
                     </button>
+                  </div>
+                  <div style={{ fontSize: "11px", color: formType === "credit" ? "#dc2626" : "#059669", marginTop: "6px", fontWeight: 600 }}>
+                    {formType === "credit"
+                      ? "🔴 Bought on credit. Creates an outstanding balance owed to the supplier."
+                      : "✓ Paid immediately with Cash / UPI. Complete transaction with no debt owed."}
                   </div>
                 </div>
               )}
@@ -3425,13 +3512,13 @@ export default function ExpensesPage() {
               {/* Vendor & Bill Number row */}
               <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "14px", marginBottom: "16px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
-                    Supplier / Vendor Name *
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
+                    Supplier / Vendor Name {formType === "credit" ? "*" : "(Optional)"}
                   </label>
                   <input
                     type="text"
                     list="vendors-datalist"
-                    placeholder="e.g. Metro Cash & Carry, Babu Veg"
+                    placeholder={formType === "credit" ? "e.g. Metro Groceries, MS Fresh" : "e.g. Local Market, Petrol Pump"}
                     value={formVendor}
                     onChange={(e) => setFormVendor(e.target.value)}
                     required={formType === "credit"}
@@ -3439,9 +3526,9 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
+                      border: "1px solid #cbd5e1",
                       fontSize: "13px",
-                      background: "#fff",
+                      background: "#ffffff",
                     }}
                   />
                   <datalist id="vendors-datalist">
@@ -3452,8 +3539,8 @@ export default function ExpensesPage() {
                 </div>
 
                 <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
-                    Bill / Challan # (Optional)
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
+                    Bill / Voucher # (Optional)
                   </label>
                   <input
                     type="text"
@@ -3464,9 +3551,9 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
+                      border: "1px solid #cbd5e1",
                       fontSize: "13px",
-                      background: "#fff",
+                      background: "#ffffff",
                     }}
                   />
                 </div>
@@ -3474,7 +3561,7 @@ export default function ExpensesPage() {
 
               {/* Title / Description */}
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
                   Item Description / Particulars *
                 </label>
                 <input
@@ -3487,9 +3574,9 @@ export default function ExpensesPage() {
                     width: "100%",
                     padding: "10px 12px",
                     borderRadius: "8px",
-                    border: "1px solid #d8d3e2",
+                    border: "1px solid #cbd5e1",
                     fontSize: "13px",
-                    background: "#fff",
+                    background: "#ffffff",
                   }}
                 />
               </div>
@@ -3497,7 +3584,7 @@ export default function ExpensesPage() {
               {/* Category & Amount row */}
               <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "14px", marginBottom: "16px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
                     Category *
                   </label>
                   <select
@@ -3508,9 +3595,9 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
+                      border: "1px solid #cbd5e1",
                       fontSize: "13px",
-                      background: "#fff",
+                      background: "#ffffff",
                     }}
                   >
                     {CATEGORIES.map((cat) => (
@@ -3522,8 +3609,8 @@ export default function ExpensesPage() {
                 </div>
 
                 <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
-                    Bill Amount (₹) *
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
+                    Amount (₹) *
                   </label>
                   <input
                     type="number"
@@ -3537,21 +3624,21 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
-                      fontSize: "14px",
+                      border: "1px solid #cbd5e1",
+                      fontSize: "15px",
                       fontWeight: 800,
-                      color: "#b91c1c",
-                      background: "#fff",
+                      color: formType === "credit" ? "#dc2626" : "#0f172a",
+                      background: "#ffffff",
                     }}
                   />
                 </div>
               </div>
 
-              {/* Date & Mode row */}
+              {/* Date & Payment Mode row */}
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
                 <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
-                    Bill Date *
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
+                    Expense Date *
                   </label>
                   <input
                     type="date"
@@ -3562,16 +3649,16 @@ export default function ExpensesPage() {
                       width: "100%",
                       padding: "10px 12px",
                       borderRadius: "8px",
-                      border: "1px solid #d8d3e2",
+                      border: "1px solid #cbd5e1",
                       fontSize: "13px",
-                      background: "#fff",
+                      background: "#ffffff",
                     }}
                   />
                 </div>
 
                 <div>
-                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
-                    {formType === "credit" ? "Account Status" : "Direct Payment Method"}
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
+                    {formType === "credit" ? "Payment Terms" : "Payment Method"}
                   </label>
                   {formType === "credit" ? (
                     <input
@@ -3584,8 +3671,8 @@ export default function ExpensesPage() {
                         borderRadius: "8px",
                         border: "1px solid #fecaca",
                         fontSize: "13px",
-                        background: "#fff5f5",
-                        color: "#991b1b",
+                        background: "#fffafb",
+                        color: "#dc2626",
                         fontWeight: 700,
                       }}
                     />
@@ -3597,12 +3684,12 @@ export default function ExpensesPage() {
                         width: "100%",
                         padding: "10px 12px",
                         borderRadius: "8px",
-                        border: "1px solid #d8d3e2",
+                        border: "1px solid #cbd5e1",
                         fontSize: "13px",
-                        background: "#fff",
+                        background: "#ffffff",
                       }}
                     >
-                      {CLEARANCE_PAYMENT_METHODS.map((pm) => (
+                      {DIRECT_PAYMENT_METHODS.map((pm) => (
                         <option key={pm} value={pm}>
                           {pm}
                         </option>
@@ -3614,7 +3701,7 @@ export default function ExpensesPage() {
 
               {/* Link to Event */}
               <div style={{ marginBottom: "16px" }}>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
                   Link to Event (Optional)
                 </label>
                 <select
@@ -3624,9 +3711,9 @@ export default function ExpensesPage() {
                     width: "100%",
                     padding: "10px 12px",
                     borderRadius: "8px",
-                    border: "1px solid #d8d3e2",
+                    border: "1px solid #cbd5e1",
                     fontSize: "13px",
-                    background: "#faf9fc",
+                    background: "#f8fafc",
                   }}
                 >
                   <option value="">-- None (General Kitchen / Business Overhead) --</option>
@@ -3640,27 +3727,27 @@ export default function ExpensesPage() {
 
               {/* Notes */}
               <div style={{ marginBottom: "24px" }}>
-                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
-                  Notes / Delivery Particulars (Optional)
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#0f172a", marginBottom: "6px" }}>
+                  Notes / Particulars (Optional)
                 </label>
                 <input
                   type="text"
-                  placeholder="e.g. Delivered to main kitchen, 30 days credit terms"
+                  placeholder="e.g. Paid cash at market, delivered to kitchen"
                   value={formNote}
                   onChange={(e) => setFormNote(e.target.value)}
                   style={{
                     width: "100%",
                     padding: "10px 12px",
                     borderRadius: "8px",
-                    border: "1px solid #d8d3e2",
+                    border: "1px solid #cbd5e1",
                     fontSize: "13px",
-                    background: "#fff",
+                    background: "#ffffff",
                   }}
                 />
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", position: "sticky", bottom: 0, background: "#fff", paddingTop: "14px", borderTop: "1px solid #f1f5f9", marginTop: "auto" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", position: "sticky", bottom: 0, background: "#ffffff", paddingTop: "14px", borderTop: "1px solid #f1f5f9", marginTop: "auto" }}>
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
@@ -3668,9 +3755,9 @@ export default function ExpensesPage() {
                   style={{
                     padding: "10px 18px",
                     borderRadius: "8px",
-                    border: "1px solid #dcd7e5",
-                    background: "#fff",
-                    color: "#5d4e70",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#475569",
                     fontWeight: 600,
                     fontSize: "13px",
                     cursor: "pointer",
@@ -3686,15 +3773,15 @@ export default function ExpensesPage() {
                     padding: "10px 22px",
                     borderRadius: "8px",
                     border: "none",
-                    background: formType === "credit" ? "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)" : "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                    background: formType === "credit" ? "#dc2626" : "#2563eb",
                     color: "#ffffff",
                     fontWeight: 700,
                     fontSize: "13px",
                     cursor: submitting ? "not-allowed" : "pointer",
-                    boxShadow: "0 4px 14px rgba(220, 38, 38, 0.35)",
+                    boxShadow: "0 2px 6px rgba(0, 0, 0, 0.15)",
                   }}
                 >
-                  {submitting ? "Saving..." : editingExpenseId ? "Update Bill" : formType === "credit" ? "+ Record Credit Bill" : "Post Paid Expense"}
+                  {submitting ? "Saving..." : editingExpenseId ? "Update Expense" : formType === "credit" ? "+ Record Credit Bill" : "✓ Record Paid Expense"}
                 </button>
               </div>
             </form>
