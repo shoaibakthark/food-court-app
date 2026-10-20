@@ -2429,18 +2429,32 @@ def get_kitchen_summary(db: Session = Depends(get_db)):
         models.KitchenStaff.wage_type == "daily"
     ).count()
 
-    total_wages = db.query(func.coalesce(func.sum(models.KitchenWage.total_wage), 0)).scalar()
+    total_wage_records = db.query(func.coalesce(func.sum(models.KitchenWage.total_wage), 0)).scalar()
+    total_duty_records = db.query(func.coalesce(func.sum(models.KitchenDuty.total_wage), 0)).scalar()
+    total_wages = Decimal(str(total_wage_records)) + Decimal(str(total_duty_records))
+
     total_paid = db.query(func.coalesce(func.sum(models.KitchenPayment.amount), 0)).scalar()
-    pending_balance = max(Decimal("0.00"), Decimal(str(total_wages)) - Decimal(str(total_paid)))
+    pending_balance = max(Decimal("0.00"), total_wages - Decimal(str(total_paid)))
+
+    today = DateType.today()
+    today_duties_count = db.query(models.KitchenDuty).filter(
+        models.KitchenDuty.duty_date == today,
+        models.KitchenDuty.duty_units > 0
+    ).count()
+    today_duty_wages = db.query(func.coalesce(func.sum(models.KitchenDuty.total_wage), 0)).filter(
+        models.KitchenDuty.duty_date == today
+    ).scalar()
 
     return {
         "total_staff": total_staff,
         "active_staff": active_staff,
         "monthly_staff_count": monthly_staff_count,
         "daily_staff_count": daily_staff_count,
-        "total_wages": Decimal(str(total_wages)),
+        "total_wages": total_wages,
         "total_paid": Decimal(str(total_paid)),
         "total_pending_balance": pending_balance,
+        "today_duties_count": today_duties_count,
+        "today_duty_wages": Decimal(str(today_duty_wages)),
     }
 
 
@@ -2459,11 +2473,18 @@ def get_kitchen_staff(status: Optional[str] = None, wage_type: Optional[str] = N
         wages_sum = db.query(func.coalesce(func.sum(models.KitchenWage.total_wage), 0)).filter(
             models.KitchenWage.staff_id == s.id
         ).scalar()
+        duty_wages_sum = db.query(func.coalesce(func.sum(models.KitchenDuty.total_wage), 0)).filter(
+            models.KitchenDuty.staff_id == s.id
+        ).scalar()
+        duties_count = db.query(models.KitchenDuty).filter(
+            models.KitchenDuty.staff_id == s.id,
+            models.KitchenDuty.duty_units > 0
+        ).count()
         payments_sum = db.query(func.coalesce(func.sum(models.KitchenPayment.amount), 0)).filter(
             models.KitchenPayment.staff_id == s.id
         ).scalar()
 
-        total_w = Decimal(str(wages_sum))
+        total_w = Decimal(str(wages_sum)) + Decimal(str(duty_wages_sum))
         total_p = Decimal(str(payments_sum))
         bal = total_w - total_p
 
@@ -2478,6 +2499,7 @@ def get_kitchen_staff(status: Optional[str] = None, wage_type: Optional[str] = N
             "joined_date": s.joined_date,
             "address": s.address,
             "notes": s.notes,
+            "duties_count": duties_count,
             "total_wages": total_w,
             "total_paid": total_p,
             "balance": bal,
@@ -2512,6 +2534,7 @@ def create_kitchen_staff(payload: schemas.KitchenStaffCreate, db: Session = Depe
         "joined_date": staff.joined_date,
         "address": staff.address,
         "notes": staff.notes,
+        "duties_count": 0,
         "total_wages": Decimal("0.00"),
         "total_paid": Decimal("0.00"),
         "balance": Decimal("0.00"),
@@ -2527,11 +2550,18 @@ def get_kitchen_staff_detail(staff_id: int, db: Session = Depends(get_db)):
     wages_sum = db.query(func.coalesce(func.sum(models.KitchenWage.total_wage), 0)).filter(
         models.KitchenWage.staff_id == staff.id
     ).scalar()
+    duty_wages_sum = db.query(func.coalesce(func.sum(models.KitchenDuty.total_wage), 0)).filter(
+        models.KitchenDuty.staff_id == staff.id
+    ).scalar()
+    duties_count = db.query(models.KitchenDuty).filter(
+        models.KitchenDuty.staff_id == staff.id,
+        models.KitchenDuty.duty_units > 0
+    ).count()
     payments_sum = db.query(func.coalesce(func.sum(models.KitchenPayment.amount), 0)).filter(
         models.KitchenPayment.staff_id == staff.id
     ).scalar()
 
-    total_w = Decimal(str(wages_sum))
+    total_w = Decimal(str(wages_sum)) + Decimal(str(duty_wages_sum))
     total_p = Decimal(str(payments_sum))
     bal = total_w - total_p
 
@@ -2546,6 +2576,7 @@ def get_kitchen_staff_detail(staff_id: int, db: Session = Depends(get_db)):
         "joined_date": staff.joined_date,
         "address": staff.address,
         "notes": staff.notes,
+        "duties_count": duties_count,
         "total_wages": total_w,
         "total_paid": total_p,
         "balance": bal,
@@ -2583,11 +2614,18 @@ def update_kitchen_staff(staff_id: int, payload: schemas.KitchenStaffUpdate, db:
     wages_sum = db.query(func.coalesce(func.sum(models.KitchenWage.total_wage), 0)).filter(
         models.KitchenWage.staff_id == staff.id
     ).scalar()
+    duty_wages_sum = db.query(func.coalesce(func.sum(models.KitchenDuty.total_wage), 0)).filter(
+        models.KitchenDuty.staff_id == staff.id
+    ).scalar()
+    duties_count = db.query(models.KitchenDuty).filter(
+        models.KitchenDuty.staff_id == staff.id,
+        models.KitchenDuty.duty_units > 0
+    ).count()
     payments_sum = db.query(func.coalesce(func.sum(models.KitchenPayment.amount), 0)).filter(
         models.KitchenPayment.staff_id == staff.id
     ).scalar()
 
-    total_w = Decimal(str(wages_sum))
+    total_w = Decimal(str(wages_sum)) + Decimal(str(duty_wages_sum))
     total_p = Decimal(str(payments_sum))
     bal = total_w - total_p
 
@@ -2602,6 +2640,7 @@ def update_kitchen_staff(staff_id: int, payload: schemas.KitchenStaffUpdate, db:
         "joined_date": staff.joined_date,
         "address": staff.address,
         "notes": staff.notes,
+        "duties_count": duties_count,
         "total_wages": total_w,
         "total_paid": total_p,
         "balance": bal,
@@ -2614,6 +2653,7 @@ def delete_kitchen_staff(staff_id: int, db: Session = Depends(get_db)):
     if not staff:
         raise HTTPException(status_code=404, detail="Kitchen staff not found")
 
+    db.query(models.KitchenDuty).filter(models.KitchenDuty.staff_id == staff_id).delete()
     db.query(models.KitchenWage).filter(models.KitchenWage.staff_id == staff_id).delete()
     db.query(models.KitchenPayment).filter(models.KitchenPayment.staff_id == staff_id).delete()
     db.delete(staff)
@@ -2833,4 +2873,204 @@ def delete_kitchen_payment(payment_id: int, db: Session = Depends(get_db)):
     db.delete(payment)
     db.commit()
     return {"message": "Payment record deleted successfully"}
+
+
+# ============================================================
+# KITCHEN DAILY DUTIES & CORRESPONDING WAGES
+# ============================================================
+
+@app.get("/kitchen/duties", response_model=list[schemas.KitchenDutyResponse])
+def get_kitchen_duties(
+    duty_date: Optional[DateType] = None,
+    staff_id: Optional[int] = None,
+    start_date: Optional[DateType] = None,
+    end_date: Optional[DateType] = None,
+    db: Session = Depends(get_db)
+):
+    query = db.query(
+        models.KitchenDuty,
+        models.KitchenStaff.name.label("staff_name"),
+        models.KitchenStaff.kitchen_role.label("kitchen_role")
+    ).join(models.KitchenStaff, models.KitchenDuty.staff_id == models.KitchenStaff.id)
+
+    if duty_date:
+        query = query.filter(models.KitchenDuty.duty_date == duty_date)
+    if staff_id:
+        query = query.filter(models.KitchenDuty.staff_id == staff_id)
+    if start_date:
+        query = query.filter(models.KitchenDuty.duty_date >= start_date)
+    if end_date:
+        query = query.filter(models.KitchenDuty.duty_date <= end_date)
+
+    rows = query.order_by(models.KitchenDuty.duty_date.desc(), models.KitchenDuty.id.desc()).all()
+    results = []
+    for d, s_name, k_role in rows:
+        results.append({
+            "id": d.id,
+            "staff_id": d.staff_id,
+            "staff_name": s_name,
+            "kitchen_role": k_role,
+            "duty_date": d.duty_date,
+            "shift": d.shift,
+            "duty_status": d.duty_status,
+            "duty_units": d.duty_units,
+            "daily_rate": d.daily_rate,
+            "duty_wage": d.duty_wage,
+            "bonus": d.bonus,
+            "deduction": d.deduction,
+            "total_wage": d.total_wage,
+            "note": d.note,
+        })
+    return results
+
+
+@app.post("/kitchen/duties", response_model=schemas.KitchenDutyResponse)
+def create_or_update_kitchen_duty(payload: schemas.KitchenDutyCreate, db: Session = Depends(get_db)):
+    staff = db.query(models.KitchenStaff).filter(models.KitchenStaff.id == payload.staff_id).first()
+    if not staff:
+        raise HTTPException(status_code=404, detail="Kitchen staff not found")
+
+    duty_date = payload.duty_date or DateType.today()
+
+    if payload.daily_rate is not None:
+        rate = payload.daily_rate
+    elif staff.wage_type == "daily":
+        rate = staff.wage_rate
+    else:
+        rate = round(staff.wage_rate / Decimal(30), 2)
+
+    units = payload.duty_units
+    if payload.duty_status == "absent":
+        units = Decimal("0.00")
+
+    duty_wage = rate * units
+    total_w = max(Decimal("0.00"), duty_wage + payload.bonus - payload.deduction)
+
+    existing = db.query(models.KitchenDuty).filter(
+        models.KitchenDuty.staff_id == staff.id,
+        models.KitchenDuty.duty_date == duty_date,
+        models.KitchenDuty.shift == payload.shift
+    ).first()
+
+    if existing:
+        existing.duty_status = payload.duty_status
+        existing.duty_units = units
+        existing.daily_rate = rate
+        existing.duty_wage = duty_wage
+        existing.bonus = payload.bonus
+        existing.deduction = payload.deduction
+        existing.total_wage = total_w
+        existing.note = payload.note.strip() if payload.note else None
+        db.commit()
+        db.refresh(existing)
+        duty_obj = existing
+    else:
+        duty_obj = models.KitchenDuty(
+            staff_id=staff.id,
+            duty_date=duty_date,
+            shift=payload.shift,
+            duty_status=payload.duty_status,
+            duty_units=units,
+            daily_rate=rate,
+            duty_wage=duty_wage,
+            bonus=payload.bonus,
+            deduction=payload.deduction,
+            total_wage=total_w,
+            note=payload.note.strip() if payload.note else None,
+        )
+        db.add(duty_obj)
+        db.commit()
+        db.refresh(duty_obj)
+
+    return {
+        "id": duty_obj.id,
+        "staff_id": duty_obj.staff_id,
+        "staff_name": staff.name,
+        "kitchen_role": staff.kitchen_role,
+        "duty_date": duty_obj.duty_date,
+        "shift": duty_obj.shift,
+        "duty_status": duty_obj.duty_status,
+        "duty_units": duty_obj.duty_units,
+        "daily_rate": duty_obj.daily_rate,
+        "duty_wage": duty_obj.duty_wage,
+        "bonus": duty_obj.bonus,
+        "deduction": duty_obj.deduction,
+        "total_wage": duty_obj.total_wage,
+        "note": duty_obj.note,
+    }
+
+
+@app.post("/kitchen/duties/batch")
+def save_batch_kitchen_duties(payload: schemas.KitchenBatchDutyRequest, db: Session = Depends(get_db)):
+    duty_date = payload.duty_date
+    saved_count = 0
+
+    for item in payload.duties:
+        staff = db.query(models.KitchenStaff).filter(models.KitchenStaff.id == item.staff_id).first()
+        if not staff:
+            continue
+
+        if item.daily_rate is not None:
+            rate = item.daily_rate
+        elif staff.wage_type == "daily":
+            rate = staff.wage_rate
+        else:
+            rate = round(staff.wage_rate / Decimal(30), 2)
+
+        units = item.duty_units
+        if item.duty_status == "absent":
+            units = Decimal("0.00")
+
+        duty_wage = rate * units
+        total_w = max(Decimal("0.00"), duty_wage + item.bonus - item.deduction)
+
+        existing = db.query(models.KitchenDuty).filter(
+            models.KitchenDuty.staff_id == staff.id,
+            models.KitchenDuty.duty_date == duty_date,
+            models.KitchenDuty.shift == item.shift
+        ).first()
+
+        if existing:
+            existing.duty_status = item.duty_status
+            existing.duty_units = units
+            existing.daily_rate = rate
+            existing.duty_wage = duty_wage
+            existing.bonus = item.bonus
+            existing.deduction = item.deduction
+            existing.total_wage = total_w
+            existing.note = item.note.strip() if item.note else None
+        else:
+            new_duty = models.KitchenDuty(
+                staff_id=staff.id,
+                duty_date=duty_date,
+                shift=item.shift,
+                duty_status=item.duty_status,
+                duty_units=units,
+                daily_rate=rate,
+                duty_wage=duty_wage,
+                bonus=item.bonus,
+                deduction=item.deduction,
+                total_wage=total_w,
+                note=item.note.strip() if item.note else None,
+            )
+            db.add(new_duty)
+        saved_count += 1
+
+    db.commit()
+    return {
+        "message": f"Successfully saved daily duty and corresponding wages for {saved_count} staff members",
+        "count": saved_count,
+        "date": str(duty_date),
+    }
+
+
+@app.delete("/kitchen/duties/{duty_id}")
+def delete_kitchen_duty(duty_id: int, db: Session = Depends(get_db)):
+    duty = db.query(models.KitchenDuty).filter(models.KitchenDuty.id == duty_id).first()
+    if not duty:
+        raise HTTPException(status_code=404, detail="Duty record not found")
+    db.delete(duty)
+    db.commit()
+    return {"message": "Duty record deleted successfully"}
+
 

@@ -649,4 +649,22 @@ class KitchenPayment(Base):
     note = Column(String(500), nullable=True)
 
 
+class KitchenDuty(Base):
+    __tablename__ = "kitchen_duties"
+
+    id = Column(Integer, primary_key=True, index=True)
+    staff_id = Column(Integer, ForeignKey("kitchen_staff.id", ondelete="CASCADE"), nullable=False, index=True)
+    duty_date = Column(Date, nullable=False, index=True)
+    shift = Column(String(50), nullable=False, default="Full Day")        # 'Full Day', 'Morning Shift', 'Evening Shift', 'Event Catering Duty', 'Night Prep'
+    duty_status = Column(String(30), nullable=False, default="full")      # 'full', 'half', 'double', 'overtime', 'absent'
+    duty_units = Column(Numeric(4, 2), nullable=False, default=1.0)       # 1.0 (Full), 0.5 (Half), 2.0 (Double), 1.5 (OT), 0.0 (Absent)
+    daily_rate = Column(Numeric(12, 2), nullable=False, default=0)        # Base daily wage rate
+    duty_wage = Column(Numeric(12, 2), nullable=False, default=0)         # duty_units * daily_rate
+    bonus = Column(Numeric(12, 2), nullable=False, default=0)             # Extra allowance / incentive
+    deduction = Column(Numeric(12, 2), nullable=False, default=0)         # Deduction if any
+    total_wage = Column(Numeric(12, 2), nullable=False, default=0)        # duty_wage + bonus - deduction
+    note = Column(String(500), nullable=True)
+
+
+
 

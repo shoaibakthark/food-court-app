@@ -26,9 +26,27 @@ export type KitchenStaff = {
   joined_date?: string | null;
   address?: string | null;
   notes?: string | null;
+  duties_count: number;
   total_wages: number;
   total_paid: number;
   balance: number;
+};
+
+export type KitchenDuty = {
+  id: number;
+  staff_id: number;
+  staff_name?: string | null;
+  kitchen_role?: string | null;
+  duty_date: string;
+  shift: string;
+  duty_status: string;
+  duty_units: number;
+  daily_rate: number;
+  duty_wage: number;
+  bonus: number;
+  deduction: number;
+  total_wage: number;
+  note?: string | null;
 };
 
 export type KitchenWage = {
@@ -66,6 +84,8 @@ export type KitchenSummary = {
   total_wages: number;
   total_paid: number;
   total_pending_balance: number;
+  today_duties_count: number;
+  today_duty_wages: number;
 };
 
 const KITCHEN_ROLES = [
@@ -80,6 +100,22 @@ const KITCHEN_ROLES = [
   "Kitchen Supervisor",
   "Store Keeper",
   "Other",
+];
+
+const SHIFT_OPTIONS = [
+  "Full Day",
+  "Morning Shift",
+  "Evening Shift",
+  "Event Catering Duty",
+  "Night Prep",
+];
+
+const DUTY_STATUS_OPTIONS = [
+  { value: "full", label: "Full Day", units: 1.0, color: "#047857", bg: "#ecfdf5", border: "#a7f3d0" },
+  { value: "half", label: "Half Day", units: 0.5, color: "#b45309", bg: "#fef3c7", border: "#fde68a" },
+  { value: "double", label: "Double Duty", units: 2.0, color: "#6d28d9", bg: "#f5f3ff", border: "#ddd6fe" },
+  { value: "overtime", label: "OT (1.5x)", units: 1.5, color: "#1d4ed8", bg: "#eff6ff", border: "#bfdbfe" },
+  { value: "absent", label: "Off / Absent", units: 0.0, color: "#6b7280", bg: "#f3f4f6", border: "#e5e7eb" },
 ];
 
 const DEFAULT_STAFF_FORM = {
@@ -117,6 +153,7 @@ export default function KitchenPage() {
 
   // Primary Data
   const [staffList, setStaffList] = useState<KitchenStaff[]>([]);
+  const [duties, setDuties] = useState<KitchenDuty[]>([]);
   const [wages, setWages] = useState<KitchenWage[]>([]);
   const [payments, setPayments] = useState<KitchenPayment[]>([]);
   const [summary, setSummary] = useState<KitchenSummary | null>(null);
@@ -127,10 +164,29 @@ export default function KitchenPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
-  // Tabs: 'directory' | 'wages' | 'payments'
-  const [activeTab, setActiveTab] = useState<"directory" | "wages" | "payments">("directory");
+  // Tabs: 'duties' | 'directory' | 'wages' | 'payments'
+  const [activeTab, setActiveTab] = useState<"duties" | "directory" | "wages" | "payments">("duties");
   const [search, setSearch] = useState("");
   const [filterType, setFilterType] = useState<"all" | "monthly" | "daily" | "pending">("all");
+
+  // Date for Daily Duty Sheet
+  const [selectedDutyDate, setSelectedDutyDate] = useState(new Date().toISOString().slice(0, 10));
+
+  // In-memory duty sheet map: staffId -> { shift, duty_status, duty_units, daily_rate, bonus, deduction, note }
+  const [dutySheet, setDutySheet] = useState<
+    Record<
+      number,
+      {
+        shift: string;
+        duty_status: string;
+        duty_units: number;
+        daily_rate: number;
+        bonus: number;
+        deduction: number;
+        note: string;
+      }
+    >
+  >({});
 
   // Modals
   const [staffModalOpen, setStaffModalOpen] = useState(false);
@@ -166,18 +222,16 @@ export default function KitchenPage() {
   const [voucherModalOpen, setVoucherModalOpen] = useState(false);
   const [voucherPayment, setVoucherPayment] = useState<KitchenPayment | null>(null);
 
-  // Staff Details Drawer
-  const [selectedStaffDetail, setSelectedStaffDetail] = useState<KitchenStaff | null>(null);
-
   // Data Loading
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [summaryRes, staffRes, wagesRes, paymentsRes] = await Promise.all([
+      const [summaryRes, staffRes, dutiesRes, wagesRes, paymentsRes] = await Promise.all([
         fetchWithAuth(`${API_URL}/kitchen/summary`),
         fetchWithAuth(`${API_URL}/kitchen/staff`),
+        fetchWithAuth(`${API_URL}/kitchen/duties`),
         fetchWithAuth(`${API_URL}/kitchen/wages`),
         fetchWithAuth(`${API_URL}/kitchen/payments`),
       ]);
@@ -186,8 +240,12 @@ export default function KitchenPage() {
         setSummary(await summaryRes.json());
       }
       if (staffRes.ok) {
-        const sList = await staffRes.json();
+        const sList: KitchenStaff[] = await staffRes.json();
         setStaffList(Array.isArray(sList) ? sList : []);
+      }
+      if (dutiesRes.ok) {
+        const dList: KitchenDuty[] = await dutiesRes.json();
+        setDuties(Array.isArray(dList) ? dList : []);
       }
       if (wagesRes.ok) {
         const wList = await wagesRes.json();
@@ -209,7 +267,88 @@ export default function KitchenPage() {
     loadData();
   }, [loadData]);
 
-  // Filtered Staff
+  // Sync duty sheet when selectedDutyDate or staffList or duties change
+  useEffect(() => {
+    const activeStaff = staffList.filter((s) => s.status === "active");
+    const dateDuties = duties.filter((d) => d.duty_date === selectedDutyDate);
+    const dateDutiesMap = new Map<number, KitchenDuty>();
+    dateDuties.forEach((d) => dateDutiesMap.set(d.staff_id, d));
+
+    const initialSheet: Record<number, any> = {};
+
+    activeStaff.forEach((s) => {
+      const existing = dateDutiesMap.get(s.id);
+      const isDaily = s.wage_type === "daily";
+      const standardRate = isDaily ? Number(s.wage_rate) : Math.round(Number(s.wage_rate) / 30);
+
+      if (existing) {
+        initialSheet[s.id] = {
+          shift: existing.shift,
+          duty_status: existing.duty_status,
+          duty_units: Number(existing.duty_units),
+          daily_rate: Number(existing.daily_rate),
+          bonus: Number(existing.bonus),
+          deduction: Number(existing.deduction),
+          note: existing.note || "",
+        };
+      } else {
+        initialSheet[s.id] = {
+          shift: "Full Day",
+          duty_status: "full",
+          duty_units: 1.0,
+          daily_rate: standardRate,
+          bonus: 0,
+          deduction: 0,
+          note: "",
+        };
+      }
+    });
+
+    setDutySheet(initialSheet);
+  }, [selectedDutyDate, staffList, duties]);
+
+  // Daily Duty Calculations for the selected date
+  const dutyDateStats = useMemo(() => {
+    let presentCount = 0;
+    let fullCount = 0;
+    let halfCount = 0;
+    let doubleCount = 0;
+    let otCount = 0;
+    let absentCount = 0;
+    let totalDutyWages = 0;
+
+    Object.values(dutySheet).forEach((entry) => {
+      const status = entry.duty_status;
+      const units = entry.duty_units;
+      const rate = entry.daily_rate;
+      const bonus = entry.bonus || 0;
+      const deduction = entry.deduction || 0;
+      const net = Math.max(0, units * rate + bonus - deduction);
+
+      if (status === "absent" || units === 0) {
+        absentCount += 1;
+      } else {
+        presentCount += 1;
+        totalDutyWages += net;
+        if (status === "full") fullCount += 1;
+        else if (status === "half") halfCount += 1;
+        else if (status === "double") doubleCount += 1;
+        else if (status === "overtime") otCount += 1;
+      }
+    });
+
+    return {
+      presentCount,
+      fullCount,
+      halfCount,
+      doubleCount,
+      otCount,
+      absentCount,
+      totalDutyWages,
+    };
+  }, [dutySheet]);
+
+  // Filtered Staff in Directory
   const filteredStaff = useMemo(() => {
     return staffList.filter((s) => {
       const matchSearch =
@@ -232,6 +371,109 @@ export default function KitchenPage() {
     if (!paymentStaffId) return null;
     return staffList.find((s) => s.id === Number(paymentStaffId)) || null;
   }, [staffList, paymentStaffId]);
+
+  // Quick Date Navigation
+  const shiftDate = (deltaDays: number) => {
+    const current = new Date(`${selectedDutyDate}T00:00:00`);
+    current.setDate(current.getDate() + deltaDays);
+    setSelectedDutyDate(current.toISOString().slice(0, 10));
+  };
+
+  // Update a single field in the Duty Sheet for a staff member
+  const handleDutySheetChange = (staffId: number, field: string, value: any) => {
+    setDutySheet((prev) => {
+      const current = prev[staffId] || {
+        shift: "Full Day",
+        duty_status: "full",
+        duty_units: 1.0,
+        daily_rate: 0,
+        bonus: 0,
+        deduction: 0,
+        note: "",
+      };
+
+      const updated = { ...current, [field]: value };
+
+      // If duty_status changed, update duty_units automatically
+      if (field === "duty_status") {
+        const option = DUTY_STATUS_OPTIONS.find((opt) => opt.value === value);
+        if (option) {
+          updated.duty_units = option.units;
+        }
+      }
+
+      return {
+        ...prev,
+        [staffId]: updated,
+      };
+    });
+  };
+
+  // Mark all active staff with a specific duty status
+  const handleMarkAllDuty = (status: string) => {
+    const option = DUTY_STATUS_OPTIONS.find((opt) => opt.value === status) || { units: 1.0 };
+    setDutySheet((prev) => {
+      const next: Record<number, any> = {};
+      Object.keys(prev).forEach((idStr) => {
+        const id = Number(idStr);
+        next[id] = {
+          ...prev[id],
+          duty_status: status,
+          duty_units: option.units,
+        };
+      });
+      return next;
+    });
+  };
+
+  // Save the entire Daily Duty Register for the selected date
+  const handleSaveDailyDutyRegister = async () => {
+    if (isOwner) {
+      alert("Read-only access: Owner role cannot record daily duties.");
+      return;
+    }
+
+    const dutyItems = Object.entries(dutySheet).map(([staffIdStr, data]) => ({
+      staff_id: Number(staffIdStr),
+      shift: data.shift || "Full Day",
+      duty_status: data.duty_status,
+      duty_units: data.duty_units,
+      daily_rate: data.daily_rate,
+      bonus: data.bonus || 0,
+      deduction: data.deduction || 0,
+      note: data.note || undefined,
+    }));
+
+    if (dutyItems.length === 0) {
+      alert("No active staff found to record duty.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      const res = await fetchWithAuth(`${API_URL}/kitchen/duties/batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          duty_date: selectedDutyDate,
+          duties: dutyItems,
+        }),
+      });
+
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        throw new Error(errJson?.detail || "Failed to save daily duty register.");
+      }
+
+      setSuccess(`Daily duties & corresponding wages for ${formatDate(selectedDutyDate)} saved successfully!`);
+      await loadData();
+      setTimeout(() => setSuccess(null), 3500);
+    } catch (err: any) {
+      alert(err.message || "Failed to save daily duty register.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Save / Update Staff
   const handleSaveStaff = async (e: FormEvent) => {
@@ -321,7 +563,7 @@ export default function KitchenPage() {
       return;
     }
     const confirm = window.confirm(
-      `Are you sure you want to delete "${staff.name}"? This will also remove their associated wage and payment history.`
+      `Are you sure you want to delete "${staff.name}"? This will also remove their associated duties, wage and payment history.`
     );
     if (!confirm) return;
 
@@ -547,6 +789,29 @@ export default function KitchenPage() {
     }
   };
 
+  // Delete Duty Record
+  const handleDeleteDuty = async (d: KitchenDuty) => {
+    if (isOwner) {
+      alert("Read-only access: Owner role cannot delete duty records.");
+      return;
+    }
+    if (!window.confirm(`Delete duty record #${d.id} (${d.duty_date}) for ${d.staff_name}?`)) {
+      return;
+    }
+    try {
+      setSaving(true);
+      const res = await fetchWithAuth(`${API_URL}/kitchen/duties/${d.id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to delete duty record.");
+      setSuccess("Duty record deleted.");
+      await loadData();
+      setTimeout(() => setSuccess(null), 3500);
+    } catch (err: any) {
+      alert(err.message || "Failed to delete duty entry.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Delete Wage Record
   const handleDeleteWage = async (wage: KitchenWage) => {
     if (isOwner) {
@@ -606,10 +871,10 @@ export default function KitchenPage() {
             <MobileMenuButton />
             <div>
               <h1 style={{ fontSize: "20px", fontWeight: 800, margin: 0, color: "#1e0836", display: "flex", alignItems: "center", gap: "8px" }}>
-                <span>🍳</span> Kitchen Staff & Wages
+                <span>🍳</span> Kitchen Duties & Staff Wages
               </h1>
               <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#6b5887" }}>
-                Manage kitchen personnel, daily/monthly payroll, auto-wage calculation & manual disbursements
+                Daily staff duty tracking with corresponding wages, monthly payroll, auto-calculation & manual payments
               </p>
             </div>
           </div>
@@ -636,7 +901,7 @@ export default function KitchenPage() {
                   }}
                   title="Automatically calculate and post wages for monthly or daily staff"
                 >
-                  <span>⚡</span> Auto-Set Wages
+                  <span>⚡</span> Auto-Set Month Wages
                 </button>
 
                 <button
@@ -793,6 +1058,29 @@ export default function KitchenPage() {
               </div>
             </div>
 
+            {/* Today's Daily Duty Wages */}
+            <div
+              style={{
+                background: "linear-gradient(135deg, #f5f3ff 0%, #ede9fe 100%)",
+                borderRadius: "12px",
+                padding: "18px 20px",
+                border: "1px solid #ddd6fe",
+                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+              }}
+            >
+              <span style={{ fontSize: "11px", fontWeight: 700, color: "#6d28d9", textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                Today's Daily Duty Wages
+              </span>
+              <div style={{ marginTop: "8px" }}>
+                <span style={{ fontSize: "26px", fontWeight: 800, color: "#5b21b6" }}>
+                  ₹{formatMoney(summary?.today_duty_wages ?? 0)}
+                </span>
+              </div>
+              <div style={{ marginTop: "6px", fontSize: "11px", color: "#6d28d9", fontWeight: 600 }}>
+                {summary?.today_duties_count ?? 0} staff on duty today
+              </div>
+            </div>
+
             {/* Total Accrued Wages */}
             <div
               style={{
@@ -812,34 +1100,11 @@ export default function KitchenPage() {
                 </span>
               </div>
               <div style={{ marginTop: "6px", fontSize: "11px", color: "#826e9e" }}>
-                Cumulative calculated wages
+                Daily Duties + Monthly Wages
               </div>
             </div>
 
-            {/* Total Paid */}
-            <div
-              style={{
-                background: "#ffffff",
-                borderRadius: "12px",
-                padding: "18px 20px",
-                border: "1px solid #ece4f7",
-                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
-              }}
-            >
-              <span style={{ fontSize: "11px", fontWeight: 700, color: "#826e9e", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                Total Disbursed / Paid
-              </span>
-              <div style={{ marginTop: "8px" }}>
-                <span style={{ fontSize: "26px", fontWeight: 800, color: "#059669" }}>
-                  ₹{formatMoney(summary?.total_paid ?? 0)}
-                </span>
-              </div>
-              <div style={{ marginTop: "6px", fontSize: "11px", color: "#059669", fontWeight: 600 }}>
-                ✓ Settled via Cash, UPI & Bank
-              </div>
-            </div>
-
-            {/* Outstanding Balance */}
+            {/* Total Paid & Pending Balance */}
             <div
               style={{
                 background: (summary?.total_pending_balance ?? 0) > 0 ? "linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%)" : "#f0fdf4",
@@ -849,17 +1114,22 @@ export default function KitchenPage() {
                 boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
               }}
             >
-              <span
-                style={{
-                  fontSize: "11px",
-                  fontWeight: 700,
-                  color: (summary?.total_pending_balance ?? 0) > 0 ? "#92400e" : "#166534",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.5px",
-                }}
-              >
-                Outstanding Balance Due
-              </span>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                <span
+                  style={{
+                    fontSize: "11px",
+                    fontWeight: 700,
+                    color: (summary?.total_pending_balance ?? 0) > 0 ? "#92400e" : "#166534",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  Pending Due Balance
+                </span>
+                <span style={{ fontSize: "11px", color: "#059669", fontWeight: 700 }}>
+                  Paid: ₹{formatMoney(summary?.total_paid ?? 0)}
+                </span>
+              </div>
               <div style={{ marginTop: "8px" }}>
                 <span
                   style={{
@@ -880,7 +1150,7 @@ export default function KitchenPage() {
                 }}
               >
                 {(summary?.total_pending_balance ?? 0) > 0
-                  ? "⚠ Pending wage disbursements"
+                  ? "⚠ Outstanding wage balance to disburse"
                   : "✓ All kitchen staff wages cleared"}
               </div>
             </div>
@@ -899,6 +1169,37 @@ export default function KitchenPage() {
             }}
           >
             <div style={{ display: "flex", gap: "8px" }}>
+              <button
+                type="button"
+                onClick={() => setActiveTab("duties")}
+                style={{
+                  padding: "10px 16px",
+                  border: "none",
+                  background: "transparent",
+                  borderBottom: activeTab === "duties" ? "3px solid #7c3aed" : "3px solid transparent",
+                  color: activeTab === "duties" ? "#7c3aed" : "#6b5887",
+                  fontWeight: activeTab === "duties" ? 800 : 600,
+                  fontSize: "13px",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                }}
+              >
+                <span>📅</span> Daily Duty & Wages Register
+                <span
+                  style={{
+                    background: activeTab === "duties" ? "#ede9fe" : "#f3f0f8",
+                    color: activeTab === "duties" ? "#7c3aed" : "#826e9e",
+                    padding: "2px 6px",
+                    borderRadius: "10px",
+                    fontSize: "11px",
+                  }}
+                >
+                  Today
+                </span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setActiveTab("directory")}
@@ -947,7 +1248,7 @@ export default function KitchenPage() {
                   gap: "6px",
                 }}
               >
-                <span>📜</span> Wage Accrual Ledger
+                <span>📜</span> Duty & Wage Ledgers
                 <span
                   style={{
                     background: activeTab === "wages" ? "#ede9fe" : "#f3f0f8",
@@ -957,7 +1258,7 @@ export default function KitchenPage() {
                     fontSize: "11px",
                   }}
                 >
-                  {wages.length}
+                  {duties.length + wages.length}
                 </span>
               </button>
 
@@ -1021,7 +1322,478 @@ export default function KitchenPage() {
             )}
           </div>
 
-          {/* TAB 1: STAFF DIRECTORY */}
+          {/* ============================================================ */}
+          {/* TAB 1: DAILY DUTY & CORRESPONDING WAGES REGISTER             */}
+          {/* ============================================================ */}
+          {activeTab === "duties" && (
+            <div>
+              {/* Date Control & Summary Ribbon */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "12px",
+                  border: "1px solid #ece4f7",
+                  padding: "16px 20px",
+                  marginBottom: "20px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  gap: "14px",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                }}
+              >
+                {/* Date Navigator */}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <button
+                    type="button"
+                    onClick={() => shiftDate(-1)}
+                    style={{
+                      background: "#f5f3ff",
+                      border: "1px solid #ddd6fe",
+                      color: "#6d28d9",
+                      borderRadius: "6px",
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ◀ Prev Day
+                  </button>
+
+                  <input
+                    type="date"
+                    value={selectedDutyDate}
+                    onChange={(e) => setSelectedDutyDate(e.target.value)}
+                    style={{
+                      padding: "7px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #7c3aed",
+                      fontSize: "14px",
+                      fontWeight: 800,
+                      color: "#1e0836",
+                      outline: "none",
+                      background: "#ffffff",
+                    }}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => shiftDate(1)}
+                    style={{
+                      background: "#f5f3ff",
+                      border: "1px solid #ddd6fe",
+                      color: "#6d28d9",
+                      borderRadius: "6px",
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Next Day ▶
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDutyDate(new Date().toISOString().slice(0, 10))}
+                    style={{
+                      background: "#ede9fe",
+                      border: "none",
+                      color: "#6d28d9",
+                      borderRadius: "6px",
+                      padding: "6px 12px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    Today
+                  </button>
+                </div>
+
+                {/* Day Summary Highlights */}
+                <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: "11px", color: "#826e9e", fontWeight: 700 }}>Staff on Duty:</div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
+                      {dutyDateStats.presentCount} / {staffList.filter((s) => s.status === "active").length} Present
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: "right", borderLeft: "1px solid #ece4f7", paddingLeft: "16px" }}>
+                    <div style={{ fontSize: "11px", color: "#826e9e", fontWeight: 700 }}>Corresponding Day Wages:</div>
+                    <div style={{ fontSize: "18px", fontWeight: 900, color: "#059669" }}>
+                      ₹{formatMoney(dutyDateStats.totalDutyWages)}
+                    </div>
+                  </div>
+
+                  {/* Batch Action Buttons */}
+                  {!isOwner && (
+                    <div style={{ display: "flex", gap: "6px", borderLeft: "1px solid #ece4f7", paddingLeft: "16px" }}>
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAllDuty("full")}
+                        style={{
+                          background: "#ecfdf5",
+                          border: "1px solid #a7f3d0",
+                          color: "#047857",
+                          borderRadius: "6px",
+                          padding: "6px 10px",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                        title="Mark all active staff as Full Day (1.0 duty)"
+                      >
+                        ✓ All Full Day
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => handleMarkAllDuty("absent")}
+                        style={{
+                          background: "#f3f4f6",
+                          border: "1px solid #e5e7eb",
+                          color: "#4b5563",
+                          borderRadius: "6px",
+                          padding: "6px 10px",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                        title="Mark all staff as Off / Absent"
+                      >
+                        All Off
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSaveDailyDutyRegister}
+                        disabled={saving}
+                        style={{
+                          background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                          color: "#ffffff",
+                          border: "none",
+                          borderRadius: "8px",
+                          padding: "8px 16px",
+                          fontWeight: 700,
+                          fontSize: "12px",
+                          cursor: "pointer",
+                          boxShadow: "0 4px 14px rgba(124, 58, 237, 0.3)",
+                        }}
+                      >
+                        {saving ? "Saving..." : "💾 Save Duties"}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Daily Duty Sheet Table */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "12px",
+                  border: "1px solid #ece4f7",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  overflowX: "auto",
+                  marginBottom: "20px",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                  <thead>
+                    <tr style={{ background: "#fbf9fd", borderBottom: "1px solid #ece4f7", color: "#6b5887" }}>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, width: "220px" }}>Staff Member</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, width: "160px" }}>Shift / Duty Type</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, minWidth: "260px" }}>Duty Status & Units</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right", width: "110px" }}>Daily Rate</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right", width: "140px" }}>Corresponding Wage</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, width: "120px" }}>Bonus / Extra</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, width: "120px" }}>Deduction</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right", width: "130px" }}>Net Wage</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700 }}>Duty Note</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {staffList.filter((s) => s.status === "active").length === 0 ? (
+                      <tr>
+                        <td colSpan={9} style={{ padding: "36px", textAlign: "center", color: "#826e9e" }}>
+                          No active kitchen staff found. Add kitchen staff from the "Staff Directory" tab to record duties.
+                        </td>
+                      </tr>
+                    ) : (
+                      staffList
+                        .filter((s) => s.status === "active")
+                        .map((staff) => {
+                          const entry = dutySheet[staff.id] || {
+                            shift: "Full Day",
+                            duty_status: "full",
+                            duty_units: 1.0,
+                            daily_rate: staff.wage_type === "daily" ? staff.wage_rate : Math.round(staff.wage_rate / 30),
+                            bonus: 0,
+                            deduction: 0,
+                            note: "",
+                          };
+
+                          const units = entry.duty_units;
+                          const rate = entry.daily_rate;
+                          const dutyWage = units * rate;
+                          const netWage = Math.max(0, dutyWage + (entry.bonus || 0) - (entry.deduction || 0));
+                          const isMonthly = staff.wage_type === "monthly";
+
+                          return (
+                            <tr
+                              key={staff.id}
+                              style={{
+                                borderBottom: "1px solid #f3eff9",
+                                background: entry.duty_status === "absent" ? "#fafafa" : "#ffffff",
+                                opacity: entry.duty_status === "absent" ? 0.75 : 1,
+                              }}
+                            >
+                              {/* Staff info */}
+                              <td style={{ padding: "12px 16px" }}>
+                                <div style={{ fontWeight: 800, color: "#1e0836" }}>{staff.name}</div>
+                                <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "3px" }}>
+                                  <span style={{ fontSize: "11px", color: "#7c3aed", fontWeight: 600 }}>
+                                    {staff.kitchen_role}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: "10px",
+                                      padding: "1px 5px",
+                                      borderRadius: "8px",
+                                      background: isMonthly ? "#eff6ff" : "#ecfdf5",
+                                      color: isMonthly ? "#1d4ed8" : "#047857",
+                                      fontWeight: 700,
+                                    }}
+                                  >
+                                    {isMonthly ? "Monthly" : "Daily"}
+                                  </span>
+                                </div>
+                              </td>
+
+                              {/* Shift Selector */}
+                              <td style={{ padding: "12px 16px" }}>
+                                <select
+                                  disabled={isOwner}
+                                  value={entry.shift}
+                                  onChange={(e) => handleDutySheetChange(staff.id, "shift", e.target.value)}
+                                  style={{
+                                    width: "100%",
+                                    padding: "6px 8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #ddd6fe",
+                                    fontSize: "12px",
+                                    outline: "none",
+                                    background: "#ffffff",
+                                  }}
+                                >
+                                  {SHIFT_OPTIONS.map((opt) => (
+                                    <option key={opt} value={opt}>
+                                      {opt}
+                                    </option>
+                                  ))}
+                                </select>
+                              </td>
+
+                              {/* Duty Status Selector Buttons */}
+                              <td style={{ padding: "12px 16px" }}>
+                                <div style={{ display: "flex", gap: "4px", flexWrap: "wrap" }}>
+                                  {DUTY_STATUS_OPTIONS.map((opt) => {
+                                    const isSelected = entry.duty_status === opt.value;
+                                    return (
+                                      <button
+                                        key={opt.value}
+                                        type="button"
+                                        disabled={isOwner}
+                                        onClick={() => handleDutySheetChange(staff.id, "duty_status", opt.value)}
+                                        style={{
+                                          padding: "4px 8px",
+                                          borderRadius: "6px",
+                                          border: isSelected ? `2px solid ${opt.color}` : "1px solid #e5e7eb",
+                                          background: isSelected ? opt.bg : "#ffffff",
+                                          color: isSelected ? opt.color : "#4b5563",
+                                          fontSize: "11px",
+                                          fontWeight: isSelected ? 800 : 500,
+                                          cursor: isOwner ? "default" : "pointer",
+                                          transition: "all 0.1s ease",
+                                        }}
+                                      >
+                                        {opt.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </td>
+
+                              {/* Base Daily Rate */}
+                              <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                                <strong style={{ color: "#3b176d" }}>₹{formatMoney(rate)}</strong>
+                                <div style={{ fontSize: "10px", color: "#826e9e" }}>
+                                  {isMonthly ? "(₹/30)" : "per day"}
+                                </div>
+                              </td>
+
+                              {/* Corresponding Wage */}
+                              <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    background: dutyWage > 0 ? "#ecfdf5" : "#f3f4f6",
+                                    color: dutyWage > 0 ? "#047857" : "#6b7280",
+                                    border: dutyWage > 0 ? "1px solid #a7f3d0" : "1px solid #e5e7eb",
+                                    padding: "3px 8px",
+                                    borderRadius: "6px",
+                                    fontWeight: 800,
+                                    fontSize: "12px",
+                                  }}
+                                >
+                                  ₹{formatMoney(dutyWage)}
+                                </span>
+                                <div style={{ fontSize: "10px", color: "#826e9e", marginTop: "2px" }}>
+                                  {units} duty × ₹{formatMoney(rate)}
+                                </div>
+                              </td>
+
+                              {/* Bonus Input */}
+                              <td style={{ padding: "12px 16px" }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="50"
+                                  disabled={isOwner}
+                                  placeholder="₹0"
+                                  value={entry.bonus || ""}
+                                  onChange={(e) => handleDutySheetChange(staff.id, "bonus", Number(e.target.value) || 0)}
+                                  style={{
+                                    width: "80px",
+                                    padding: "5px 8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #ddd6fe",
+                                    fontSize: "12px",
+                                    outline: "none",
+                                    color: "#059669",
+                                    fontWeight: 700,
+                                  }}
+                                />
+                              </td>
+
+                              {/* Deduction Input */}
+                              <td style={{ padding: "12px 16px" }}>
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="50"
+                                  disabled={isOwner}
+                                  placeholder="₹0"
+                                  value={entry.deduction || ""}
+                                  onChange={(e) =>
+                                    handleDutySheetChange(staff.id, "deduction", Number(e.target.value) || 0)
+                                  }
+                                  style={{
+                                    width: "80px",
+                                    padding: "5px 8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #ddd6fe",
+                                    fontSize: "12px",
+                                    outline: "none",
+                                    color: "#b91c1c",
+                                    fontWeight: 700,
+                                  }}
+                                />
+                              </td>
+
+                              {/* Net Wage */}
+                              <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                                <strong style={{ fontSize: "14px", fontWeight: 800, color: "#7c3aed" }}>
+                                  ₹{formatMoney(netWage)}
+                                </strong>
+                              </td>
+
+                              {/* Duty Note */}
+                              <td style={{ padding: "12px 16px" }}>
+                                <input
+                                  type="text"
+                                  disabled={isOwner}
+                                  placeholder="Optional note / event..."
+                                  value={entry.note || ""}
+                                  onChange={(e) => handleDutySheetChange(staff.id, "note", e.target.value)}
+                                  style={{
+                                    width: "100%",
+                                    minWidth: "120px",
+                                    padding: "5px 8px",
+                                    borderRadius: "6px",
+                                    border: "1px solid #ddd6fe",
+                                    fontSize: "12px",
+                                    outline: "none",
+                                  }}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Bottom Sticky Action Bar */}
+              {!isOwner && (
+                <div
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "12px",
+                    border: "1px solid #ece4f7",
+                    padding: "16px 24px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    boxShadow: "0 4px 14px rgba(30, 8, 54, 0.06)",
+                    flexWrap: "wrap",
+                    gap: "14px",
+                  }}
+                >
+                  <div>
+                    <span style={{ fontSize: "13px", fontWeight: 800, color: "#1e0836" }}>
+                      Ready to confirm daily duties for {formatDate(selectedDutyDate)}?
+                    </span>
+                    <div style={{ fontSize: "11px", color: "#6b5887", marginTop: "2px" }}>
+                      Wages calculated: <strong>₹{formatMoney(dutyDateStats.totalDutyWages)}</strong> for{" "}
+                      <strong>{dutyDateStats.presentCount}</strong> staff members. Balances update immediately.
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveDailyDutyRegister}
+                    disabled={saving}
+                    style={{
+                      background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "10px 24px",
+                      fontWeight: 800,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 14px rgba(124, 58, 237, 0.3)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>💾</span> {saving ? "Saving Duties..." : "Save & Post Daily Duty Wages"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ============================================================ */}
+          {/* TAB 2: STAFF DIRECTORY & BALANCES                            */}
+          {/* ============================================================ */}
           {activeTab === "directory" && (
             <div>
               {/* Search & Actions Bar */}
@@ -1094,6 +1866,7 @@ export default function KitchenPage() {
                       <th style={{ padding: "12px 16px", fontWeight: 700 }}>Staff Name</th>
                       <th style={{ padding: "12px 16px", fontWeight: 700 }}>Role</th>
                       <th style={{ padding: "12px 16px", fontWeight: 700 }}>Wage Type & Rate</th>
+                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "center" }}>Duties Logged</th>
                       <th style={{ padding: "12px 16px", fontWeight: 700 }}>Status</th>
                       <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Total Wages</th>
                       <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Paid</th>
@@ -1104,13 +1877,13 @@ export default function KitchenPage() {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan={8} style={{ padding: "36px", textAlign: "center", color: "#826e9e" }}>
+                        <td colSpan={9} style={{ padding: "36px", textAlign: "center", color: "#826e9e" }}>
                           Loading kitchen personnel records...
                         </td>
                       </tr>
                     ) : filteredStaff.length === 0 ? (
                       <tr>
-                        <td colSpan={8} style={{ padding: "36px", textAlign: "center", color: "#826e9e" }}>
+                        <td colSpan={9} style={{ padding: "36px", textAlign: "center", color: "#826e9e" }}>
                           No kitchen staff members found matching your search.
                         </td>
                       </tr>
@@ -1176,6 +1949,21 @@ export default function KitchenPage() {
                               </div>
                             </td>
 
+                            <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                              <span
+                                style={{
+                                  background: "#f3f0f8",
+                                  color: "#6b5887",
+                                  padding: "3px 8px",
+                                  borderRadius: "12px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {staff.duties_count || 0} duties
+                              </span>
+                            </td>
+
                             <td style={{ padding: "12px 16px" }}>
                               <span
                                 style={{
@@ -1221,8 +2009,11 @@ export default function KitchenPage() {
                                   <>
                                     <button
                                       type="button"
-                                      onClick={() => openQuickWageModal(staff)}
-                                      title="Record or calculate wage for this staff"
+                                      onClick={() => {
+                                        setActiveTab("duties");
+                                        setSelectedDutyDate(new Date().toISOString().slice(0, 10));
+                                      }}
+                                      title="Mark today's daily duty"
                                       style={{
                                         background: "#f5f3ff",
                                         border: "1px solid #ddd6fe",
@@ -1234,7 +2025,7 @@ export default function KitchenPage() {
                                         cursor: "pointer",
                                       }}
                                     >
-                                      ⚡ Wage
+                                      📅 Duty
                                     </button>
 
                                     <button
@@ -1302,157 +2093,282 @@ export default function KitchenPage() {
             </div>
           )}
 
-          {/* TAB 2: WAGE ACCRUAL LEDGER */}
+          {/* ============================================================ */}
+          {/* TAB 3: DUTY & WAGE ACCRUAL LEDGERS                           */}
+          {/* ============================================================ */}
           {activeTab === "wages" && (
             <div>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                  marginBottom: "16px",
-                  flexWrap: "wrap",
-                  gap: "10px",
-                }}
-              >
-                <div>
-                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#1e0836" }}>
-                    Wage Accrual Entries
-                  </h3>
-                  <span style={{ fontSize: "12px", color: "#826e9e" }}>
-                    Automated & manual wage calculations computed based on staff daily rates and monthly attendance
-                  </span>
+              {/* Daily Duties Ledger */}
+              <div style={{ marginBottom: "32px" }}>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "14px",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                  }}
+                >
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
+                      📅 Daily Duty Ledger ({duties.length} entries)
+                    </h3>
+                    <span style={{ fontSize: "12px", color: "#826e9e" }}>
+                      Chronological record of every daily shift, duty units, and corresponding wages earned
+                    </span>
+                  </div>
                 </div>
 
-                {!isOwner && (
-                  <button
-                    type="button"
-                    onClick={openAutoWageModal}
-                    style={{
-                      background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                      color: "#ffffff",
-                      border: "none",
-                      borderRadius: "8px",
-                      padding: "8px 16px",
-                      fontWeight: 700,
-                      fontSize: "12px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    ⚡ Run Auto-Wage Calculation
-                  </button>
-                )}
-              </div>
-
-              <div
-                style={{
-                  background: "#ffffff",
-                  borderRadius: "12px",
-                  border: "1px solid #ece4f7",
-                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
-                  overflowX: "auto",
-                }}
-              >
-                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
-                  <thead>
-                    <tr style={{ background: "#fbf9fd", borderBottom: "1px solid #ece4f7", color: "#6b5887" }}>
-                      <th style={{ padding: "12px 16px", fontWeight: 700 }}>Recorded Date</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700 }}>Staff Name</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700 }}>Period</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700 }}>Wage Type</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Days</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Base Rate</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Bonus</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Deduction</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Total Accrued</th>
-                      <th style={{ padding: "12px 16px", fontWeight: 700 }}>Notes</th>
-                      {!isOwner && <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "center" }}>Action</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {wages.length === 0 ? (
-                      <tr>
-                        <td colSpan={11} style={{ padding: "36px", textAlign: "center", color: "#826e9e" }}>
-                          No wage records generated yet. Click "Run Auto-Wage Calculation" or "Wage" on any staff member to record.
-                        </td>
+                <div
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "12px",
+                    border: "1px solid #ece4f7",
+                    boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                    overflowX: "auto",
+                  }}
+                >
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                    <thead>
+                      <tr style={{ background: "#fbf9fd", borderBottom: "1px solid #ece4f7", color: "#6b5887" }}>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Duty Date</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Staff Name</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Shift</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Duty Status</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Daily Rate</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Bonus</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Deduction</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Total Earned</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Note</th>
+                        {!isOwner && <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "center" }}>Action</th>}
                       </tr>
-                    ) : (
-                      wages.map((w) => (
-                        <tr key={w.id} style={{ borderBottom: "1px solid #f3eff9" }}>
-                          <td style={{ padding: "12px 16px", color: "#6b5887" }}>
-                            {formatDate(w.date_recorded)}
+                    </thead>
+                    <tbody>
+                      {duties.length === 0 ? (
+                        <tr>
+                          <td colSpan={10} style={{ padding: "36px", textAlign: "center", color: "#826e9e" }}>
+                            No daily duty records saved yet. Mark duties in the "Daily Duty & Wages Register" tab.
                           </td>
-                          <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1e0836" }}>
-                            {w.staff_name || `Staff #${w.staff_id}`}
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span style={{ background: "#f3f0f8", color: "#6b5887", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 700 }}>
-                              {w.period}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px 16px" }}>
-                            <span
-                              style={{
-                                background: w.wage_type === "monthly" ? "#eff6ff" : "#ecfdf5",
-                                color: w.wage_type === "monthly" ? "#1d4ed8" : "#047857",
-                                padding: "2px 6px",
-                                borderRadius: "4px",
-                                fontSize: "11px",
-                                fontWeight: 700,
-                                textTransform: "capitalize",
-                              }}
-                            >
-                              {w.wage_type}
-                            </span>
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600 }}>
-                            {w.days_worked}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#6b5887" }}>
-                            ₹{formatMoney(w.base_rate)}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#059669" }}>
-                            +{formatMoney(w.bonus)}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", color: "#b91c1c" }}>
-                            -{formatMoney(w.deduction)}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, color: "#7c3aed" }}>
-                            ₹{formatMoney(w.total_wage)}
-                          </td>
-                          <td style={{ padding: "12px 16px", color: "#6b5887", fontSize: "12px" }}>
-                            {w.notes || "-"}
-                          </td>
-                          {!isOwner && (
-                            <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteWage(w)}
-                                title="Delete wage record"
+                        </tr>
+                      ) : (
+                        duties.map((d) => (
+                          <tr key={d.id} style={{ borderBottom: "1px solid #f3eff9" }}>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1e0836" }}>
+                              {formatDate(d.duty_date)}
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <strong>{d.staff_name || `Staff #${d.staff_id}`}</strong>
+                              <div style={{ fontSize: "11px", color: "#7c3aed" }}>{d.kitchen_role}</div>
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span style={{ background: "#f5f3ff", color: "#6d28d9", padding: "2px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 600 }}>
+                                {d.shift}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span
                                 style={{
-                                  background: "#fef2f2",
-                                  border: "1px solid #fecaca",
-                                  color: "#b91c1c",
+                                  background: d.duty_status === "absent" ? "#f3f4f6" : "#ecfdf5",
+                                  color: d.duty_status === "absent" ? "#6b7280" : "#047857",
+                                  padding: "2px 8px",
                                   borderRadius: "6px",
-                                  padding: "4px 8px",
                                   fontSize: "11px",
-                                  cursor: "pointer",
+                                  fontWeight: 700,
+                                  textTransform: "capitalize",
                                 }}
                               >
-                                🗑️
-                              </button>
+                                {d.duty_status} ({d.duty_units}x)
+                              </span>
                             </td>
-                          )}
+                            <td style={{ padding: "12px 16px", textAlign: "right", color: "#3b176d" }}>
+                              ₹{formatMoney(d.daily_rate)}
+                            </td>
+                            <td style={{ padding: "12px 16px", textAlign: "right", color: "#059669" }}>
+                              +{formatMoney(d.bonus)}
+                            </td>
+                            <td style={{ padding: "12px 16px", textAlign: "right", color: "#b91c1c" }}>
+                              -{formatMoney(d.deduction)}
+                            </td>
+                            <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, color: "#059669" }}>
+                              ₹{formatMoney(d.total_wage)}
+                            </td>
+                            <td style={{ padding: "12px 16px", color: "#6b5887", fontSize: "12px" }}>
+                              {d.note || "-"}
+                            </td>
+                            {!isOwner && (
+                              <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteDuty(d)}
+                                  title="Delete duty record"
+                                  style={{
+                                    background: "#fef2f2",
+                                    border: "1px solid #fecaca",
+                                    color: "#b91c1c",
+                                    borderRadius: "6px",
+                                    padding: "4px 8px",
+                                    fontSize: "11px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Monthly Wage Slips Ledger */}
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "14px",
+                    flexWrap: "wrap",
+                    gap: "10px",
+                  }}
+                >
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
+                      📜 Periodic / Monthly Wage Slips ({wages.length} entries)
+                    </h3>
+                    <span style={{ fontSize: "12px", color: "#826e9e" }}>
+                      Monthly fixed salary postings and batch wage calculations
+                    </span>
+                  </div>
+
+                  {!isOwner && (
+                    <button
+                      type="button"
+                      onClick={openAutoWageModal}
+                      style={{
+                        background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                        color: "#ffffff",
+                        border: "none",
+                        borderRadius: "8px",
+                        padding: "8px 16px",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ⚡ Run Monthly Auto-Wage Calculation
+                    </button>
+                  )}
+                </div>
+
+                <div
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "12px",
+                    border: "1px solid #ece4f7",
+                    boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                    overflowX: "auto",
+                  }}
+                >
+                  <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                    <thead>
+                      <tr style={{ background: "#fbf9fd", borderBottom: "1px solid #ece4f7", color: "#6b5887" }}>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Recorded Date</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Staff Name</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Period</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Wage Type</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Days</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Base Rate</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "right" }}>Total Accrued</th>
+                        <th style={{ padding: "12px 16px", fontWeight: 700 }}>Notes</th>
+                        {!isOwner && <th style={{ padding: "12px 16px", fontWeight: 700, textAlign: "center" }}>Action</th>}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {wages.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} style={{ padding: "36px", textAlign: "center", color: "#826e9e" }}>
+                            No periodic wage records generated.
+                          </td>
                         </tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
+                      ) : (
+                        wages.map((w) => (
+                          <tr key={w.id} style={{ borderBottom: "1px solid #f3eff9" }}>
+                            <td style={{ padding: "12px 16px", color: "#6b5887" }}>
+                              {formatDate(w.date_recorded)}
+                            </td>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1e0836" }}>
+                              {w.staff_name || `Staff #${w.staff_id}`}
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span style={{ background: "#f3f0f8", color: "#6b5887", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 700 }}>
+                                {w.period}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span
+                                style={{
+                                  background: w.wage_type === "monthly" ? "#eff6ff" : "#ecfdf5",
+                                  color: w.wage_type === "monthly" ? "#1d4ed8" : "#047857",
+                                  padding: "2px 6px",
+                                  borderRadius: "4px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  textTransform: "capitalize",
+                                }}
+                              >
+                                {w.wage_type}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600 }}>
+                              {w.days_worked}
+                            </td>
+                            <td style={{ padding: "12px 16px", textAlign: "right", color: "#6b5887" }}>
+                              ₹{formatMoney(w.base_rate)}
+                            </td>
+                            <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, color: "#7c3aed" }}>
+                              ₹{formatMoney(w.total_wage)}
+                            </td>
+                            <td style={{ padding: "12px 16px", color: "#6b5887", fontSize: "12px" }}>
+                              {w.notes || "-"}
+                            </td>
+                            {!isOwner && (
+                              <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteWage(w)}
+                                  title="Delete wage record"
+                                  style={{
+                                    background: "#fef2f2",
+                                    border: "1px solid #fecaca",
+                                    color: "#b91c1c",
+                                    borderRadius: "6px",
+                                    padding: "4px 8px",
+                                    fontSize: "11px",
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  🗑️
+                                </button>
+                              </td>
+                            )}
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             </div>
           )}
 
-          {/* TAB 3: PAYMENT HISTORY & RECEIPTS */}
+          {/* ============================================================ */}
+          {/* TAB 4: PAYMENT HISTORY & RECEIPTS                            */}
+          {/* ============================================================ */}
           {activeTab === "payments" && (
             <div>
               <div
@@ -1986,7 +2902,7 @@ export default function KitchenPage() {
             >
               <div>
                 <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#5b21b6", display: "flex", alignItems: "center", gap: "6px" }}>
-                  <span>⚡</span> Auto-Set Kitchen Wages
+                  <span>⚡</span> Auto-Set Month Wages
                 </h3>
                 <small style={{ color: "#7c3aed", fontSize: "11px", fontWeight: 600 }}>
                   Automated computation for Daily Staff (Days × Daily Rate) & Monthly Staff
@@ -2045,9 +2961,6 @@ export default function KitchenPage() {
                       fontWeight: 700,
                     }}
                   />
-                  <small style={{ color: "#826e9e", fontSize: "10px", marginTop: "2px", display: "block" }}>
-                    For Daily Staff: Rate × {autoDaysWorked} days. For Monthly: Pro-rated if &lt; 30.
-                  </small>
                 </div>
               </div>
 
@@ -2139,22 +3052,6 @@ export default function KitchenPage() {
                 </div>
               </div>
 
-              <div
-                style={{
-                  background: "#eff6ff",
-                  border: "1px solid #bfdbfe",
-                  borderRadius: "8px",
-                  padding: "10px 14px",
-                  marginBottom: "20px",
-                  fontSize: "11px",
-                  color: "#1e40af",
-                }}
-              >
-                💡 <strong>Auto-calculation rule:</strong> Daily workers will accrue{" "}
-                <code>{autoDaysWorked} days × Daily Rate</code>. Monthly workers will accrue their standard monthly salary.
-                Balances update automatically.
-              </div>
-
               <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
                 <button
                   type="button"
@@ -2196,270 +3093,7 @@ export default function KitchenPage() {
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 3: INDIVIDUAL QUICK WAGE MODAL                         */}
-      {/* ============================================================ */}
-      {quickWageModalOpen && quickWageStaff && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(15, 4, 25, 0.6)",
-            backdropFilter: "blur(4px)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 9999,
-            padding: "16px",
-          }}
-        >
-          <div
-            style={{
-              background: "#ffffff",
-              borderRadius: "14px",
-              width: "100%",
-              maxWidth: "480px",
-              boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.2)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                padding: "18px 24px",
-                borderBottom: "1px solid #e2d9f3",
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                background: "#fbf9fd",
-              }}
-            >
-              <div>
-                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
-                  Record Wage: {quickWageStaff.name}
-                </h3>
-                <small style={{ color: "#6b5887", fontSize: "11px" }}>
-                  {quickWageStaff.kitchen_role} • {quickWageStaff.wage_type === "monthly" ? "Monthly Staff" : "Daily Staff"} (₹
-                  {formatMoney(quickWageStaff.wage_rate)})
-                </small>
-              </div>
-              <button
-                type="button"
-                onClick={() => setQuickWageModalOpen(false)}
-                style={{ border: "none", background: "transparent", fontSize: "18px", color: "#6b5887", cursor: "pointer" }}
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveQuickWage} style={{ padding: "24px" }}>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#4c3a64", marginBottom: "5px" }}>
-                    Period *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="e.g. 2026-10"
-                    value={quickPeriod}
-                    onChange={(e) => setQuickPeriod(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      border: "1px solid #ddd6fe",
-                      fontSize: "13px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#4c3a64", marginBottom: "5px" }}>
-                    Days Worked *
-                  </label>
-                  <input
-                    type="number"
-                    step="0.5"
-                    min="0.5"
-                    required
-                    value={quickDaysWorked}
-                    onChange={(e) => setQuickDaysWorked(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      border: "1px solid #ddd6fe",
-                      fontSize: "13px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-              </div>
-
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "14px" }}>
-                <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#4c3a64", marginBottom: "5px" }}>
-                    Bonus (₹)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={quickBonus}
-                    onChange={(e) => setQuickBonus(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      border: "1px solid #ddd6fe",
-                      fontSize: "13px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-
-                <div>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#4c3a64", marginBottom: "5px" }}>
-                    Deduction (₹)
-                  </label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    value={quickDeduction}
-                    onChange={(e) => setQuickDeduction(e.target.value)}
-                    style={{
-                      width: "100%",
-                      padding: "8px 12px",
-                      borderRadius: "6px",
-                      border: "1px solid #ddd6fe",
-                      fontSize: "13px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Live Preview Box */}
-              {(() => {
-                const days = Number(quickDaysWorked) || 1;
-                const isMonthly = quickWageStaff.wage_type === "monthly";
-                const base = isMonthly
-                  ? days >= 30
-                    ? quickWageStaff.wage_rate
-                    : Math.round((quickWageStaff.wage_rate / 30) * days)
-                  : quickWageStaff.wage_rate * days;
-                const bonus = Number(quickBonus) || 0;
-                const deduction = Number(quickDeduction) || 0;
-                const total = Math.max(0, base + bonus - deduction);
-
-                return (
-                  <div
-                    style={{
-                      background: "#f5f3ff",
-                      border: "1px solid #ddd6fe",
-                      borderRadius: "8px",
-                      padding: "12px 14px",
-                      marginBottom: "16px",
-                    }}
-                  >
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#6b5887", marginBottom: "4px" }}>
-                      <span>Base Wage ({days} {days === 1 ? "day" : "days"} @ ₹{formatMoney(quickWageStaff.wage_rate)}):</span>
-                      <strong>₹{formatMoney(base)}</strong>
-                    </div>
-                    {bonus > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#059669", marginBottom: "4px" }}>
-                        <span>+ Bonus:</span>
-                        <strong>+₹{formatMoney(bonus)}</strong>
-                      </div>
-                    )}
-                    {deduction > 0 && (
-                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: "12px", color: "#b91c1c", marginBottom: "4px" }}>
-                        <span>- Deduction:</span>
-                        <strong>-₹{formatMoney(deduction)}</strong>
-                      </div>
-                    )}
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        fontSize: "14px",
-                        fontWeight: 800,
-                        color: "#5b21b6",
-                        borderTop: "1px dashed #ddd6fe",
-                        paddingTop: "6px",
-                        marginTop: "6px",
-                      }}
-                    >
-                      <span>Total Accrued Wage:</span>
-                      <span>₹{formatMoney(total)}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              <div style={{ marginBottom: "20px" }}>
-                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#4c3a64", marginBottom: "5px" }}>
-                  Notes / Reason
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Festival extra shift, overtime bonus..."
-                  value={quickNotes}
-                  onChange={(e) => setQuickNotes(e.target.value)}
-                  style={{
-                    width: "100%",
-                    padding: "8px 12px",
-                    borderRadius: "6px",
-                    border: "1px solid #ddd6fe",
-                    fontSize: "13px",
-                    outline: "none",
-                  }}
-                />
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
-                <button
-                  type="button"
-                  onClick={() => setQuickWageModalOpen(false)}
-                  style={{
-                    background: "#f3eff9",
-                    color: "#6b5887",
-                    border: "none",
-                    borderRadius: "8px",
-                    padding: "9px 16px",
-                    fontWeight: 600,
-                    fontSize: "13px",
-                    cursor: "pointer",
-                  }}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  style={{
-                    background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                    color: "#ffffff",
-                    border: "none",
-                    borderRadius: "8px",
-                    padding: "9px 20px",
-                    fontWeight: 700,
-                    fontSize: "13px",
-                    cursor: "pointer",
-                    boxShadow: "0 4px 14px rgba(124, 58, 237, 0.3)",
-                  }}
-                >
-                  {saving ? "Posting..." : "Confirm & Post Wage"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* ============================================================ */}
-      {/* MODAL 4: RECORD MANUAL STAFF PAYMENT                          */}
+      {/* MODAL 3: RECORD MANUAL STAFF PAYMENT                          */}
       {/* ============================================================ */}
       {paymentModalOpen && (
         <div
@@ -2750,7 +3384,7 @@ export default function KitchenPage() {
       )}
 
       {/* ============================================================ */}
-      {/* MODAL 5: OFFICIAL PRINTABLE PAYMENT VOUCHER RECEIPT           */}
+      {/* MODAL 4: OFFICIAL PRINTABLE PAYMENT VOUCHER RECEIPT           */}
       {/* ============================================================ */}
       {voucherModalOpen && voucherPayment && (
         <div
@@ -2801,7 +3435,6 @@ export default function KitchenPage() {
 
             {/* Printable Voucher Slip */}
             <div id="printable-voucher" style={{ padding: "28px", background: "#ffffff", color: "#1e0836" }}>
-              {/* Header */}
               <div style={{ textAlign: "center", borderBottom: "2px solid #7c3aed", paddingBottom: "14px", marginBottom: "18px" }}>
                 <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 800, color: "#3b176d", letterSpacing: "1px" }}>
                   FOOD COURT EVENT MANAGEMENT
@@ -2814,7 +3447,6 @@ export default function KitchenPage() {
                 </div>
               </div>
 
-              {/* Staff Details Grid */}
               <div
                 style={{
                   background: "#fbf9fd",
@@ -2846,7 +3478,6 @@ export default function KitchenPage() {
                 )}
               </div>
 
-              {/* Amount Highlight */}
               <div
                 style={{
                   background: "#ecfdf5",
@@ -2865,7 +3496,6 @@ export default function KitchenPage() {
                 </div>
               </div>
 
-              {/* Signatures */}
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: "36px", paddingTop: "14px" }}>
                 <div style={{ textAlign: "center", width: "160px" }}>
                   <div style={{ borderTop: "1px solid #9ca3af", paddingTop: "6px", fontSize: "11px", color: "#4b5563", fontWeight: 600 }}>
@@ -2880,7 +3510,6 @@ export default function KitchenPage() {
               </div>
             </div>
 
-            {/* Print & Close Actions */}
             <div
               style={{
                 padding: "14px 20px",

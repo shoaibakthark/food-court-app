@@ -487,6 +487,7 @@ class KitchenStaffResponse(BaseModel):
     joined_date: date | None = None
     address: str | None = None
     notes: str | None = None
+    duties_count: int = 0
     total_wages: Decimal = Decimal("0.00")
     total_paid: Decimal = Decimal("0.00")
     balance: Decimal = Decimal("0.00")
@@ -579,6 +580,62 @@ class KitchenSummaryResponse(BaseModel):
     total_wages: Decimal
     total_paid: Decimal
     total_pending_balance: Decimal
+    today_duties_count: int = 0
+    today_duty_wages: Decimal = Decimal("0.00")
+
+
+# ============================================================
+# KITCHEN DAILY DUTY SCHEMAS
+# ============================================================
+
+class KitchenDutyCreate(BaseModel):
+    staff_id: int
+    duty_date: date | None = None
+    shift: str = "Full Day"
+    duty_status: str = "full"  # 'full', 'half', 'double', 'overtime', 'absent'
+    duty_units: Decimal = Decimal("1.0")
+    daily_rate: Decimal | None = None
+    bonus: Decimal = Field(ge=0, default=Decimal("0.00"))
+    deduction: Decimal = Field(ge=0, default=Decimal("0.00"))
+    note: str | None = None
+
+
+class KitchenBatchDutyItem(BaseModel):
+    staff_id: int
+    shift: str = "Full Day"
+    duty_status: str = "full"
+    duty_units: Decimal = Decimal("1.0")
+    daily_rate: Decimal | None = None
+    bonus: Decimal = Field(ge=0, default=Decimal("0.00"))
+    deduction: Decimal = Field(ge=0, default=Decimal("0.00"))
+    note: str | None = None
+
+
+class KitchenBatchDutyRequest(BaseModel):
+    duty_date: date
+    duties: list[KitchenBatchDutyItem]
+
+
+class KitchenDutyResponse(BaseModel):
+    id: int
+    staff_id: int
+    staff_name: str | None = None
+    kitchen_role: str | None = None
+    duty_date: date
+    shift: str
+    duty_status: str
+    duty_units: Decimal
+    daily_rate: Decimal
+    duty_wage: Decimal
+    bonus: Decimal
+    deduction: Decimal
+    total_wage: Decimal
+    note: str | None = None
+
+    model_config = {
+        "from_attributes": True
+    }
+
 
 
 
