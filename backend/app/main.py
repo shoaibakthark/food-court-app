@@ -2890,7 +2890,8 @@ def get_kitchen_duties(
     query = db.query(
         models.KitchenDuty,
         models.KitchenStaff.name.label("staff_name"),
-        models.KitchenStaff.kitchen_role.label("kitchen_role")
+        models.KitchenStaff.kitchen_role.label("kitchen_role"),
+        models.KitchenStaff.wage_type.label("wage_type"),
     ).join(models.KitchenStaff, models.KitchenDuty.staff_id == models.KitchenStaff.id)
 
     if duty_date:
@@ -2904,12 +2905,19 @@ def get_kitchen_duties(
 
     rows = query.order_by(models.KitchenDuty.duty_date.desc(), models.KitchenDuty.id.desc()).all()
     results = []
-    for d, s_name, k_role in rows:
+    for d, s_name, k_role, w_type in rows:
+        payment = db.query(models.KitchenPayment).filter(
+            models.KitchenPayment.staff_id == d.staff_id,
+            models.KitchenPayment.payment_date == d.duty_date,
+            models.KitchenPayment.note.ilike(f"%Daily wage for {d.duty_date}%")
+        ).first()
+
         results.append({
             "id": d.id,
             "staff_id": d.staff_id,
             "staff_name": s_name,
             "kitchen_role": k_role,
+            "wage_type": w_type,
             "duty_date": d.duty_date,
             "shift": d.shift,
             "duty_status": d.duty_status,
@@ -2919,6 +2927,10 @@ def get_kitchen_duties(
             "bonus": d.bonus,
             "deduction": d.deduction,
             "total_wage": d.total_wage,
+            "today_wage": d.total_wage,
+            "paid_today": payment is not None,
+            "paid_amount": payment.amount if payment else Decimal("0.00"),
+            "payment_mode": payment.payment_mode if payment else "Cash",
             "note": d.note,
         })
     return results
@@ -2932,27 +2944,42 @@ def create_or_update_kitchen_duty(payload: schemas.KitchenDutyCreate, db: Sessio
 
     duty_date = payload.duty_date or DateType.today()
 
-    if payload.daily_rate is not None:
-        rate = payload.daily_rate
-    elif staff.wage_type == "daily":
-        rate = staff.wage_rate
-    else:
-        rate = round(staff.wage_rate / Decimal(30), 2)
-
-    units = payload.duty_units
-    if payload.duty_status == "absent":
+    if payload.duty_status.lower() in ("absent", "off"):
         units = Decimal("0.00")
+    elif payload.duty_status.lower() in ("half", "half day"):
+        units = Decimal("0.50")
+    else:
+        units = payload.duty_units if payload.duty_units is not None else Decimal("1.00")
 
-    duty_wage = rate * units
-    total_w = max(Decimal("0.00"), duty_wage + payload.bonus - payload.deduction)
+    if staff.wage_type == "monthly":
+        if payload.today_wage is not None and payload.duty_status.lower() not in ("absent", "off"):
+            rate = payload.today_wage
+            duty_wage = payload.today_wage
+        else:
+            rate = Decimal("0.00")
+            duty_wage = Decimal("0.00")
+        total_w = max(Decimal("0.00"), duty_wage + payload.bonus - payload.deduction)
+    else:
+        if payload.duty_status.lower() in ("absent", "off"):
+            rate = Decimal("0.00")
+            duty_wage = Decimal("0.00")
+            total_w = Decimal("0.00")
+        elif payload.today_wage is not None:
+            rate = payload.today_wage
+            duty_wage = payload.today_wage
+            total_w = max(Decimal("0.00"), duty_wage + payload.bonus - payload.deduction)
+        else:
+            rate = payload.daily_rate if payload.daily_rate is not None else staff.wage_rate
+            duty_wage = rate * units
+            total_w = max(Decimal("0.00"), duty_wage + payload.bonus - payload.deduction)
 
     existing = db.query(models.KitchenDuty).filter(
         models.KitchenDuty.staff_id == staff.id,
         models.KitchenDuty.duty_date == duty_date,
-        models.KitchenDuty.shift == payload.shift
     ).first()
 
     if existing:
+        existing.shift = payload.shift
         existing.duty_status = payload.duty_status
         existing.duty_units = units
         existing.daily_rate = rate
@@ -2982,11 +3009,38 @@ def create_or_update_kitchen_duty(payload: schemas.KitchenDutyCreate, db: Sessio
         db.commit()
         db.refresh(duty_obj)
 
+    existing_payment = db.query(models.KitchenPayment).filter(
+        models.KitchenPayment.staff_id == staff.id,
+        models.KitchenPayment.payment_date == duty_date,
+        models.KitchenPayment.note.ilike(f"%Daily wage for {duty_date}%")
+    ).first()
+
+    if payload.paid_today or (payload.paid_amount and payload.paid_amount > 0):
+        pay_amt = payload.paid_amount if (payload.paid_amount and payload.paid_amount > 0) else total_w
+        if pay_amt > 0:
+            if existing_payment:
+                existing_payment.amount = pay_amt
+                existing_payment.payment_mode = payload.payment_mode or "Cash"
+            else:
+                db.add(models.KitchenPayment(
+                    staff_id=staff.id,
+                    amount=pay_amt,
+                    payment_date=duty_date,
+                    payment_mode=payload.payment_mode or "Cash",
+                    note=f"Daily wage for {duty_date}",
+                ))
+            db.commit()
+    else:
+        if existing_payment:
+            db.delete(existing_payment)
+            db.commit()
+
     return {
         "id": duty_obj.id,
         "staff_id": duty_obj.staff_id,
         "staff_name": staff.name,
         "kitchen_role": staff.kitchen_role,
+        "wage_type": staff.wage_type,
         "duty_date": duty_obj.duty_date,
         "shift": duty_obj.shift,
         "duty_status": duty_obj.duty_status,
@@ -2996,6 +3050,10 @@ def create_or_update_kitchen_duty(payload: schemas.KitchenDutyCreate, db: Sessio
         "bonus": duty_obj.bonus,
         "deduction": duty_obj.deduction,
         "total_wage": duty_obj.total_wage,
+        "today_wage": duty_obj.total_wage,
+        "paid_today": payload.paid_today,
+        "paid_amount": payload.paid_amount or Decimal("0.00"),
+        "payment_mode": payload.payment_mode or "Cash",
         "note": duty_obj.note,
     }
 
@@ -3010,27 +3068,42 @@ def save_batch_kitchen_duties(payload: schemas.KitchenBatchDutyRequest, db: Sess
         if not staff:
             continue
 
-        if item.daily_rate is not None:
-            rate = item.daily_rate
-        elif staff.wage_type == "daily":
-            rate = staff.wage_rate
-        else:
-            rate = round(staff.wage_rate / Decimal(30), 2)
-
-        units = item.duty_units
-        if item.duty_status == "absent":
+        if item.duty_status.lower() in ("absent", "off"):
             units = Decimal("0.00")
+        elif item.duty_status.lower() in ("half", "half day"):
+            units = Decimal("0.50")
+        else:
+            units = item.duty_units if item.duty_units is not None else Decimal("1.00")
 
-        duty_wage = rate * units
-        total_w = max(Decimal("0.00"), duty_wage + item.bonus - item.deduction)
+        if staff.wage_type == "monthly":
+            if item.today_wage is not None and item.duty_status.lower() not in ("absent", "off"):
+                rate = item.today_wage
+                duty_wage = item.today_wage
+            else:
+                rate = Decimal("0.00")
+                duty_wage = Decimal("0.00")
+            total_w = max(Decimal("0.00"), duty_wage + item.bonus - item.deduction)
+        else:
+            if item.duty_status.lower() in ("absent", "off"):
+                rate = Decimal("0.00")
+                duty_wage = Decimal("0.00")
+                total_w = Decimal("0.00")
+            elif item.today_wage is not None:
+                rate = item.today_wage
+                duty_wage = item.today_wage
+                total_w = max(Decimal("0.00"), duty_wage + item.bonus - item.deduction)
+            else:
+                rate = item.daily_rate if item.daily_rate is not None else staff.wage_rate
+                duty_wage = rate * units
+                total_w = max(Decimal("0.00"), duty_wage + item.bonus - item.deduction)
 
         existing = db.query(models.KitchenDuty).filter(
             models.KitchenDuty.staff_id == staff.id,
             models.KitchenDuty.duty_date == duty_date,
-            models.KitchenDuty.shift == item.shift
         ).first()
 
         if existing:
+            existing.shift = item.shift
             existing.duty_status = item.duty_status
             existing.duty_units = units
             existing.daily_rate = rate
@@ -3054,11 +3127,36 @@ def save_batch_kitchen_duties(payload: schemas.KitchenBatchDutyRequest, db: Sess
                 note=item.note.strip() if item.note else None,
             )
             db.add(new_duty)
+
+        existing_payment = db.query(models.KitchenPayment).filter(
+            models.KitchenPayment.staff_id == staff.id,
+            models.KitchenPayment.payment_date == duty_date,
+            models.KitchenPayment.note.ilike(f"%Daily wage for {duty_date}%")
+        ).first()
+
+        if item.paid_today or (item.paid_amount and item.paid_amount > 0):
+            pay_amt = item.paid_amount if (item.paid_amount and item.paid_amount > 0) else total_w
+            if pay_amt > 0:
+                if existing_payment:
+                    existing_payment.amount = pay_amt
+                    existing_payment.payment_mode = item.payment_mode or "Cash"
+                else:
+                    db.add(models.KitchenPayment(
+                        staff_id=staff.id,
+                        amount=pay_amt,
+                        payment_date=duty_date,
+                        payment_mode=item.payment_mode or "Cash",
+                        note=f"Daily wage for {duty_date}",
+                    ))
+        else:
+            if existing_payment:
+                db.delete(existing_payment)
+
         saved_count += 1
 
     db.commit()
     return {
-        "message": f"Successfully saved daily duty and corresponding wages for {saved_count} staff members",
+        "message": f"Successfully saved daily wages for {saved_count} staff members",
         "count": saved_count,
         "date": str(duty_date),
     }

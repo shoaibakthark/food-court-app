@@ -592,22 +592,30 @@ class KitchenDutyCreate(BaseModel):
     staff_id: int
     duty_date: date | None = None
     shift: str = "Full Day"
-    duty_status: str = "full"  # 'full', 'half', 'double', 'overtime', 'absent'
+    duty_status: str = "present"  # 'present', 'half', 'absent', 'full', 'double', 'overtime'
     duty_units: Decimal = Decimal("1.0")
     daily_rate: Decimal | None = None
+    today_wage: Decimal | None = None
     bonus: Decimal = Field(ge=0, default=Decimal("0.00"))
     deduction: Decimal = Field(ge=0, default=Decimal("0.00"))
+    paid_today: bool = False
+    paid_amount: Decimal | None = None
+    payment_mode: str = "Cash"
     note: str | None = None
 
 
 class KitchenBatchDutyItem(BaseModel):
     staff_id: int
     shift: str = "Full Day"
-    duty_status: str = "full"
+    duty_status: str = "present"
     duty_units: Decimal = Decimal("1.0")
     daily_rate: Decimal | None = None
+    today_wage: Decimal | None = None
     bonus: Decimal = Field(ge=0, default=Decimal("0.00"))
     deduction: Decimal = Field(ge=0, default=Decimal("0.00"))
+    paid_today: bool = False
+    paid_amount: Decimal | None = None
+    payment_mode: str = "Cash"
     note: str | None = None
 
 
@@ -621,6 +629,7 @@ class KitchenDutyResponse(BaseModel):
     staff_id: int
     staff_name: str | None = None
     kitchen_role: str | None = None
+    wage_type: str | None = None
     duty_date: date
     shift: str
     duty_status: str
@@ -630,6 +639,10 @@ class KitchenDutyResponse(BaseModel):
     bonus: Decimal
     deduction: Decimal
     total_wage: Decimal
+    today_wage: Decimal | None = None
+    paid_today: bool = False
+    paid_amount: Decimal = Decimal("0.00")
+    payment_mode: str = "Cash"
     note: str | None = None
 
     model_config = {
