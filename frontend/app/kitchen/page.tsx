@@ -5,6 +5,7 @@ import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth, fetchWithAuth } from "../lib/auth";
+import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
 import {
   SidebarUserCard,
   OwnerBanner,
@@ -105,6 +106,24 @@ export default function KitchenPage() {
   const [loading, setLoading] = useState(true);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
+
+  const handleExportKitchenExcel = async () => {
+    try {
+      setExportingExcel(true);
+      const res = await exportEntireDatabaseToExcel();
+      if (res.success) {
+        setSaveSuccessMsg(`✓ Complete Excel backup downloaded successfully (${res.totalRecords} records across 11 sheets including kitchen staff).`);
+        setTimeout(() => setSaveSuccessMsg(null), 5000);
+      } else {
+        alert("Failed to export Excel backup: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error: " + err.message);
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   // Search & Filter
   const [searchStaff, setSearchStaff] = useState("");
@@ -566,6 +585,30 @@ export default function KitchenPage() {
                 </button>
 
                 {/* Button that adds a new staff */}
+                <button
+                  type="button"
+                  onClick={handleExportKitchenExcel}
+                  disabled={exportingExcel}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "8px 14px",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: exportingExcel ? "not-allowed" : "pointer",
+                    boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
+                    transition: "all 0.15s ease",
+                  }}
+                  title="Download complete database as an Excel (.xlsx) spreadsheet with kitchen staff, duties & payments"
+                >
+                  <span>📊</span> {exportingExcel ? "Exporting..." : "Backup to Excel"}
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {

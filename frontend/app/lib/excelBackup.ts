@@ -48,6 +48,9 @@ export async function exportEntireDatabaseToExcel(
       settlementsRes,
       staffRes,
       staffPaymentsRes,
+      kitchenStaffRes,
+      kitchenDutiesRes,
+      kitchenPaymentsRes,
       foodItemsRes,
       decorItemsRes,
     ] = await Promise.all([
@@ -58,6 +61,9 @@ export async function exportEntireDatabaseToExcel(
       fetch(`${API_URL}/expenses/settlements`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
       fetch(`${API_URL}/staff`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
       fetch(`${API_URL}/staff-payments`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_URL}/kitchen/staff`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_URL}/kitchen/duties`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      fetch(`${API_URL}/kitchen/payments`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
       fetch(`${API_URL}/food-items`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
       fetch(`${API_URL}/decor-items`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
@@ -71,9 +77,9 @@ export async function exportEntireDatabaseToExcel(
     const eventsList = Array.isArray(eventsRes) ? eventsRes : [];
     totalRecords += eventsList.length;
     const formattedEvents = eventsList.map((e: any) => {
-      const quote = e.quote ?? e.total_estimate ?? 0;
-      const paid = e.paid_amount ?? 0;
-      const bal = e.balance ?? Math.max(0, quote - paid);
+      const quote = Number(e.quote ?? e.total_estimate ?? 0);
+      const paid = Number(e.paid_amount ?? 0);
+      const bal = Number(e.balance ?? Math.max(0, quote - paid));
       const status = bal <= 0 && quote > 0 ? "PAID IN FULL" : paid > 0 && bal > 0 ? "PARTIALLY PAID" : "PAYMENT DUE";
 
       return {
@@ -83,10 +89,10 @@ export async function exportEntireDatabaseToExcel(
         "Client Mobile": e.customer_mobile || "—",
         "Event Occasion": e.event_type || "—",
         "Venue Location": e.place || "—",
-        "Guaranteed Guests (Pax)": e.guest_count || 0,
-        "Food Amount (₹)": e.food_amt || 0,
-        "Decor Amount (₹)": e.decor_amt || 0,
-        "Estimated Total (₹)": e.total_estimate || 0,
+        "Guaranteed Guests (Pax)": Number(e.guest_count) || 0,
+        "Food Amount (₹)": Number(e.food_amt) || 0,
+        "Decor Amount (₹)": Number(e.decor_amt) || 0,
+        "Estimated Total (₹)": Number(e.total_estimate) || 0,
         "Agreed Quote (₹)": quote,
         "Amount Paid (₹)": paid,
         "Balance Due (₹)": bal,
@@ -107,7 +113,7 @@ export async function exportEntireDatabaseToExcel(
       "Payment Date": formatDate(p.payment_date),
       "Linked Event ID": p.event_id ? `EVT-${String(p.event_id).padStart(5, "0")}` : "—",
       "Client Name": p.customer_name || "—",
-      "Amount Paid (₹)": p.amount || 0,
+      "Amount Paid (₹)": Number(p.amount) || 0,
       "Payment Method": p.payment_method || "—",
       "Payment Category": p.payment_type || "—",
       "Reference / Note": p.note || "—",
@@ -126,7 +132,7 @@ export async function exportEntireDatabaseToExcel(
       "Expense Date": formatDate(exp.expense_date),
       "Payee / Title": exp.title || "—",
       "Expense Category": exp.category || "General",
-      "Amount (₹)": exp.amount || 0,
+      "Amount (₹)": Number(exp.amount) || 0,
       "Payment Method": exp.payment_method || "Cash",
       "Vendor / Supplier": exp.vendor || "—",
       "Linked Event": exp.event_id ? `EVT-${String(exp.event_id).padStart(5, "0")}` : "General Overhead",
@@ -145,7 +151,7 @@ export async function exportEntireDatabaseToExcel(
       "Settlement ID": `#SETTLE-${String(s.id).padStart(5, "0")}`,
       "Settlement Date": formatDate(s.settlement_date || s.created_at),
       "Category / Payee": s.category || s.vendor || "—",
-      "Amount Cleared (₹)": s.amount || 0,
+      "Amount Cleared (₹)": Number(s.amount) || 0,
       "Payment Mode": s.payment_method || "—",
       "Remarks / Notes": s.note || "—",
     }));
@@ -155,7 +161,94 @@ export async function exportEntireDatabaseToExcel(
       XLSX.utils.book_append_sheet(wb, ws, "Expense Settlements");
     }
 
-    // 5. Customers Directory Sheet
+    // 5. Kitchen Staff Directory & Wage Balances (Dedicated Kitchen Sheet)
+    const kitchenStaffList = Array.isArray(kitchenStaffRes) ? kitchenStaffRes : [];
+    totalRecords += kitchenStaffList.length;
+    const formattedKitchenStaff = kitchenStaffList.map((ks: any) => ({
+      "Kitchen Staff ID": `#KS-${String(ks.id).padStart(4, "0")}`,
+      "Staff Name": ks.name || "—",
+      "Mobile Phone": ks.mobile || "—",
+      "Kitchen Designation / Role": ks.kitchen_role || "Kitchen Staff",
+      "Wage Frequency": ks.wage_type === "monthly" ? "Monthly Salary" : "Daily Wage",
+      "Wage Rate (₹)": Number(ks.wage_rate) || 0,
+      "Total Duties Logged": Number(ks.duties_count) || 0,
+      "Total Wages Earned (₹)": Number(ks.total_wages) || 0,
+      "Total Paid to Date (₹)": Number(ks.total_paid) || 0,
+      "Current Pending Balance (₹)": Number(ks.balance) || 0,
+      "Employment Status": (ks.status || "active").toUpperCase(),
+      "Date Joined": formatDate(ks.joined_date),
+      "Address": ks.address || "—",
+      "Notes / Comments": ks.notes || "—",
+    }));
+    if (formattedKitchenStaff.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(formattedKitchenStaff);
+      ws["!cols"] = autoFitColumns(formattedKitchenStaff);
+      XLSX.utils.book_append_sheet(wb, ws, "Kitchen Staff");
+    }
+
+    // 6. Kitchen Daily Duties & Attendance
+    const kitchenDutiesList = Array.isArray(kitchenDutiesRes) ? kitchenDutiesRes : [];
+    totalRecords += kitchenDutiesList.length;
+    const formattedKitchenDuties = kitchenDutiesList.map((kd: any) => ({
+      "Duty Record ID": `#KDUTY-${String(kd.id).padStart(5, "0")}`,
+      "Duty Date": formatDate(kd.duty_date),
+      "Staff Name": kd.staff_name || "—",
+      "Kitchen Role": kd.kitchen_role || "—",
+      "Shift Assigned": kd.shift || "Full Day",
+      "Attendance Status": (kd.duty_status || "present").toUpperCase(),
+      "Duty Units": Number(kd.duty_units) || 1,
+      "Daily Rate (₹)": Number(kd.daily_rate) || 0,
+      "Duty Wage (₹)": Number(kd.duty_wage) || 0,
+      "Bonus Added (₹)": Number(kd.bonus) || 0,
+      "Deduction (₹)": Number(kd.deduction) || 0,
+      "Total Day Wage (₹)": Number(kd.total_wage) || 0,
+      "Paid Same Day?": kd.paid_today ? "YES" : "NO",
+      "Same-Day Paid Amount (₹)": Number(kd.paid_amount) || 0,
+      "Payment Mode": kd.payment_mode || "Cash",
+      "Duty Remarks": kd.note || "—",
+    }));
+    if (formattedKitchenDuties.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(formattedKitchenDuties);
+      ws["!cols"] = autoFitColumns(formattedKitchenDuties);
+      XLSX.utils.book_append_sheet(wb, ws, "Kitchen Duties");
+    }
+
+    // 7. Kitchen Payments & Wage Payouts
+    const kitchenPaymentsList = Array.isArray(kitchenPaymentsRes) ? kitchenPaymentsRes : [];
+    totalRecords += kitchenPaymentsList.length;
+    const formattedKitchenPayments = kitchenPaymentsList.map((kp: any) => ({
+      "Kitchen Payment ID": `#KPAY-${String(kp.id).padStart(5, "0")}`,
+      "Payout Date": formatDate(kp.payment_date),
+      "Staff Name": kp.staff_name || "—",
+      "Amount Paid (₹)": Number(kp.amount) || 0,
+      "Payment Mode": kp.payment_mode || "Cash",
+      "Reference #": kp.reference_no || "—",
+      "Purpose / Note": kp.note || "Wage Settlement",
+    }));
+    if (formattedKitchenPayments.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(formattedKitchenPayments);
+      ws["!cols"] = autoFitColumns(formattedKitchenPayments);
+      XLSX.utils.book_append_sheet(wb, ws, "Kitchen Payments");
+    }
+
+    // 8. Event Operations Staff Directory
+    const staffList = Array.isArray(staffRes) ? staffRes : [];
+    totalRecords += staffList.length;
+    const formattedStaff = staffList.map((st: any) => ({
+      "Staff ID": `#STF-${String(st.id).padStart(5, "0")}`,
+      "Staff Name": st.name || "—",
+      "Designation / Role": st.role || "—",
+      "Phone Number": st.phone || "—",
+      "Daily Wage Rate (₹)": Number(st.daily_wage || st.salary) || 0,
+      "Employment Status": (st.status || "Active").toUpperCase(),
+    }));
+    if (formattedStaff.length > 0) {
+      const ws = XLSX.utils.json_to_sheet(formattedStaff);
+      ws["!cols"] = autoFitColumns(formattedStaff);
+      XLSX.utils.book_append_sheet(wb, ws, "Event Staff");
+    }
+
+    // 9. Customers Directory Sheet
     const customersList = Array.isArray(customersRes) ? customersRes : [];
     totalRecords += customersList.length;
     const formattedCustomers = customersList.map((c: any) => ({
@@ -172,31 +265,14 @@ export async function exportEntireDatabaseToExcel(
       XLSX.utils.book_append_sheet(wb, ws, "Customers Directory");
     }
 
-    // 6. Staff Roster & Payments Sheet
-    const staffList = Array.isArray(staffRes) ? staffRes : [];
-    totalRecords += staffList.length;
-    const formattedStaff = staffList.map((st: any) => ({
-      "Staff ID": `#STF-${String(st.id).padStart(5, "0")}`,
-      "Staff Name": st.name || "—",
-      "Designation / Role": st.role || "—",
-      "Phone Number": st.phone || "—",
-      "Daily Wage Rate (₹)": st.daily_wage || st.salary || 0,
-      "Employment Status": st.status || "Active",
-    }));
-    if (formattedStaff.length > 0) {
-      const ws = XLSX.utils.json_to_sheet(formattedStaff);
-      ws["!cols"] = autoFitColumns(formattedStaff);
-      XLSX.utils.book_append_sheet(wb, ws, "Staff Directory");
-    }
-
-    // 7. Food Menu Catalog Sheet
+    // 10. Food Menu Catalog Sheet
     const foodList = Array.isArray(foodItemsRes) ? foodItemsRes : [];
     totalRecords += foodList.length;
     const formattedFood = foodList.map((f: any) => ({
       "Menu Item ID": `#FOOD-${String(f.id).padStart(5, "0")}`,
       "Item Name": f.name || "—",
       "Course / Category": f.category || "—",
-      "Rate / Price (₹)": f.rate || f.price || 0,
+      "Rate / Price (₹)": Number(f.rate || f.price) || 0,
       "Description": f.description || "—",
     }));
     if (formattedFood.length > 0) {
@@ -205,14 +281,14 @@ export async function exportEntireDatabaseToExcel(
       XLSX.utils.book_append_sheet(wb, ws, "Food Menu Catalog");
     }
 
-    // 8. Decor Inventory Sheet
+    // 11. Decor Inventory Sheet
     const decorList = Array.isArray(decorItemsRes) ? decorItemsRes : [];
     totalRecords += decorList.length;
     const formattedDecor = decorList.map((d: any) => ({
       "Decor Item ID": `#DECOR-${String(d.id).padStart(5, "0")}`,
       "Item Name": d.name || "—",
       "Category": d.category || "—",
-      "Rental Price (₹)": d.price || d.rate || 0,
+      "Rental Price (₹)": Number(d.price || d.rate) || 0,
       "Status": d.status || "Available",
     }));
     if (formattedDecor.length > 0) {

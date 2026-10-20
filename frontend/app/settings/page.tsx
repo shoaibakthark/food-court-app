@@ -62,7 +62,7 @@ export default function SettingsPage() {
       setExportingExcel(true);
       const res = await exportEntireDatabaseToExcel((msg) => setExportProgress(msg));
       if (res.success) {
-        setSuccessMsg(`✓ Complete Excel database backup downloaded successfully (${res.totalRecords} total records across 8 sheets).`);
+        setSuccessMsg(`✓ Complete Excel database backup downloaded successfully (${res.totalRecords} total records across 11 sheets including kitchen staff).`);
         setTimeout(() => setSuccessMsg(null), 6000);
       } else {
         alert("Failed to export Excel backup: " + res.error);
@@ -694,15 +694,18 @@ export default function SettingsPage() {
                   }}
                 >
                   <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: "6px" }}>
-                    Included in this Complete Backup (8 Sheets):
+                    Included in this Complete Backup (11 Sheets across all departments):
                   </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "6px" }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: "6px" }}>
                     <span>✓ <strong>Events & Invoices</strong> (Dates, Pax, Quotes, Balances)</span>
                     <span>✓ <strong>Payments Received</strong> (Receipts, Methods, Categories)</span>
                     <span>✓ <strong>Expenses Ledger</strong> (Payees, Vouchers, Modes)</span>
                     <span>✓ <strong>Expense Settlements</strong> (Cleared Ledger Records)</span>
+                    <span>✓ <strong>Kitchen Staff Directory</strong> (Roles, Rates, Balances)</span>
+                    <span>✓ <strong>Kitchen Daily Duties</strong> (Attendance, Shifts, Wages)</span>
+                    <span>✓ <strong>Kitchen Payments</strong> (Wage Settlements & Payouts)</span>
+                    <span>✓ <strong>Event Staff & Crew</strong> (Roles, Contacts, Wage Rates)</span>
                     <span>✓ <strong>Customers Directory</strong> (Names, Mobiles, Venues)</span>
-                    <span>✓ <strong>Staff & Crew</strong> (Roles, Contacts, Wage Rates)</span>
                     <span>✓ <strong>Food Menu Catalog</strong> (Courses, Rates, Items)</span>
                     <span>✓ <strong>Decor Inventory</strong> (Props, Status, Rental Rates)</span>
                   </div>
