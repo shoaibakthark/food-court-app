@@ -38,20 +38,40 @@ type PaymentReceipt = {
 
 type CompanyProfile = {
   companyName: string;
+  tagline?: string;
   contactPhone: string;
   contactEmail: string;
   address: string;
   gstin: string;
+  pan?: string;
+  stateCode?: string;
+  fssai?: string;
+  bankName?: string;
+  accountName?: string;
+  accountNo?: string;
+  ifscCode?: string;
+  branchName?: string;
+  upiId?: string;
   currency: string;
   receiptFooter: string;
 };
 
 const DEFAULT_PROFILE: CompanyProfile = {
-  companyName: "Food Court Catering & Event Management",
-  contactPhone: "+91 98765 43210",
-  contactEmail: "billing@foodcourt.internal",
-  address: "Main Avenue, Opp. City Convention Center, Kerala, India",
+  companyName: "Food Court Event Management & Catering",
+  tagline: "Premium Event Planning, Luxury Catering & Production",
+  contactPhone: "+91 96333 71320",
+  contactEmail: "contact@foodcourtkerala.com",
+  address: "Puthanathani, Malappuram, Kerala - 676552",
   gstin: "32AAAAA0000A1Z5",
+  pan: "ABCDE1234F",
+  stateCode: "Kerala (Code: 32)",
+  fssai: "11322001000456",
+  bankName: "Federal Bank Ltd",
+  accountName: "Food Court Event Management",
+  accountNo: "14280200049281",
+  ifscCode: "FDRL0001428",
+  branchName: "Puthanathani Branch",
+  upiId: "foodcourt@upi",
   currency: "₹",
   receiptFooter: "Thank you for partnering with Food Court! We look forward to creating unforgettable celebrations.",
 };
@@ -77,6 +97,52 @@ function formatDate(dateStr: string | null | undefined): string {
   } catch {
     return dateStr;
   }
+}
+
+function numberToWordsINR(amount: number | string | null | undefined): string {
+  const num = Math.round(Math.abs(Number(amount) || 0));
+  if (num === 0) return "Zero Rupees Only";
+
+  const a = [
+    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine", "Ten",
+    "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen",
+  ];
+  const b = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"];
+
+  function formatChunk(n: number): string {
+    let str = "";
+    if (n >= 100) {
+      str += a[Math.floor(n / 100)] + " Hundred ";
+      n %= 100;
+    }
+    if (n > 0) {
+      if (str !== "") str += "and ";
+      if (n < 20) {
+        str += a[n] + " ";
+      } else {
+        str += b[Math.floor(n / 10)] + " ";
+        if (n % 10 > 0) {
+          str += a[n % 10] + " ";
+        }
+      }
+    }
+    return str.trim();
+  }
+
+  const crore = Math.floor(num / 10000000);
+  let remainder = num % 10000000;
+  const lakh = Math.floor(remainder / 100000);
+  remainder %= 100000;
+  const thousand = Math.floor(remainder / 1000);
+  const hundred = remainder % 1000;
+
+  let res = "";
+  if (crore > 0) res += formatChunk(crore) + " Crore ";
+  if (lakh > 0) res += formatChunk(lakh) + " Lakh ";
+  if (thousand > 0) res += formatChunk(thousand) + " Thousand ";
+  if (hundred > 0) res += formatChunk(hundred) + " ";
+
+  return ("Rupees " + res.trim() + " Only").replace(/\s+/g, " ");
 }
 
 function BillingContent() {
@@ -360,7 +426,8 @@ function BillingContent() {
         </header>
 
         {/* Content Body */}
-        <div className="page-content">
+        <div className={`page-content ${modalOpen ? "no-print" : ""}`}>
+          <OwnerBanner />
           <OwnerBanner />
 
           {error && (
@@ -821,17 +888,18 @@ function BillingContent() {
       </div>
 
       {/* ============================================================
-          INVOICE & PRINT MODAL
+          INVOICE & PRINT MODAL (Corporate Standard GST Tax Invoice)
       ============================================================ */}
       {modalOpen && activeEvent && (
         <div
+          className="invoice-modal-overlay"
           style={{
             position: "fixed",
             top: 0,
             left: 0,
             right: 0,
             bottom: 0,
-            background: "rgba(15, 5, 25, 0.65)",
+            background: "rgba(15, 5, 25, 0.72)",
             backdropFilter: "blur(6px)",
             display: "flex",
             justifyContent: "center",
@@ -843,12 +911,13 @@ function BillingContent() {
           onClick={() => setModalOpen(false)}
         >
           <div
+            className="invoice-modal-dialog"
             style={{
               background: "#ffffff",
               borderRadius: "16px",
               width: "100%",
-              maxWidth: "850px",
-              maxHeight: "92vh",
+              maxWidth: "890px",
+              maxHeight: "94vh",
               display: "flex",
               flexDirection: "column",
               boxShadow: "0 25px 60px rgba(0, 0, 0, 0.4)",
@@ -860,7 +929,7 @@ function BillingContent() {
             <div
               className="no-print"
               style={{
-                padding: "16px 24px",
+                padding: "14px 24px",
                 background: "linear-gradient(135deg, #180828 0%, #2b0c4c 100%)",
                 color: "#ffffff",
                 display: "flex",
@@ -868,18 +937,55 @@ function BillingContent() {
                 alignItems: "center",
                 flexWrap: "wrap",
                 gap: "12px",
+                borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
               }}
             >
               <div>
-                <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>
-                  Tax Invoice — INV-2026-{String(activeEvent.id).padStart(5, "0")}
-                </h3>
-                <span style={{ fontSize: "12px", color: "#c084fc" }}>
-                  Ready to print or export as PDF via browser print dialog
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 800 }}>
+                    Tax Invoice — INV-2026-{String(activeEvent.id).padStart(5, "0")}
+                  </h3>
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      background: "rgba(124, 58, 237, 0.4)",
+                      padding: "2px 8px",
+                      borderRadius: "12px",
+                      color: "#e9d5ff",
+                      border: "1px solid rgba(192, 132, 252, 0.3)",
+                    }}
+                  >
+                    {activeEvent.customer_name}
+                  </span>
+                </div>
+                <span style={{ fontSize: "12px", color: "#c084fc", marginTop: "2px", display: "block" }}>
+                  Official Commercial Tax Invoice • Ready for high-resolution print or PDF export
                 </span>
               </div>
 
               <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={handleCopyInvoiceLink}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "rgba(255, 255, 255, 0.12)",
+                    color: "#ffffff",
+                    border: "1px solid rgba(255, 255, 255, 0.2)",
+                    borderRadius: "8px",
+                    padding: "8px 14px",
+                    fontWeight: 600,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                  }}
+                  title="Copy direct shareable invoice link"
+                >
+                  {copyStatus ? "✓ Copied!" : "📋 Copy Link"}
+                </button>
+
                 <button
                   type="button"
                   onClick={handlePrintCurrentInvoice}
@@ -898,7 +1004,7 @@ function BillingContent() {
                     boxShadow: "0 4px 14px rgba(124, 58, 237, 0.4)",
                   }}
                 >
-                  🖨️ Print to PDF
+                  🖨️ Print / Save as PDF
                 </button>
 
                 <button
@@ -916,6 +1022,7 @@ function BillingContent() {
                     display: "grid",
                     placeItems: "center",
                   }}
+                  title="Close modal"
                 >
                   ✕
                 </button>
@@ -924,10 +1031,11 @@ function BillingContent() {
 
             {/* Scrollable Printable Document Container */}
             <div
+              className="invoice-scroll-container"
               style={{
-                padding: "clamp(16px, 4vw, 36px)",
+                padding: "clamp(16px, 3.5vw, 32px)",
                 overflowY: "auto",
-                background: "#faf8fd",
+                background: "#f4f1f8",
                 flex: 1,
               }}
             >
@@ -938,10 +1046,10 @@ function BillingContent() {
                 style={{
                   background: "#ffffff",
                   borderRadius: "12px",
-                  border: "1px solid #e9e3f1",
-                  boxShadow: "0 4px 20px rgba(124, 58, 237, 0.05)",
+                  border: "1px solid #e5daf0",
+                  boxShadow: "0 4px 24px rgba(124, 58, 237, 0.08)",
                   padding: "clamp(20px, 4vw, 36px)",
-                  color: "#1e0836",
+                  color: "#180828",
                   fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
                 }}
               >
@@ -955,64 +1063,145 @@ function BillingContent() {
                     gap: "20px",
                     borderBottom: "2px solid #7c3aed",
                     paddingBottom: "20px",
-                    marginBottom: "24px",
+                    marginBottom: "20px",
                   }}
                 >
-                  {/* Company Info */}
-                  <div style={{ display: "flex", gap: "14px", alignItems: "flex-start" }}>
+                  {/* Company Info Left */}
+                  <div style={{ display: "flex", gap: "14px", alignItems: "flex-start", maxWidth: "480px" }}>
                     <div
                       style={{
-                        width: "52px",
-                        height: "52px",
+                        width: "56px",
+                        height: "56px",
                         borderRadius: "14px",
-                        background: "linear-gradient(135deg, #a855f7 0%, #7c3aed 100%)",
+                        background: "linear-gradient(135deg, #180828 0%, #7c3aed 100%)",
                         color: "#ffffff",
                         fontWeight: 900,
-                        fontSize: "20px",
+                        fontSize: "22px",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        boxShadow: "0 4px 12px rgba(124, 58, 237, 0.3)",
+                        letterSpacing: "1px",
+                        boxShadow: "0 4px 14px rgba(124, 58, 237, 0.25)",
                         flexShrink: 0,
                       }}
                     >
                       FC
                     </div>
                     <div>
-                      <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 800, color: "#1e0836" }}>
+                      <h2
+                        style={{
+                          margin: 0,
+                          fontSize: "20px",
+                          fontWeight: 800,
+                          color: "#180828",
+                          letterSpacing: "-0.3px",
+                          lineHeight: 1.25,
+                        }}
+                      >
                         {profile.companyName}
                       </h2>
-                      <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#6b5b7e", maxWidth: "340px", lineHeight: 1.4 }}>
+                      <div
+                        style={{
+                          fontSize: "12px",
+                          fontWeight: 600,
+                          color: "#7c3aed",
+                          marginTop: "2px",
+                          letterSpacing: "0.2px",
+                        }}
+                      >
+                        {profile.tagline || "Premium Event Planning, Luxury Catering & Production"}
+                      </div>
+                      <p
+                        style={{
+                          margin: "4px 0 0 0",
+                          fontSize: "12px",
+                          color: "#4b5563",
+                          lineHeight: 1.4,
+                        }}
+                      >
                         {profile.address}
                       </p>
-                      <div style={{ fontSize: "12px", color: "#6b5b7e", marginTop: "4px" }}>
+                      <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "3px" }}>
                         <span>📞 {profile.contactPhone}</span> • <span>✉ {profile.contactEmail}</span>
                       </div>
-                      <div style={{ fontSize: "12px", fontWeight: 700, color: "#7c3aed", marginTop: "4px" }}>
-                        GSTIN: {profile.gstin}
+                      <div
+                        style={{
+                          display: "flex",
+                          flexWrap: "wrap",
+                          gap: "8px",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          color: "#1e0836",
+                          background: "#f5f0fb",
+                          padding: "4px 8px",
+                          borderRadius: "6px",
+                          marginTop: "6px",
+                          border: "1px solid #ebdcf7",
+                        }}
+                      >
+                        <span>GSTIN: <strong style={{ color: "#7c3aed" }}>{profile.gstin}</strong></span>
+                        <span>•</span>
+                        <span>PAN: <strong>{profile.pan || "ABCDE1234F"}</strong></span>
+                        <span>•</span>
+                        <span>State: <strong>{profile.stateCode || "Kerala (32)"}</strong></span>
+                        {profile.fssai && (
+                          <>
+                            <span>•</span>
+                            <span>FSSAI: <strong>{profile.fssai}</strong></span>
+                          </>
+                        )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Document Title & Meta */}
-                  <div style={{ textAlign: "right" }}>
+                  {/* Document Title & Meta Right */}
+                  <div style={{ textAlign: "right", minWidth: "210px", flexShrink: 0 }}>
                     <div
                       style={{
-                        fontSize: "20px",
+                        fontSize: "22px",
                         fontWeight: 900,
-                        letterSpacing: "1px",
-                        color: "#7c3aed",
+                        letterSpacing: "1.2px",
+                        color: "#6d28d9",
+                        textTransform: "uppercase",
+                        lineHeight: 1.1,
+                      }}
+                    >
+                      TAX INVOICE
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 600,
+                        color: "#6b7280",
+                        letterSpacing: "0.4px",
+                        marginTop: "2px",
                         textTransform: "uppercase",
                       }}
                     >
-                      TAX INVOICE / BILL
+                      Original for Recipient
                     </div>
-                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#1e0836", marginTop: "4px" }}>
-                      # INV-2026-{String(activeEvent.id).padStart(5, "0")}
+                    <div
+                      style={{
+                        fontSize: "14px",
+                        fontWeight: 800,
+                        color: "#111827",
+                        marginTop: "6px",
+                        fontFamily: "monospace",
+                      }}
+                    >
+                      INV-2026-{String(activeEvent.id).padStart(5, "0")}
                     </div>
-                    <div style={{ fontSize: "12px", color: "#6b5b7e", marginTop: "4px" }}>
-                      Date: <strong>{formatDate(activeEvent.date || new Date().toISOString())}</strong>
+                    <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "3px" }}>
+                      Invoice Date: <strong>{formatDate(activeEvent.date || new Date().toISOString())}</strong>
                     </div>
+                    <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
+                      Place of Supply: <strong>Kerala (Code 32)</strong>
+                    </div>
+                    <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
+                      Reverse Charge: <strong>No</strong>
+                    </div>
+
+                    {/* Status Badge */}
                     <div style={{ marginTop: "8px" }}>
                       {(() => {
                         const billed = activeEvent.quote ?? activeEvent.total_estimate ?? 0;
@@ -1025,16 +1214,21 @@ function BillingContent() {
                             style={{
                               display: "inline-block",
                               padding: "4px 12px",
-                              borderRadius: "14px",
+                              borderRadius: "16px",
                               fontSize: "11px",
                               fontWeight: 800,
+                              letterSpacing: "0.4px",
                               textTransform: "uppercase",
-                              background: isSettled ? "#e8f8f0" : isPartial ? "#fef3c7" : "#fee2e2",
-                              color: isSettled ? "#0d6832" : isPartial ? "#92400e" : "#b91c1c",
-                              border: `1px solid ${isSettled ? "#a3e6c0" : isPartial ? "#fde68a" : "#fecaca"}`,
+                              background: isSettled ? "#dcfce7" : isPartial ? "#fef3c7" : "#fee2e2",
+                              color: isSettled ? "#15803d" : isPartial ? "#b45309" : "#b91c1c",
+                              border: `1.5px solid ${isSettled ? "#86efac" : isPartial ? "#fde68a" : "#fca5a5"}`,
                             }}
                           >
-                            {isSettled ? "PAID IN FULL" : isPartial ? "PARTIALLY PAID" : "PAYMENT DUE"}
+                            {isSettled
+                              ? "✓ PAID IN FULL"
+                              : isPartial
+                              ? `⚡ PARTIALLY PAID (BAL: ₹${formatMoney(bal)})`
+                              : `● PAYMENT DUE (₹${formatMoney(bal)})`}
                           </span>
                         );
                       })()}
@@ -1042,228 +1236,382 @@ function BillingContent() {
                   </div>
                 </div>
 
-                {/* 2. BILLED TO CARD */}
+                {/* 2. BILLED TO & EVENT PARTICULARS (Two-Column Card) */}
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
-                    gap: "20px",
-                    background: "#fbf9fc",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                    gap: "16px",
+                    background: "#faf7fd",
                     borderRadius: "10px",
-                    border: "1px solid #ede7f5",
+                    border: "1px solid #ebdcf5",
                     padding: "16px 20px",
-                    marginBottom: "24px",
+                    marginBottom: "20px",
                   }}
                 >
-                  <div>
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      BILLED TO
-                    </span>
-                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#1e0836", marginTop: "4px" }}>
+                  {/* Card 1: Billed To */}
+                  <div style={{ borderRight: "1px dashed #e2d4f0", paddingRight: "12px" }}>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        color: "#6d28d9",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.8px",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      BILLED TO (CLIENT / RECIPIENT)
+                    </div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#180828" }}>
                       {activeEvent.customer_name}
                     </div>
                     {activeEvent.customer_mobile && (
-                      <div style={{ fontSize: "13px", color: "#5d4e70", marginTop: "2px" }}>
-                        Phone: {activeEvent.customer_mobile}
+                      <div style={{ fontSize: "13px", color: "#374151", marginTop: "3px" }}>
+                        Phone: <strong>+91 {activeEvent.customer_mobile}</strong>
                       </div>
                     )}
-                    <div style={{ fontSize: "12px", color: "#8a7b9b", marginTop: "2px" }}>
-                      Customer ID: #{activeEvent.customer_id ?? "—"}
+                    <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "2px" }}>
+                      Client ID: <strong>#CUST-{activeEvent.customer_id ?? "001"}</strong>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "2px" }}>
+                      Billing Address / Location: <strong>{activeEvent.place || "Kerala, India"}</strong>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#4b5563",
+                        marginTop: "5px",
+                        background: "#f3e8ff",
+                        display: "inline-block",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Category: Unregistered Consumer (B2C)
                     </div>
                   </div>
 
+                  {/* Card 2: Event Details */}
                   <div>
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      EVENT PARTICULARS
-                    </span>
-                    <div style={{ fontSize: "15px", fontWeight: 700, color: "#1e0836", marginTop: "4px" }}>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        fontWeight: 800,
+                        color: "#6d28d9",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.8px",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      EVENT & SERVICE PARTICULARS
+                    </div>
+                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#180828" }}>
                       {activeEvent.event_type}
                     </div>
-                    <div style={{ fontSize: "13px", color: "#5d4e70", marginTop: "2px" }}>
-                      Venue: <strong>{activeEvent.place || "Specified Venue"}</strong>
+                    <div style={{ fontSize: "13px", color: "#374151", marginTop: "3px" }}>
+                      Venue / Destination: <strong>{activeEvent.place || "Designated Event Venue"}</strong>
                     </div>
-                    <div style={{ fontSize: "12px", color: "#6b5b7e", marginTop: "2px" }}>
-                      Event Date: {formatDate(activeEvent.date)} • {activeEvent.guest_count} Guests
+                    <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "2px" }}>
+                      Event Date: <strong>{formatDate(activeEvent.date)}</strong>
+                    </div>
+                    <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "2px" }}>
+                      Guaranteed Attendance: <strong>{activeEvent.guest_count} Pax (Guests)</strong>
+                    </div>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "#4b5563",
+                        marginTop: "5px",
+                        background: "#f3e8ff",
+                        display: "inline-block",
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        fontWeight: 600,
+                      }}
+                    >
+                      Booking Order Ref: EVT-{String(activeEvent.id).padStart(5, "0")}
                     </div>
                   </div>
                 </div>
 
                 {/* 3. ITEMIZED BREAKDOWN TABLE */}
-                <div style={{ marginBottom: "24px" }}>
+                <div style={{ marginBottom: "20px", overflowX: "auto" }}>
                   <table
                     style={{
                       width: "100%",
                       borderCollapse: "collapse",
-                      fontSize: "13px",
+                      fontSize: "12.5px",
                       textAlign: "left",
+                      border: "1px solid #ebdcf5",
+                      borderRadius: "8px",
+                      overflow: "hidden",
                     }}
                   >
                     <thead>
                       <tr
                         style={{
-                          background: "#f5f0fa",
-                          borderTop: "1px solid #e5dcf0",
-                          borderBottom: "1px solid #e5dcf0",
-                          color: "#4a2373",
+                          background: "#f3eefb",
+                          borderBottom: "1.5px solid #d4c2ec",
+                          color: "#3b185f",
                           fontWeight: 700,
+                          textTransform: "uppercase",
+                          fontSize: "11px",
+                          letterSpacing: "0.4px",
                         }}
                       >
-                        <th style={{ padding: "10px 14px", width: "40px" }}>#</th>
-                        <th style={{ padding: "10px 14px" }}>Service / Package Description</th>
-                        <th style={{ padding: "10px 14px", textAlign: "center", width: "120px" }}>Quantity</th>
-                        <th style={{ padding: "10px 14px", textAlign: "right", width: "160px" }}>Amount (₹)</th>
+                        <th style={{ padding: "10px 12px", width: "40px", textAlign: "center" }}>#</th>
+                        <th style={{ padding: "10px 12px" }}>Description of Services / Supplies</th>
+                        <th style={{ padding: "10px 12px", textAlign: "center", width: "90px" }}>SAC Code</th>
+                        <th style={{ padding: "10px 12px", textAlign: "center", width: "110px" }}>Pax / Qty</th>
+                        <th style={{ padding: "10px 12px", textAlign: "right", width: "120px" }}>Rate (₹)</th>
+                        <th style={{ padding: "10px 12px", textAlign: "right", width: "140px" }}>Amount (₹)</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {/* Food & Catering */}
-                      <tr style={{ borderBottom: "1px solid #f0eaf7" }}>
-                        <td style={{ padding: "12px 14px", color: "#8a7b9b" }}>1</td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <strong style={{ color: "#1e0836" }}>Food Catering & Menu Planning</strong>
-                          <div style={{ fontSize: "12px", color: "#7a6e8a" }}>
-                            Specialized multi-course banquet menu tailored for {activeEvent.guest_count} guests
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "center" }}>
-                          {activeEvent.guest_count} guests
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 700 }}>
-                          ₹{formatMoney(activeEvent.food_amt)}
-                        </td>
-                      </tr>
-
-                      {/* Decor */}
-                      <tr style={{ borderBottom: "1px solid #f0eaf7" }}>
-                        <td style={{ padding: "12px 14px", color: "#8a7b9b" }}>2</td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <strong style={{ color: "#1e0836" }}>Stage & Theme Decoration</strong>
-                          <div style={{ fontSize: "12px", color: "#7a6e8a" }}>
-                            Lighting, floral stage arrangement, ambient props & guest seating setup
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "center" }}>1 package</td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 700 }}>
-                          ₹{formatMoney(activeEvent.decor_amt)}
-                        </td>
-                      </tr>
-
-                      {/* Operations & Staff */}
-                      <tr style={{ borderBottom: "1px solid #f0eaf7" }}>
-                        <td style={{ padding: "12px 14px", color: "#8a7b9b" }}>3</td>
-                        <td style={{ padding: "12px 14px" }}>
-                          <strong style={{ color: "#1e0836" }}>Event Operations & Crew Deployment</strong>
-                          <div style={{ fontSize: "12px", color: "#7a6e8a" }}>
-                            On-site coordination, logistics crew, food stewards & service staff
-                          </div>
-                        </td>
-                        <td style={{ padding: "12px 14px", textAlign: "center" }}>Event Crew</td>
-                        <td style={{ padding: "12px 14px", textAlign: "right", fontWeight: 700 }}>
-                          ₹{formatMoney(
-                            Math.max(
-                              0,
-                              (activeEvent.total_estimate ?? 0) -
-                                (activeEvent.food_amt ?? 0) -
-                                (activeEvent.decor_amt ?? 0)
-                            )
-                          )}
-                        </td>
-                      </tr>
+                      {invoiceItems.map((item, index) => (
+                        <tr
+                          key={item.id}
+                          style={{
+                            borderBottom: "1px solid #f0e6f8",
+                            background: index % 2 === 0 ? "#ffffff" : "#fcfbfe",
+                          }}
+                        >
+                          <td style={{ padding: "12px", textAlign: "center", color: "#6b7280", fontWeight: 600 }}>
+                            {String(index + 1).padStart(2, "0")}
+                          </td>
+                          <td style={{ padding: "12px" }}>
+                            <div style={{ fontWeight: 700, color: "#180828", fontSize: "13px" }}>
+                              {item.title}
+                            </div>
+                            <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "3px", lineHeight: 1.4 }}>
+                              {item.desc}
+                            </div>
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "center", fontFamily: "monospace", fontWeight: 600, color: "#6d28d9" }}>
+                            {item.sac}
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "center", fontWeight: 600, color: "#374151" }}>
+                            {item.qty}
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "right", color: "#374151" }}>
+                            {item.rate > 0 ? `₹${formatMoney(item.rate)}` : "—"}
+                          </td>
+                          <td style={{ padding: "12px", textAlign: "right", fontWeight: 700, color: "#180828" }}>
+                            ₹{formatMoney(item.amount)}
+                          </td>
+                        </tr>
+                      ))}
                     </tbody>
                   </table>
                 </div>
 
-                {/* 4. TOTALS & BALANCE SUMMARY BOX */}
-                <div
-                  style={{
-                    display: "flex",
-                    justifyContent: "flex-end",
-                    marginBottom: "28px",
-                  }}
-                >
-                  <div style={{ width: "100%", maxWidth: "380px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "13px" }}>
-                      <span style={{ color: "#6b5b7e" }}>Estimated Base Cost:</span>
-                      <strong style={{ color: "#1e0836" }}>₹{formatMoney(activeEvent.total_estimate)}</strong>
-                    </div>
+                {/* 4. FINANCIAL RECONCILIATION & BANKING SECTION */}
+                {(() => {
+                  const finalTotal = activeEvent.quote ?? activeEvent.total_estimate ?? 0;
+                  const subtotalExclTax = Math.round(finalTotal / 1.05);
+                  const gstAmount = Math.max(0, finalTotal - subtotalExclTax);
+                  const cgstAmount = Math.round(gstAmount / 2);
+                  const sgstAmount = gstAmount - cgstAmount;
+                  const paid = activeEvent.paid_amount ?? 0;
+                  const bal = activeEvent.balance ?? Math.max(0, finalTotal - paid);
 
+                  return (
                     <div
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        padding: "8px 0",
-                        fontSize: "14px",
-                        borderTop: "1px solid #e5dcf0",
-                        color: "#1e0836",
-                        fontWeight: 800,
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                        gap: "20px",
+                        marginBottom: "20px",
+                        alignItems: "flex-start",
                       }}
                     >
-                      <span>Final Agreed Total:</span>
-                      <span style={{ fontSize: "16px", color: "#7c3aed" }}>
-                        ₹{formatMoney(activeEvent.quote ?? activeEvent.total_estimate)}
-                      </span>
-                    </div>
-
-                    <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", fontSize: "13px", color: "#166534" }}>
-                      <span>Payments Received to Date:</span>
-                      <strong>− ₹{formatMoney(activeEvent.paid_amount)}</strong>
-                    </div>
-
-                    {/* Grand Balance Due */}
-                    {(() => {
-                      const billed = activeEvent.quote ?? activeEvent.total_estimate ?? 0;
-                      const paid = activeEvent.paid_amount ?? 0;
-                      const bal = activeEvent.balance ?? Math.max(0, billed - paid);
-
-                      return (
+                      {/* Left: Amount in Words & Remittance Details */}
+                      <div>
+                        {/* Amount in words */}
                         <div
                           style={{
-                            display: "flex",
-                            justifyContent: "space-between",
-                            alignItems: "center",
-                            padding: "12px 16px",
-                            background: bal > 0 ? "linear-gradient(135deg, #180828 0%, #2b0c4c 100%)" : "#e8f8f0",
-                            color: bal > 0 ? "#ffffff" : "#0d6832",
+                            background: "#fbf9fd",
+                            border: "1px solid #ebdcf5",
                             borderRadius: "8px",
-                            marginTop: "8px",
-                            boxShadow: bal > 0 ? "0 4px 14px rgba(24, 8, 40, 0.25)" : "none",
+                            padding: "10px 14px",
+                            marginBottom: "14px",
                           }}
                         >
-                          <span style={{ fontSize: "12px", fontWeight: 800, letterSpacing: "0.5px" }}>
-                            {bal > 0 ? "BALANCE DUE PAYABLE" : "STATUS: SETTLED IN FULL"}
-                          </span>
-                          <span style={{ fontSize: "20px", fontWeight: 900 }}>
-                            ₹{formatMoney(bal)}
-                          </span>
+                          <div style={{ fontSize: "10px", fontWeight: 800, color: "#6d28d9", textTransform: "uppercase", letterSpacing: "0.6px" }}>
+                            TOTAL AMOUNT IN WORDS (INR)
+                          </div>
+                          <div style={{ fontSize: "12.5px", fontWeight: 700, color: "#180828", marginTop: "3px", fontStyle: "italic", lineHeight: 1.4 }}>
+                            {numberToWordsINR(finalTotal)}
+                          </div>
                         </div>
-                      );
-                    })()}
-                  </div>
-                </div>
 
-                {/* 5. PAYMENT RECEIPTS HISTORY TABLE (IF ANY) */}
-                {activeEventPayments.length > 0 && (
-                  <div style={{ marginBottom: "28px" }}>
-                    <div style={{ fontSize: "13px", fontWeight: 700, color: "#1e0836", marginBottom: "8px" }}>
-                      Recorded Payment Receipts
+                        {/* Bank remittance card */}
+                        <div
+                          style={{
+                            background: "#fafafa",
+                            border: "1px solid #e5e7eb",
+                            borderRadius: "8px",
+                            padding: "12px 16px",
+                          }}
+                        >
+                          <div style={{ fontSize: "11px", fontWeight: 800, color: "#374151", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                            <span>🏦</span> COMPANY REMITTANCE & BANK DETAILS
+                          </div>
+                          <div style={{ display: "grid", gridTemplateColumns: "95px 1fr", gap: "4px 8px", fontSize: "12px" }}>
+                            <span style={{ color: "#6b7280" }}>Bank Name:</span>
+                            <strong style={{ color: "#111827" }}>{profile.bankName || "Federal Bank Ltd"}</strong>
+
+                            <span style={{ color: "#6b7280" }}>A/c Name:</span>
+                            <strong style={{ color: "#111827" }}>{profile.accountName || "Food Court Event Management"}</strong>
+
+                            <span style={{ color: "#6b7280" }}>A/c Number:</span>
+                            <strong style={{ color: "#111827", fontFamily: "monospace", letterSpacing: "0.5px" }}>{profile.accountNo || "14280200049281"}</strong>
+
+                            <span style={{ color: "#6b7280" }}>IFSC Code:</span>
+                            <strong style={{ color: "#111827", fontFamily: "monospace" }}>{profile.ifscCode || "FDRL0001428"}</strong>
+
+                            <span style={{ color: "#6b7280" }}>Branch:</span>
+                            <strong style={{ color: "#111827" }}>{profile.branchName || "Puthanathani Branch"}</strong>
+
+                            <span style={{ color: "#6b7280" }}>UPI VPA ID:</span>
+                            <strong style={{ color: "#6d28d9", fontFamily: "monospace" }}>{profile.upiId || "foodcourt@upi"}</strong>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Right: Totals Ledger */}
+                      <div>
+                        <div
+                          style={{
+                            background: "#fbf9fd",
+                            border: "1px solid #ebdcf5",
+                            borderRadius: "10px",
+                            padding: "14px 18px",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "12.5px" }}>
+                            <span style={{ color: "#4b5563" }}>Taxable Subtotal (Excl. Tax):</span>
+                            <span style={{ fontWeight: 600, color: "#180828" }}>₹{formatMoney(subtotalExclTax)}</span>
+                          </div>
+
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "12px", color: "#6b7280" }}>
+                            <span>CGST @ 2.5%:</span>
+                            <span>₹{formatMoney(cgstAmount)}</span>
+                          </div>
+
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "12px", color: "#6b7280" }}>
+                            <span>SGST @ 2.5%:</span>
+                            <span>₹{formatMoney(sgstAmount)}</span>
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              padding: "10px 0 8px 0",
+                              fontSize: "14px",
+                              borderTop: "1.5px solid #d4c2ec",
+                              color: "#180828",
+                              fontWeight: 800,
+                            }}
+                          >
+                            <span>Total Invoice Value:</span>
+                            <span style={{ fontSize: "16px", color: "#6d28d9" }}>
+                              ₹{formatMoney(finalTotal)}
+                            </span>
+                          </div>
+
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              padding: "6px 0",
+                              fontSize: "12.5px",
+                              color: "#15803d",
+                              borderTop: "1px dashed #e2d4f0",
+                            }}
+                          >
+                            <span>Recorded Payments to Date:</span>
+                            <strong>− ₹{formatMoney(paid)}</strong>
+                          </div>
+
+                          {/* Net Balance Due Box */}
+                          <div
+                            style={{
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              padding: "12px 16px",
+                              background: bal > 0 ? "linear-gradient(135deg, #180828 0%, #350f58 100%)" : "#dcfce7",
+                              color: bal > 0 ? "#ffffff" : "#15803d",
+                              borderRadius: "8px",
+                              marginTop: "10px",
+                              boxShadow: bal > 0 ? "0 4px 14px rgba(24, 8, 40, 0.25)" : "none",
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontSize: "10.5px", fontWeight: 800, letterSpacing: "0.6px", textTransform: "uppercase", opacity: 0.9 }}>
+                                {bal > 0 ? "NET BALANCE DUE" : "STATUS: FULLY SETTLED"}
+                              </div>
+                              <div style={{ fontSize: "10px", opacity: 0.75 }}>
+                                {bal > 0 ? "Payable on or before event delivery" : "Zero outstanding balance"}
+                              </div>
+                            </div>
+                            <div style={{ fontSize: "20px", fontWeight: 900, letterSpacing: "-0.5px" }}>
+                              ₹{formatMoney(bal)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", textAlign: "left" }}>
+                  );
+                })()}
+
+                {/* 5. RECORDED PAYMENT RECEIPTS TABLE (IF ANY) */}
+                {activeEventPayments.length > 0 && (
+                  <div style={{ marginBottom: "20px" }}>
+                    <div
+                      style={{
+                        fontSize: "11.5px",
+                        fontWeight: 800,
+                        color: "#180828",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.6px",
+                        marginBottom: "8px",
+                      }}
+                    >
+                      RECORDED PAYMENT RECEIPTS TO DATE
+                    </div>
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontSize: "12px",
+                        textAlign: "left",
+                        border: "1px solid #e5e7eb",
+                        borderRadius: "6px",
+                        overflow: "hidden",
+                      }}
+                    >
                       <thead>
-                        <tr style={{ background: "#fbf9fe", borderBottom: "1px solid #ebe4f5", color: "#6b5b7e" }}>
-                          <th style={{ padding: "8px 12px" }}>Date</th>
+                        <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569", fontSize: "11px", fontWeight: 700 }}>
+                          <th style={{ padding: "8px 12px" }}>Receipt Date</th>
                           <th style={{ padding: "8px 12px" }}>Payment Mode</th>
-                          <th style={{ padding: "8px 12px" }}>Type</th>
-                          <th style={{ padding: "8px 12px" }}>Note / Ref #</th>
-                          <th style={{ padding: "8px 12px", textAlign: "right" }}>Amount</th>
+                          <th style={{ padding: "8px 12px" }}>Category</th>
+                          <th style={{ padding: "8px 12px" }}>Transaction Ref / Note</th>
+                          <th style={{ padding: "8px 12px", textAlign: "right" }}>Amount Credited</th>
                         </tr>
                       </thead>
                       <tbody>
                         {activeEventPayments.map((p) => (
-                          <tr key={p.id} style={{ borderBottom: "1px solid #f3eff8" }}>
+                          <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                             <td style={{ padding: "8px 12px" }}>{formatDate(p.payment_date)}</td>
                             <td style={{ padding: "8px 12px", fontWeight: 600 }}>{p.payment_method}</td>
                             <td style={{ padding: "8px 12px" }}>{p.payment_type}</td>
-                            <td style={{ padding: "8px 12px", color: "#6b5b7e" }}>{p.note || "—"}</td>
-                            <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, color: "#166534" }}>
+                            <td style={{ padding: "8px 12px", color: "#64748b" }}>{p.note || "Standard Receipt"}</td>
+                            <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, color: "#15803d" }}>
                               ₹{formatMoney(p.amount)}
                             </td>
                           </tr>
@@ -1273,39 +1621,106 @@ function BillingContent() {
                   </div>
                 )}
 
-                {/* 6. BANKING & TERMS & SIGNATURE FOOTER */}
+                {/* 6. TERMS & CONDITIONS AND DUAL SIGNATORIES */}
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(250px, 1fr))",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
                     gap: "24px",
-                    borderTop: "1px dashed #dcd2ea",
-                    paddingTop: "20px",
-                    marginTop: "20px",
+                    borderTop: "1.5px dashed #d8cbe8",
+                    paddingTop: "18px",
+                    marginTop: "16px",
                   }}
                 >
-                  {/* Banking & Terms */}
+                  {/* Terms & Conditions */}
                   <div>
-                    <span style={{ fontSize: "11px", fontWeight: 700, color: "#7c3aed", textTransform: "uppercase" }}>
-                      PAYMENT INSTRUCTIONS
-                    </span>
-                    <div style={{ fontSize: "12px", color: "#5d4e70", marginTop: "4px", lineHeight: 1.5 }}>
-                      Please settle balance via NEFT, RTGS, UPI, or cash.
+                    <div
+                      style={{
+                        fontSize: "10.5px",
+                        fontWeight: 800,
+                        color: "#6d28d9",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.6px",
+                        marginBottom: "6px",
+                      }}
+                    >
+                      TERMS & CONDITIONS
                     </div>
-                    <div style={{ fontSize: "11px", color: "#8a7b9b", marginTop: "6px" }}>
+                    <ul
+                      style={{
+                        margin: 0,
+                        paddingLeft: "16px",
+                        fontSize: "11px",
+                        color: "#4b5563",
+                        lineHeight: 1.55,
+                      }}
+                    >
+                      <li>All cheques / transfers should be drawn in favor of <strong>Food Court Event Management</strong>.</li>
+                      <li>Net balance due is payable upon completion or delivery of contracted event services.</li>
+                      <li>Final guest count adjustments must be locked 72 hours prior to the event commencement date.</li>
+                      <li>This is a computer-generated tax invoice issued in accordance with Section 31 of CGST / SGST Act 2017.</li>
+                    </ul>
+                    <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "8px", fontStyle: "italic" }}>
                       {profile.receiptFooter}
                     </div>
                   </div>
 
-                  {/* Signature Block */}
-                  <div style={{ textAlign: "right", display: "flex", flexDirection: "column", justifyContent: "flex-end" }}>
-                    <div style={{ height: "45px" }} />
-                    <div style={{ borderTop: "1px solid #3c2058", display: "inline-block", width: "180px", marginLeft: "auto" }} />
-                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", marginTop: "4px" }}>
-                      Authorized Signatory
+                  {/* Dual Signatory Blocks */}
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "flex-end",
+                      gap: "16px",
+                    }}
+                  >
+                    {/* Customer Acceptance */}
+                    <div style={{ textAlign: "center", flex: 1 }}>
+                      <div style={{ height: "48px" }} />
+                      <div style={{ borderTop: "1px solid #cbd5e1", width: "100%", margin: "0 auto" }} />
+                      <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#1e0836", marginTop: "5px" }}>
+                        Customer Acceptance
+                      </div>
+                      <div style={{ fontSize: "10px", color: "#64748b" }}>
+                        Name & Signature
+                      </div>
                     </div>
-                    <div style={{ fontSize: "11px", color: "#8a7b9b" }}>
-                      {profile.companyName}
+
+                    {/* Authorized Signatory */}
+                    <div style={{ textAlign: "center", flex: 1 }}>
+                      <div
+                        style={{
+                          height: "48px",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <span
+                          style={{
+                            border: "1px dashed #c084fc",
+                            borderRadius: "50%",
+                            width: "44px",
+                            height: "44px",
+                            display: "grid",
+                            placeItems: "center",
+                            fontSize: "8px",
+                            color: "#7c3aed",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            opacity: 0.6,
+                          }}
+                        >
+                          SEAL
+                        </span>
+                      </div>
+                      <div style={{ borderTop: "1.5px solid #1e0836", width: "100%", margin: "0 auto" }} />
+                      <div style={{ fontSize: "11.5px", fontWeight: 800, color: "#1e0836", marginTop: "5px" }}>
+                        Authorized Signatory
+                      </div>
+                      <div style={{ fontSize: "10px", color: "#64748b" }}>
+                        For {profile.companyName}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1314,6 +1729,61 @@ function BillingContent() {
           </div>
         </div>
       )}
+
+      {/* Scoped Print Isolation Styles */}
+      <style jsx global>{`
+        @media print {
+          body {
+            background: #ffffff !important;
+            color: #0f172a !important;
+          }
+          .no-print,
+          .topbar,
+          .sidebar,
+          .mobile-menu-button {
+            display: none !important;
+          }
+          .invoice-modal-overlay {
+            position: static !important;
+            background: transparent !important;
+            backdrop-filter: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            display: block !important;
+            width: 100% !important;
+            height: auto !important;
+            overflow: visible !important;
+            z-index: auto !important;
+          }
+          .invoice-modal-dialog {
+            position: static !important;
+            max-width: 100% !important;
+            max-height: none !important;
+            width: 100% !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            overflow: visible !important;
+            background: #ffffff !important;
+          }
+          .invoice-scroll-container {
+            padding: 0 !important;
+            margin: 0 !important;
+            background: #ffffff !important;
+            overflow: visible !important;
+            display: block !important;
+          }
+          #printable-bill {
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 auto !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            background: #ffffff !important;
+          }
+        }
+      `}</style>
     </main>
   );
 }
