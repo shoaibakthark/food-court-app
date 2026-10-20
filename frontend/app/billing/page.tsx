@@ -418,7 +418,7 @@ function BillingContent() {
     <main className="dashboard">
       <AppSidebar activeRoute="/billing" />
 
-      <div className="main-content">
+      <div className={`main-content ${modalOpen ? "no-print" : ""}`}>
         {/* Topbar */}
         <header
           className="topbar no-print"
@@ -979,7 +979,7 @@ function BillingContent() {
       </div>
 
       {/* ============================================================
-          INVOICE & PRINT MODAL (Corporate Standard GST Tax Invoice)
+          INVOICE & PRINT MODAL (Single-Page Corporate GST Tax Invoice)
       ============================================================ */}
       {modalOpen && activeEvent && (
         <div
@@ -1007,7 +1007,7 @@ function BillingContent() {
               background: "#ffffff",
               borderRadius: "16px",
               width: "100%",
-              maxWidth: "890px",
+              maxWidth: "880px",
               maxHeight: "94vh",
               display: "flex",
               flexDirection: "column",
@@ -1020,20 +1020,20 @@ function BillingContent() {
             <div
               className="no-print"
               style={{
-                padding: "14px 24px",
+                padding: "12px 20px",
                 background: "linear-gradient(135deg, #180828 0%, #2b0c4c 100%)",
                 color: "#ffffff",
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
                 flexWrap: "wrap",
-                gap: "12px",
+                gap: "10px",
                 borderBottom: "1px solid rgba(255, 255, 255, 0.1)",
               }}
             >
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                  <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 800 }}>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800 }}>
                     Tax Invoice — INV-2026-{String(activeEvent.id).padStart(5, "0")}
                   </h3>
                   <span
@@ -1050,24 +1050,24 @@ function BillingContent() {
                     {activeEvent.customer_name}
                   </span>
                 </div>
-                <span style={{ fontSize: "12px", color: "#c084fc", marginTop: "2px", display: "block" }}>
-                  Official Commercial Tax Invoice • Ready for high-resolution print or PDF export
+                <span style={{ fontSize: "11.5px", color: "#c084fc", marginTop: "2px", display: "block" }}>
+                  Official Commercial Tax Invoice • Formatted for 1-Page A4 Print & PDF
                 </span>
               </div>
 
-              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                 <button
                   type="button"
                   onClick={handleCopyInvoiceLink}
                   style={{
                     display: "inline-flex",
                     alignItems: "center",
-                    gap: "6px",
+                    gap: "5px",
                     background: "rgba(255, 255, 255, 0.12)",
                     color: "#ffffff",
                     border: "1px solid rgba(255, 255, 255, 0.2)",
-                    borderRadius: "8px",
-                    padding: "8px 14px",
+                    borderRadius: "7px",
+                    padding: "7px 12px",
                     fontWeight: 600,
                     fontSize: "12px",
                     cursor: "pointer",
@@ -1087,10 +1087,10 @@ function BillingContent() {
                     background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                     color: "#ffffff",
                     border: "none",
-                    borderRadius: "8px",
-                    padding: "8px 18px",
+                    borderRadius: "7px",
+                    padding: "7px 16px",
                     fontWeight: 700,
-                    fontSize: "13px",
+                    fontSize: "12.5px",
                     cursor: "pointer",
                     boxShadow: "0 4px 14px rgba(124, 58, 237, 0.4)",
                   }}
@@ -1106,10 +1106,10 @@ function BillingContent() {
                     border: "none",
                     color: "#ffffff",
                     borderRadius: "50%",
-                    width: "32px",
-                    height: "32px",
+                    width: "30px",
+                    height: "30px",
                     cursor: "pointer",
-                    fontSize: "16px",
+                    fontSize: "15px",
                     display: "grid",
                     placeItems: "center",
                   }}
@@ -1124,22 +1124,22 @@ function BillingContent() {
             <div
               className="invoice-scroll-container"
               style={{
-                padding: "clamp(16px, 3.5vw, 32px)",
+                padding: "clamp(12px, 3vw, 24px)",
                 overflowY: "auto",
                 background: "#f4f1f8",
                 flex: 1,
               }}
             >
-              {/* THE INVOICE PAPER (Target for PDF printing) */}
+              {/* THE INVOICE PAPER (Target for PDF printing - Optimized for 1 single A4 page) */}
               <div
                 id="printable-bill"
                 className="print-card"
                 style={{
                   background: "#ffffff",
-                  borderRadius: "12px",
+                  borderRadius: "10px",
                   border: "1px solid #e5daf0",
                   boxShadow: "0 4px 24px rgba(124, 58, 237, 0.08)",
-                  padding: "clamp(20px, 4vw, 36px)",
+                  padding: "clamp(16px, 3.5vw, 28px)",
                   color: "#180828",
                   fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
                 }}
@@ -1151,28 +1151,28 @@ function BillingContent() {
                     justifyContent: "space-between",
                     alignItems: "flex-start",
                     flexWrap: "wrap",
-                    gap: "20px",
+                    gap: "16px",
                     borderBottom: "2px solid #7c3aed",
-                    paddingBottom: "20px",
-                    marginBottom: "20px",
+                    paddingBottom: "12px",
+                    marginBottom: "12px",
                   }}
                 >
                   {/* Company Info Left */}
-                  <div style={{ display: "flex", gap: "14px", alignItems: "flex-start", maxWidth: "480px" }}>
+                  <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", maxWidth: "460px" }}>
                     <div
                       style={{
-                        width: "56px",
-                        height: "56px",
-                        borderRadius: "14px",
+                        width: "48px",
+                        height: "48px",
+                        borderRadius: "12px",
                         background: "linear-gradient(135deg, #180828 0%, #7c3aed 100%)",
                         color: "#ffffff",
                         fontWeight: 900,
-                        fontSize: "22px",
+                        fontSize: "19px",
                         display: "flex",
                         alignItems: "center",
                         justifyContent: "center",
-                        letterSpacing: "1px",
-                        boxShadow: "0 4px 14px rgba(124, 58, 237, 0.25)",
+                        letterSpacing: "0.5px",
+                        boxShadow: "0 3px 10px rgba(124, 58, 237, 0.25)",
                         flexShrink: 0,
                       }}
                     >
@@ -1182,51 +1182,50 @@ function BillingContent() {
                       <h2
                         style={{
                           margin: 0,
-                          fontSize: "20px",
+                          fontSize: "18px",
                           fontWeight: 800,
                           color: "#180828",
                           letterSpacing: "-0.3px",
-                          lineHeight: 1.25,
+                          lineHeight: 1.2,
                         }}
                       >
                         {profile.companyName}
                       </h2>
                       <div
                         style={{
-                          fontSize: "12px",
+                          fontSize: "11px",
                           fontWeight: 600,
                           color: "#7c3aed",
                           marginTop: "2px",
-                          letterSpacing: "0.2px",
                         }}
                       >
                         {profile.tagline || "Premium Event Planning, Luxury Catering & Production"}
                       </div>
                       <p
                         style={{
-                          margin: "4px 0 0 0",
-                          fontSize: "12px",
+                          margin: "2px 0 0 0",
+                          fontSize: "11px",
                           color: "#4b5563",
-                          lineHeight: 1.4,
+                          lineHeight: 1.35,
                         }}
                       >
                         {profile.address}
                       </p>
-                      <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "3px" }}>
+                      <div style={{ fontSize: "11px", color: "#4b5563", marginTop: "2px" }}>
                         <span>📞 {profile.contactPhone}</span> • <span>✉ {profile.contactEmail}</span>
                       </div>
                       <div
                         style={{
                           display: "flex",
                           flexWrap: "wrap",
-                          gap: "8px",
-                          fontSize: "11px",
+                          gap: "6px",
+                          fontSize: "10px",
                           fontWeight: 700,
                           color: "#1e0836",
                           background: "#f5f0fb",
-                          padding: "4px 8px",
-                          borderRadius: "6px",
-                          marginTop: "6px",
+                          padding: "2px 7px",
+                          borderRadius: "5px",
+                          marginTop: "4px",
                           border: "1px solid #ebdcf7",
                         }}
                       >
@@ -1246,12 +1245,12 @@ function BillingContent() {
                   </div>
 
                   {/* Document Title & Meta Right */}
-                  <div style={{ textAlign: "right", minWidth: "210px", flexShrink: 0 }}>
+                  <div style={{ textAlign: "right", minWidth: "190px", flexShrink: 0 }}>
                     <div
                       style={{
-                        fontSize: "22px",
+                        fontSize: "19px",
                         fontWeight: 900,
-                        letterSpacing: "1.2px",
+                        letterSpacing: "1px",
                         color: "#6d28d9",
                         textTransform: "uppercase",
                         lineHeight: 1.1,
@@ -1261,11 +1260,11 @@ function BillingContent() {
                     </div>
                     <div
                       style={{
-                        fontSize: "11px",
+                        fontSize: "10px",
                         fontWeight: 600,
                         color: "#6b7280",
                         letterSpacing: "0.4px",
-                        marginTop: "2px",
+                        marginTop: "1px",
                         textTransform: "uppercase",
                       }}
                     >
@@ -1273,27 +1272,24 @@ function BillingContent() {
                     </div>
                     <div
                       style={{
-                        fontSize: "14px",
+                        fontSize: "13px",
                         fontWeight: 800,
                         color: "#111827",
-                        marginTop: "6px",
+                        marginTop: "4px",
                         fontFamily: "monospace",
                       }}
                     >
                       INV-2026-{String(activeEvent.id).padStart(5, "0")}
                     </div>
-                    <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "3px" }}>
-                      Invoice Date: <strong>{formatDate(activeEvent.date || new Date().toISOString())}</strong>
+                    <div style={{ fontSize: "11px", color: "#4b5563", marginTop: "2px" }}>
+                      Date: <strong>{formatDate(activeEvent.date || new Date().toISOString())}</strong>
                     </div>
-                    <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
-                      Place of Supply: <strong>Kerala (Code 32)</strong>
-                    </div>
-                    <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "2px" }}>
-                      Reverse Charge: <strong>No</strong>
+                    <div style={{ fontSize: "10px", color: "#6b7280", marginTop: "1px" }}>
+                      Place of Supply: <strong>Kerala (32)</strong> • Rev Charge: <strong>No</strong>
                     </div>
 
                     {/* Status Badge */}
-                    <div style={{ marginTop: "8px" }}>
+                    <div style={{ marginTop: "6px" }}>
                       {(() => {
                         const billed = activeEvent.quote ?? activeEvent.total_estimate ?? 0;
                         const paid = activeEvent.paid_amount ?? 0;
@@ -1304,15 +1300,15 @@ function BillingContent() {
                           <span
                             style={{
                               display: "inline-block",
-                              padding: "4px 12px",
-                              borderRadius: "16px",
-                              fontSize: "11px",
+                              padding: "3px 10px",
+                              borderRadius: "14px",
+                              fontSize: "10px",
                               fontWeight: 800,
                               letterSpacing: "0.4px",
                               textTransform: "uppercase",
                               background: isSettled ? "#dcfce7" : isPartial ? "#fef3c7" : "#fee2e2",
                               color: isSettled ? "#15803d" : isPartial ? "#b45309" : "#b91c1c",
-                              border: `1.5px solid ${isSettled ? "#86efac" : isPartial ? "#fde68a" : "#fca5a5"}`,
+                              border: `1px solid ${isSettled ? "#86efac" : isPartial ? "#fde68a" : "#fca5a5"}`,
                             }}
                           >
                             {isSettled
@@ -1331,56 +1327,39 @@ function BillingContent() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-                    gap: "16px",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                    gap: "12px",
                     background: "#faf7fd",
-                    borderRadius: "10px",
+                    borderRadius: "8px",
                     border: "1px solid #ebdcf5",
-                    padding: "16px 20px",
-                    marginBottom: "20px",
+                    padding: "10px 14px",
+                    marginBottom: "12px",
                   }}
                 >
                   {/* Card 1: Billed To */}
-                  <div style={{ borderRight: "1px dashed #e2d4f0", paddingRight: "12px" }}>
+                  <div style={{ borderRight: "1px dashed #e2d4f0", paddingRight: "10px" }}>
                     <div
                       style={{
-                        fontSize: "11px",
+                        fontSize: "10px",
                         fontWeight: 800,
                         color: "#6d28d9",
                         textTransform: "uppercase",
-                        letterSpacing: "0.8px",
-                        marginBottom: "6px",
+                        letterSpacing: "0.6px",
+                        marginBottom: "3px",
                       }}
                     >
-                      BILLED TO (CLIENT / RECIPIENT)
+                      BILLED TO (CLIENT)
                     </div>
-                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#180828" }}>
+                    <div style={{ fontSize: "14.5px", fontWeight: 800, color: "#180828" }}>
                       {activeEvent.customer_name}
                     </div>
                     {activeEvent.customer_mobile && (
-                      <div style={{ fontSize: "13px", color: "#374151", marginTop: "3px" }}>
+                      <div style={{ fontSize: "12px", color: "#374151", marginTop: "2px" }}>
                         Phone: <strong>+91 {activeEvent.customer_mobile}</strong>
                       </div>
                     )}
-                    <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "2px" }}>
-                      Client ID: <strong>#CUST-{activeEvent.customer_id ?? "001"}</strong>
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#6b7280", marginTop: "2px" }}>
-                      Billing Address / Location: <strong>{activeEvent.place || "Kerala, India"}</strong>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "11px",
-                        color: "#4b5563",
-                        marginTop: "5px",
-                        background: "#f3e8ff",
-                        display: "inline-block",
-                        padding: "2px 8px",
-                        borderRadius: "4px",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Category: Unregistered Consumer (B2C)
+                    <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "1px" }}>
+                      Client ID: <strong>#CUST-{activeEvent.customer_id ?? "001"}</strong> • {activeEvent.place || "Kerala, India"}
                     </div>
                   </div>
 
@@ -1388,55 +1367,38 @@ function BillingContent() {
                   <div>
                     <div
                       style={{
-                        fontSize: "11px",
+                        fontSize: "10px",
                         fontWeight: 800,
                         color: "#6d28d9",
                         textTransform: "uppercase",
-                        letterSpacing: "0.8px",
-                        marginBottom: "6px",
+                        letterSpacing: "0.6px",
+                        marginBottom: "3px",
                       }}
                     >
                       EVENT & SERVICE PARTICULARS
                     </div>
-                    <div style={{ fontSize: "16px", fontWeight: 800, color: "#180828" }}>
+                    <div style={{ fontSize: "14.5px", fontWeight: 800, color: "#180828" }}>
                       {activeEvent.event_type}
                     </div>
-                    <div style={{ fontSize: "13px", color: "#374151", marginTop: "3px" }}>
-                      Venue / Destination: <strong>{activeEvent.place || "Designated Event Venue"}</strong>
+                    <div style={{ fontSize: "12px", color: "#374151", marginTop: "2px" }}>
+                      Venue: <strong>{activeEvent.place || "Designated Event Venue"}</strong>
                     </div>
-                    <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "2px" }}>
-                      Event Date: <strong>{formatDate(activeEvent.date)}</strong>
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#4b5563", marginTop: "2px" }}>
-                      Guaranteed Attendance: <strong>{activeEvent.guest_count} Pax (Guests)</strong>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "11px",
-                        color: "#4b5563",
-                        marginTop: "5px",
-                        background: "#f3e8ff",
-                        display: "inline-block",
-                        padding: "2px 8px",
-                        borderRadius: "4px",
-                        fontWeight: 600,
-                      }}
-                    >
-                      Booking Order Ref: EVT-{String(activeEvent.id).padStart(5, "0")}
+                    <div style={{ fontSize: "11px", color: "#4b5563", marginTop: "1px" }}>
+                      Date: <strong>{formatDate(activeEvent.date)}</strong> • <strong>{activeEvent.guest_count} Guaranteed Guests</strong>
                     </div>
                   </div>
                 </div>
 
                 {/* 3. ITEMIZED BREAKDOWN TABLE */}
-                <div style={{ marginBottom: "20px", overflowX: "auto" }}>
+                <div style={{ marginBottom: "12px", overflowX: "auto" }}>
                   <table
                     style={{
                       width: "100%",
                       borderCollapse: "collapse",
-                      fontSize: "12.5px",
+                      fontSize: "11.5px",
                       textAlign: "left",
                       border: "1px solid #ebdcf5",
-                      borderRadius: "8px",
+                      borderRadius: "6px",
                       overflow: "hidden",
                     }}
                   >
@@ -1448,16 +1410,16 @@ function BillingContent() {
                           color: "#3b185f",
                           fontWeight: 700,
                           textTransform: "uppercase",
-                          fontSize: "11px",
-                          letterSpacing: "0.4px",
+                          fontSize: "10.5px",
+                          letterSpacing: "0.3px",
                         }}
                       >
-                        <th style={{ padding: "10px 12px", width: "40px", textAlign: "center" }}>#</th>
-                        <th style={{ padding: "10px 12px" }}>Description of Services / Supplies</th>
-                        <th style={{ padding: "10px 12px", textAlign: "center", width: "90px" }}>SAC Code</th>
-                        <th style={{ padding: "10px 12px", textAlign: "center", width: "110px" }}>Pax / Qty</th>
-                        <th style={{ padding: "10px 12px", textAlign: "right", width: "120px" }}>Rate (₹)</th>
-                        <th style={{ padding: "10px 12px", textAlign: "right", width: "140px" }}>Amount (₹)</th>
+                        <th style={{ padding: "7px 10px", width: "35px", textAlign: "center" }}>#</th>
+                        <th style={{ padding: "7px 10px" }}>Description of Services / Supplies</th>
+                        <th style={{ padding: "7px 10px", textAlign: "center", width: "85px" }}>SAC</th>
+                        <th style={{ padding: "7px 10px", textAlign: "center", width: "100px" }}>Pax / Qty</th>
+                        <th style={{ padding: "7px 10px", textAlign: "right", width: "110px" }}>Rate (₹)</th>
+                        <th style={{ padding: "7px 10px", textAlign: "right", width: "130px" }}>Amount (₹)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1469,27 +1431,27 @@ function BillingContent() {
                             background: index % 2 === 0 ? "#ffffff" : "#fcfbfe",
                           }}
                         >
-                          <td style={{ padding: "12px", textAlign: "center", color: "#6b7280", fontWeight: 600 }}>
+                          <td style={{ padding: "7px 10px", textAlign: "center", color: "#6b7280", fontWeight: 600 }}>
                             {String(index + 1).padStart(2, "0")}
                           </td>
-                          <td style={{ padding: "12px" }}>
-                            <div style={{ fontWeight: 700, color: "#180828", fontSize: "13px" }}>
+                          <td style={{ padding: "7px 10px" }}>
+                            <div style={{ fontWeight: 700, color: "#180828", fontSize: "12px" }}>
                               {item.title}
                             </div>
-                            <div style={{ fontSize: "11.5px", color: "#64748b", marginTop: "3px", lineHeight: 1.4 }}>
+                            <div style={{ fontSize: "10.5px", color: "#64748b", marginTop: "1px", lineHeight: 1.3 }}>
                               {item.desc}
                             </div>
                           </td>
-                          <td style={{ padding: "12px", textAlign: "center", fontFamily: "monospace", fontWeight: 600, color: "#6d28d9" }}>
+                          <td style={{ padding: "7px 10px", textAlign: "center", fontFamily: "monospace", fontWeight: 600, color: "#6d28d9" }}>
                             {item.sac}
                           </td>
-                          <td style={{ padding: "12px", textAlign: "center", fontWeight: 600, color: "#374151" }}>
+                          <td style={{ padding: "7px 10px", textAlign: "center", fontWeight: 600, color: "#374151" }}>
                             {item.qty}
                           </td>
-                          <td style={{ padding: "12px", textAlign: "right", color: "#374151" }}>
+                          <td style={{ padding: "7px 10px", textAlign: "right", color: "#374151" }}>
                             {item.rate > 0 ? `₹${formatMoney(item.rate)}` : "—"}
                           </td>
-                          <td style={{ padding: "12px", textAlign: "right", fontWeight: 700, color: "#180828" }}>
+                          <td style={{ padding: "7px 10px", textAlign: "right", fontWeight: 700, color: "#180828" }}>
                             ₹{formatMoney(item.amount)}
                           </td>
                         </tr>
@@ -1512,9 +1474,9 @@ function BillingContent() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-                        gap: "20px",
-                        marginBottom: "20px",
+                        gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                        gap: "14px",
+                        marginBottom: "12px",
                         alignItems: "flex-start",
                       }}
                     >
@@ -1525,15 +1487,15 @@ function BillingContent() {
                           style={{
                             background: "#fbf9fd",
                             border: "1px solid #ebdcf5",
-                            borderRadius: "8px",
-                            padding: "10px 14px",
-                            marginBottom: "14px",
+                            borderRadius: "7px",
+                            padding: "6px 10px",
+                            marginBottom: "8px",
                           }}
                         >
-                          <div style={{ fontSize: "10px", fontWeight: 800, color: "#6d28d9", textTransform: "uppercase", letterSpacing: "0.6px" }}>
+                          <div style={{ fontSize: "9.5px", fontWeight: 800, color: "#6d28d9", textTransform: "uppercase", letterSpacing: "0.5px" }}>
                             TOTAL AMOUNT IN WORDS (INR)
                           </div>
-                          <div style={{ fontSize: "12.5px", fontWeight: 700, color: "#180828", marginTop: "3px", fontStyle: "italic", lineHeight: 1.4 }}>
+                          <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#180828", marginTop: "2px", fontStyle: "italic", lineHeight: 1.3 }}>
                             {numberToWordsINR(finalTotal)}
                           </div>
                         </div>
@@ -1543,30 +1505,24 @@ function BillingContent() {
                           style={{
                             background: "#fafafa",
                             border: "1px solid #e5e7eb",
-                            borderRadius: "8px",
-                            padding: "12px 16px",
+                            borderRadius: "7px",
+                            padding: "8px 12px",
                           }}
                         >
-                          <div style={{ fontSize: "11px", fontWeight: 800, color: "#374151", textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: "8px", display: "flex", alignItems: "center", gap: "6px" }}>
+                          <div style={{ fontSize: "10px", fontWeight: 800, color: "#374151", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "5px", display: "flex", alignItems: "center", gap: "5px" }}>
                             <span>🏦</span> COMPANY REMITTANCE & BANK DETAILS
                           </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "95px 1fr", gap: "4px 8px", fontSize: "12px" }}>
-                            <span style={{ color: "#6b7280" }}>Bank Name:</span>
+                          <div style={{ display: "grid", gridTemplateColumns: "85px 1fr", gap: "2px 6px", fontSize: "11px" }}>
+                            <span style={{ color: "#6b7280" }}>Bank / Name:</span>
                             <strong style={{ color: "#111827" }}>{profile.bankName || "Federal Bank Ltd"}</strong>
 
-                            <span style={{ color: "#6b7280" }}>A/c Name:</span>
-                            <strong style={{ color: "#111827" }}>{profile.accountName || "Food Court Event Management"}</strong>
-
-                            <span style={{ color: "#6b7280" }}>A/c Number:</span>
+                            <span style={{ color: "#6b7280" }}>A/c No:</span>
                             <strong style={{ color: "#111827", fontFamily: "monospace", letterSpacing: "0.5px" }}>{profile.accountNo || "14280200049281"}</strong>
 
-                            <span style={{ color: "#6b7280" }}>IFSC Code:</span>
-                            <strong style={{ color: "#111827", fontFamily: "monospace" }}>{profile.ifscCode || "FDRL0001428"}</strong>
+                            <span style={{ color: "#6b7280" }}>IFSC / Branch:</span>
+                            <strong style={{ color: "#111827", fontFamily: "monospace" }}>{profile.ifscCode || "FDRL0001428"} • {profile.branchName || "Puthanathani"}</strong>
 
-                            <span style={{ color: "#6b7280" }}>Branch:</span>
-                            <strong style={{ color: "#111827" }}>{profile.branchName || "Puthanathani Branch"}</strong>
-
-                            <span style={{ color: "#6b7280" }}>UPI VPA ID:</span>
+                            <span style={{ color: "#6b7280" }}>UPI VPA:</span>
                             <strong style={{ color: "#6d28d9", fontFamily: "monospace" }}>{profile.upiId || "foodcourt@upi"}</strong>
                           </div>
                         </div>
@@ -1578,38 +1534,33 @@ function BillingContent() {
                           style={{
                             background: "#fbf9fd",
                             border: "1px solid #ebdcf5",
-                            borderRadius: "10px",
-                            padding: "14px 18px",
+                            borderRadius: "8px",
+                            padding: "10px 14px",
                           }}
                         >
-                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "12.5px" }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: "11.5px" }}>
                             <span style={{ color: "#4b5563" }}>Taxable Subtotal (Excl. Tax):</span>
                             <span style={{ fontWeight: 600, color: "#180828" }}>₹{formatMoney(subtotalExclTax)}</span>
                           </div>
 
-                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "12px", color: "#6b7280" }}>
-                            <span>CGST @ 2.5%:</span>
-                            <span>₹{formatMoney(cgstAmount)}</span>
-                          </div>
-
-                          <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "12px", color: "#6b7280" }}>
-                            <span>SGST @ 2.5%:</span>
-                            <span>₹{formatMoney(sgstAmount)}</span>
+                          <div style={{ display: "flex", justifyContent: "space-between", padding: "2px 0", fontSize: "11px", color: "#6b7280" }}>
+                            <span>CGST (2.5%) + SGST (2.5%):</span>
+                            <span>₹{formatMoney(cgstAmount + sgstAmount)}</span>
                           </div>
 
                           <div
                             style={{
                               display: "flex",
                               justifyContent: "space-between",
-                              padding: "10px 0 8px 0",
-                              fontSize: "14px",
-                              borderTop: "1.5px solid #d4c2ec",
+                              padding: "6px 0 5px 0",
+                              fontSize: "13px",
+                              borderTop: "1px solid #d4c2ec",
                               color: "#180828",
                               fontWeight: 800,
                             }}
                           >
                             <span>Total Invoice Value:</span>
-                            <span style={{ fontSize: "16px", color: "#6d28d9" }}>
+                            <span style={{ fontSize: "15px", color: "#6d28d9" }}>
                               ₹{formatMoney(finalTotal)}
                             </span>
                           </div>
@@ -1618,13 +1569,13 @@ function BillingContent() {
                             style={{
                               display: "flex",
                               justifyContent: "space-between",
-                              padding: "6px 0",
-                              fontSize: "12.5px",
+                              padding: "4px 0",
+                              fontSize: "11.5px",
                               color: "#15803d",
                               borderTop: "1px dashed #e2d4f0",
                             }}
                           >
-                            <span>Recorded Payments to Date:</span>
+                            <span>Recorded Payments:</span>
                             <strong>− ₹{formatMoney(paid)}</strong>
                           </div>
 
@@ -1634,23 +1585,19 @@ function BillingContent() {
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
-                              padding: "12px 16px",
+                              padding: "8px 12px",
                               background: bal > 0 ? "linear-gradient(135deg, #180828 0%, #350f58 100%)" : "#dcfce7",
                               color: bal > 0 ? "#ffffff" : "#15803d",
-                              borderRadius: "8px",
-                              marginTop: "10px",
-                              boxShadow: bal > 0 ? "0 4px 14px rgba(24, 8, 40, 0.25)" : "none",
+                              borderRadius: "7px",
+                              marginTop: "6px",
                             }}
                           >
                             <div>
-                              <div style={{ fontSize: "10.5px", fontWeight: 800, letterSpacing: "0.6px", textTransform: "uppercase", opacity: 0.9 }}>
+                              <div style={{ fontSize: "9.5px", fontWeight: 800, letterSpacing: "0.5px", textTransform: "uppercase", opacity: 0.9 }}>
                                 {bal > 0 ? "NET BALANCE DUE" : "STATUS: FULLY SETTLED"}
                               </div>
-                              <div style={{ fontSize: "10px", opacity: 0.75 }}>
-                                {bal > 0 ? "Payable on or before event delivery" : "Zero outstanding balance"}
-                              </div>
                             </div>
-                            <div style={{ fontSize: "20px", fontWeight: 900, letterSpacing: "-0.5px" }}>
+                            <div style={{ fontSize: "17px", fontWeight: 900, letterSpacing: "-0.5px" }}>
                               ₹{formatMoney(bal)}
                             </div>
                           </div>
@@ -1662,47 +1609,47 @@ function BillingContent() {
 
                 {/* 5. RECORDED PAYMENT RECEIPTS TABLE (IF ANY) */}
                 {activeEventPayments.length > 0 && (
-                  <div style={{ marginBottom: "20px" }}>
+                  <div style={{ marginBottom: "10px" }}>
                     <div
                       style={{
-                        fontSize: "11.5px",
+                        fontSize: "10.5px",
                         fontWeight: 800,
                         color: "#180828",
                         textTransform: "uppercase",
-                        letterSpacing: "0.6px",
-                        marginBottom: "8px",
+                        letterSpacing: "0.5px",
+                        marginBottom: "4px",
                       }}
                     >
-                      RECORDED PAYMENT RECEIPTS TO DATE
+                      RECORDED PAYMENT RECEIPTS
                     </div>
                     <table
                       style={{
                         width: "100%",
                         borderCollapse: "collapse",
-                        fontSize: "12px",
+                        fontSize: "11px",
                         textAlign: "left",
                         border: "1px solid #e5e7eb",
-                        borderRadius: "6px",
+                        borderRadius: "5px",
                         overflow: "hidden",
                       }}
                     >
                       <thead>
-                        <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569", fontSize: "11px", fontWeight: 700 }}>
-                          <th style={{ padding: "8px 12px" }}>Receipt Date</th>
-                          <th style={{ padding: "8px 12px" }}>Payment Mode</th>
-                          <th style={{ padding: "8px 12px" }}>Category</th>
-                          <th style={{ padding: "8px 12px" }}>Transaction Ref / Note</th>
-                          <th style={{ padding: "8px 12px", textAlign: "right" }}>Amount Credited</th>
+                        <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", color: "#475569", fontSize: "10px", fontWeight: 700 }}>
+                          <th style={{ padding: "5px 8px" }}>Receipt Date</th>
+                          <th style={{ padding: "5px 8px" }}>Payment Mode</th>
+                          <th style={{ padding: "5px 8px" }}>Category</th>
+                          <th style={{ padding: "5px 8px" }}>Transaction Ref / Note</th>
+                          <th style={{ padding: "5px 8px", textAlign: "right" }}>Amount Credited</th>
                         </tr>
                       </thead>
                       <tbody>
                         {activeEventPayments.map((p) => (
                           <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                            <td style={{ padding: "8px 12px" }}>{formatDate(p.payment_date)}</td>
-                            <td style={{ padding: "8px 12px", fontWeight: 600 }}>{p.payment_method}</td>
-                            <td style={{ padding: "8px 12px" }}>{p.payment_type}</td>
-                            <td style={{ padding: "8px 12px", color: "#64748b" }}>{p.note || "Standard Receipt"}</td>
-                            <td style={{ padding: "8px 12px", textAlign: "right", fontWeight: 700, color: "#15803d" }}>
+                            <td style={{ padding: "4px 8px" }}>{formatDate(p.payment_date)}</td>
+                            <td style={{ padding: "4px 8px", fontWeight: 600 }}>{p.payment_method}</td>
+                            <td style={{ padding: "4px 8px" }}>{p.payment_type}</td>
+                            <td style={{ padding: "4px 8px", color: "#64748b" }}>{p.note || "Standard Receipt"}</td>
+                            <td style={{ padding: "4px 8px", textAlign: "right", fontWeight: 700, color: "#15803d" }}>
                               ₹{formatMoney(p.amount)}
                             </td>
                           </tr>
@@ -1716,23 +1663,23 @@ function BillingContent() {
                 <div
                   style={{
                     display: "grid",
-                    gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
-                    gap: "24px",
-                    borderTop: "1.5px dashed #d8cbe8",
-                    paddingTop: "18px",
-                    marginTop: "16px",
+                    gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))",
+                    gap: "16px",
+                    borderTop: "1px dashed #d8cbe8",
+                    paddingTop: "10px",
+                    marginTop: "10px",
                   }}
                 >
                   {/* Terms & Conditions */}
                   <div>
                     <div
                       style={{
-                        fontSize: "10.5px",
+                        fontSize: "10px",
                         fontWeight: 800,
                         color: "#6d28d9",
                         textTransform: "uppercase",
-                        letterSpacing: "0.6px",
-                        marginBottom: "6px",
+                        letterSpacing: "0.5px",
+                        marginBottom: "4px",
                       }}
                     >
                       TERMS & CONDITIONS
@@ -1740,20 +1687,17 @@ function BillingContent() {
                     <ul
                       style={{
                         margin: 0,
-                        paddingLeft: "16px",
-                        fontSize: "11px",
+                        paddingLeft: "14px",
+                        fontSize: "10px",
                         color: "#4b5563",
-                        lineHeight: 1.55,
+                        lineHeight: 1.4,
                       }}
                     >
-                      <li>All cheques / transfers should be drawn in favor of <strong>Food Court Event Management</strong>.</li>
-                      <li>Net balance due is payable upon completion or delivery of contracted event services.</li>
-                      <li>Final guest count adjustments must be locked 72 hours prior to the event commencement date.</li>
-                      <li>This is a computer-generated tax invoice issued in accordance with Section 31 of CGST / SGST Act 2017.</li>
+                      <li>All remittances payable in favor of <strong>Food Court Event Management</strong>.</li>
+                      <li>Net balance due is payable upon delivery / completion of event services.</li>
+                      <li>Pax adjustments must be finalized 72 hours prior to event date.</li>
+                      <li>Computer-generated tax invoice issued under Section 31 of CGST/SGST Act 2017.</li>
                     </ul>
-                    <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "8px", fontStyle: "italic" }}>
-                      {profile.receiptFooter}
-                    </div>
                   </div>
 
                   {/* Dual Signatory Blocks */}
@@ -1762,18 +1706,18 @@ function BillingContent() {
                       display: "flex",
                       justifyContent: "space-between",
                       alignItems: "flex-end",
-                      gap: "16px",
+                      gap: "12px",
                     }}
                   >
                     {/* Customer Acceptance */}
                     <div style={{ textAlign: "center", flex: 1 }}>
-                      <div style={{ height: "48px" }} />
+                      <div style={{ height: "26px" }} />
                       <div style={{ borderTop: "1px solid #cbd5e1", width: "100%", margin: "0 auto" }} />
-                      <div style={{ fontSize: "11.5px", fontWeight: 700, color: "#1e0836", marginTop: "5px" }}>
+                      <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#1e0836", marginTop: "3px" }}>
                         Customer Acceptance
                       </div>
-                      <div style={{ fontSize: "10px", color: "#64748b" }}>
-                        Name & Signature
+                      <div style={{ fontSize: "9px", color: "#64748b" }}>
+                        Signature
                       </div>
                     </div>
 
@@ -1781,7 +1725,7 @@ function BillingContent() {
                     <div style={{ textAlign: "center", flex: 1 }}>
                       <div
                         style={{
-                          height: "48px",
+                          height: "26px",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
@@ -1791,11 +1735,11 @@ function BillingContent() {
                           style={{
                             border: "1px dashed #c084fc",
                             borderRadius: "50%",
-                            width: "44px",
-                            height: "44px",
+                            width: "28px",
+                            height: "28px",
                             display: "grid",
                             placeItems: "center",
-                            fontSize: "8px",
+                            fontSize: "6.5px",
                             color: "#7c3aed",
                             fontWeight: 700,
                             textTransform: "uppercase",
@@ -1806,10 +1750,10 @@ function BillingContent() {
                         </span>
                       </div>
                       <div style={{ borderTop: "1.5px solid #1e0836", width: "100%", margin: "0 auto" }} />
-                      <div style={{ fontSize: "11.5px", fontWeight: 800, color: "#1e0836", marginTop: "5px" }}>
+                      <div style={{ fontSize: "10.5px", fontWeight: 800, color: "#1e0836", marginTop: "3px" }}>
                         Authorized Signatory
                       </div>
-                      <div style={{ fontSize: "10px", color: "#64748b" }}>
+                      <div style={{ fontSize: "9px", color: "#64748b" }}>
                         For {profile.companyName}
                       </div>
                     </div>
@@ -1821,18 +1765,42 @@ function BillingContent() {
         </div>
       )}
 
-      {/* Scoped Print Isolation Styles */}
+      {/* Scoped Print Isolation Styles - Strict 1-Page Guarantee */}
       <style jsx global>{`
         @media print {
+          @page {
+            size: A4 portrait !important;
+            margin: 6mm 8mm !important;
+          }
+          html,
           body {
             background: #ffffff !important;
             color: #0f172a !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            height: auto !important;
+            min-height: 0 !important;
+            overflow: visible !important;
+          }
+          .dashboard {
+            display: block !important;
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
           }
           .no-print,
           .topbar,
           .sidebar,
-          .mobile-menu-button {
+          .mobile-menu-button,
+          .main-content.no-print {
             display: none !important;
+            height: 0 !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: hidden !important;
           }
           .invoice-modal-overlay {
             position: static !important;
@@ -1843,6 +1811,7 @@ function BillingContent() {
             display: block !important;
             width: 100% !important;
             height: auto !important;
+            min-height: 0 !important;
             overflow: visible !important;
             z-index: auto !important;
           }
@@ -1851,11 +1820,15 @@ function BillingContent() {
             max-width: 100% !important;
             max-height: none !important;
             width: 100% !important;
+            height: auto !important;
+            min-height: 0 !important;
             box-shadow: none !important;
             border: none !important;
             border-radius: 0 !important;
             overflow: visible !important;
             background: #ffffff !important;
+            margin: 0 !important;
+            padding: 0 !important;
           }
           .invoice-scroll-container {
             padding: 0 !important;
@@ -1863,6 +1836,8 @@ function BillingContent() {
             background: #ffffff !important;
             overflow: visible !important;
             display: block !important;
+            height: auto !important;
+            min-height: 0 !important;
           }
           #printable-bill {
             border: none !important;
@@ -1872,6 +1847,12 @@ function BillingContent() {
             width: 100% !important;
             max-width: 100% !important;
             background: #ffffff !important;
+            page-break-after: avoid !important;
+            break-after: avoid !important;
+            page-break-before: avoid !important;
+            break-before: avoid !important;
+            page-break-inside: avoid !important;
+            break-inside: avoid !important;
           }
         }
       `}</style>
