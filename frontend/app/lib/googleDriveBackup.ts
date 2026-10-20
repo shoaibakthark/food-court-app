@@ -477,7 +477,7 @@ export function saveDriveBackupRecord(record: DriveBackupRecord) {
   }
 }
 
-// 7. Full Google Drive backup execution
+// 7. Full Google Drive backup execution (OAuth)
 export async function executeGoogleDriveBackup(
   clientId: string,
   onProgress?: (msg: string) => void
@@ -526,6 +526,100 @@ export async function executeGoogleDriveBackup(
     return {
       success: false,
       error: err.message || "Failed to backup to Google Drive",
+    };
+  }
+}
+
+
+// 8. Helper to download blob directly in browser
+export function triggerFileDownload(blob: Blob, fileName: string) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.style.display = "none";
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
+}
+
+// 9. Convert blob to Base64 string
+export function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const dataUrl = reader.result as string;
+      const base64 = dataUrl.split(",")[1];
+      resolve(base64);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
+// 10. Automated Upload via Google Apps Script Webhook
+export async function uploadToAppsScriptWebhook(
+  webhookUrl: string,
+  onProgress?: (msg: string) => void
+): Promise<{
+  success: boolean;
+  fileName?: string;
+  driveLink?: string;
+  totalRecords?: number;
+  error?: string;
+}> {
+  try {
+    if (!webhookUrl || !webhookUrl.startsWith("https://script.google.com/")) {
+      throw new Error("Please enter a valid Google Apps Script Web App URL (starts with https://script.google.com/...)");
+    }
+
+    if (onProgress) onProgress("Compiling complete database into Excel format...");
+    const { blob, fileName, totalRecords } = await generateExcelBackupBlob();
+
+    if (onProgress) onProgress("Encoding backup file for cloud transfer...");
+    const base64Data = await blobToBase64(blob);
+
+    if (onProgress) onProgress("Uploading file to Google Drive via your Apps Script...");
+
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "text/plain;charset=utf-8",
+      },
+      body: JSON.stringify({
+        fileName,
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        base64: base64Data,
+        totalRecords,
+      }),
+    });
+
+    const result = await res.json();
+    if (result.success) {
+      const driveLink = result.webViewLink || result.url || "https://drive.google.com";
+      const record: DriveBackupRecord = {
+        id: result.fileId || String(Date.now()),
+        fileName,
+        backupDate: new Date().toISOString(),
+        driveLink,
+        totalRecords,
+      };
+      saveDriveBackupRecord(record);
+
+      return {
+        success: true,
+        fileName,
+        driveLink,
+        totalRecords,
+      };
+    } else {
+      throw new Error(result.error || "Upload to Apps Script failed.");
+    }
+  } catch (err: any) {
+    return {
+      success: false,
+      error: err.message || "Failed to upload via Webhook",
     };
   }
 }
