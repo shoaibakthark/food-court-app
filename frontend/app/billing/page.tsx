@@ -262,11 +262,25 @@ function BillingContent() {
 
       <div className="main-content">
         {/* Topbar */}
-        <header className="topbar no-print">
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+        <header
+          className="topbar no-print"
+          style={{
+            minHeight: "72px",
+            height: "auto",
+            padding: "12px 24px",
+            background: "#ffffff",
+            borderBottom: "1px solid #e2e8f0",
+            gap: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 260px" }}>
             <MobileMenuButton />
             <div>
-              <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#1e0836" }}>
+              <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#1e0836", whiteSpace: "nowrap" }}>
                 Billing & Invoices
               </h1>
               <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#8a7b9b" }}>
@@ -275,13 +289,26 @@ function BillingContent() {
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 auto" }}>
             {/* Search Input */}
-            <div className="search-box">
+            <div
+              className="search-box"
+              style={{
+                width: "260px",
+                height: "38px",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 10px",
+                gap: "8px",
+              }}
+            >
               <span style={{ color: "#8a7b9b", fontSize: "14px" }}>🔍</span>
               <input
                 type="text"
-                placeholder="Search invoice #, client, phone, venue..."
+                placeholder="Search invoice #, client, venue..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 style={{
@@ -311,15 +338,18 @@ function BillingContent() {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "6px",
+                height: "38px",
                 background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                 color: "#ffffff",
                 border: "none",
                 borderRadius: "8px",
-                padding: "8px 16px",
+                padding: "0 16px",
                 fontWeight: 700,
                 fontSize: "12px",
                 cursor: "pointer",
-                boxShadow: "0 4px 14px rgba(124, 58, 237, 0.35)",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
+                boxShadow: "0 2px 6px rgba(124, 58, 237, 0.25)",
               }}
             >
               <span>🖨️</span> Print Ledger
@@ -506,7 +536,7 @@ function BillingContent() {
               paddingBottom: "4px",
             }}
           >
-            <div style={{ display: "flex", gap: "20px" }}>
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
               <button
                 type="button"
                 onClick={() => setStatusFilter("all")}
@@ -621,15 +651,15 @@ function BillingContent() {
                 <table style={{ width: "100%", minWidth: "900px", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
                   <thead>
                     <tr style={{ background: "linear-gradient(180deg, #fbf9fe 0%, #f4effa 100%)", borderBottom: "1px solid #ece4f5", color: "#542b80", fontWeight: 700 }}>
-                      <th style={{ padding: "14px 18px" }}>Invoice #</th>
-                      <th style={{ padding: "14px 18px" }}>Event Date</th>
-                      <th style={{ padding: "14px 18px" }}>Client Details</th>
-                      <th style={{ padding: "14px 18px" }}>Event & Venue</th>
-                      <th style={{ padding: "14px 18px", textAlign: "right" }}>Billed (₹)</th>
-                      <th style={{ padding: "14px 18px", textAlign: "right" }}>Paid (₹)</th>
-                      <th style={{ padding: "14px 18px", textAlign: "right" }}>Balance Due (₹)</th>
-                      <th style={{ padding: "14px 18px", textAlign: "center" }}>Status</th>
-                      <th style={{ padding: "14px 18px", textAlign: "center" }}>Actions</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Invoice #</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Event Date</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Client Details</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Event & Venue</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "right", whiteSpace: "nowrap" }}>Billed (₹)</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "right", whiteSpace: "nowrap" }}>Paid (₹)</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "right", whiteSpace: "nowrap" }}>Balance Due (₹)</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "center", whiteSpace: "nowrap" }}>Status</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "center", whiteSpace: "nowrap" }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -652,7 +682,7 @@ function BillingContent() {
                           onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
                         >
                           {/* Invoice # */}
-                          <td style={{ padding: "14px 18px", fontWeight: 700 }}>
+                          <td style={{ padding: "14px 18px", fontWeight: 700, verticalAlign: "middle", whiteSpace: "nowrap" }}>
                             <button
                               type="button"
                               onClick={() => openInvoice(ev)}
@@ -672,12 +702,12 @@ function BillingContent() {
                           </td>
 
                           {/* Date */}
-                          <td style={{ padding: "14px 18px", color: "#6b5b7e", whiteSpace: "nowrap" }}>
+                          <td style={{ padding: "14px 18px", color: "#6b5b7e", verticalAlign: "middle", whiteSpace: "nowrap" }}>
                             {formatDate(ev.date)}
                           </td>
 
                           {/* Client */}
-                          <td style={{ padding: "14px 18px" }}>
+                          <td style={{ padding: "14px 18px", verticalAlign: "middle" }}>
                             <strong style={{ color: "#1e0836", display: "block" }}>{ev.customer_name}</strong>
                             {ev.customer_mobile && (
                               <span style={{ fontSize: "11px", color: "#8a7b9b" }}>📞 {ev.customer_mobile}</span>
@@ -685,7 +715,7 @@ function BillingContent() {
                           </td>
 
                           {/* Event & Venue */}
-                          <td style={{ padding: "14px 18px", color: "#5d4e70" }}>
+                          <td style={{ padding: "14px 18px", color: "#5d4e70", verticalAlign: "middle" }}>
                             <div>
                               <strong>{ev.event_type}</strong>
                               <span style={{ fontSize: "12px", color: "#8a7b9b", marginLeft: "6px" }}>
@@ -696,24 +726,24 @@ function BillingContent() {
                           </td>
 
                           {/* Billed */}
-                          <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 700, color: "#1e0836" }}>
+                          <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 700, color: "#1e0836", verticalAlign: "middle", whiteSpace: "nowrap" }}>
                             ₹{formatMoney(billed)}
                           </td>
 
                           {/* Paid */}
-                          <td style={{ padding: "14px 18px", textAlign: "right", color: "#166534", fontWeight: 700 }}>
+                          <td style={{ padding: "14px 18px", textAlign: "right", color: "#166534", fontWeight: 700, verticalAlign: "middle", whiteSpace: "nowrap" }}>
                             ₹{formatMoney(paid)}
                           </td>
 
                           {/* Balance */}
-                          <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 800 }}>
+                          <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 800, verticalAlign: "middle", whiteSpace: "nowrap" }}>
                             <span style={{ color: bal > 0 ? "#b45309" : "#166534" }}>
                               ₹{formatMoney(bal)}
                             </span>
                           </td>
 
                           {/* Status */}
-                          <td style={{ padding: "14px 18px", textAlign: "center" }}>
+                          <td style={{ padding: "14px 18px", textAlign: "center", verticalAlign: "middle", whiteSpace: "nowrap" }}>
                             <span
                               style={{
                                 display: "inline-block",
@@ -730,8 +760,8 @@ function BillingContent() {
                           </td>
 
                           {/* Actions */}
-                          <td style={{ padding: "14px 18px", textAlign: "center", whiteSpace: "nowrap" }}>
-                            <div style={{ display: "flex", gap: "6px", justifyContent: "center" }}>
+                          <td style={{ padding: "14px 18px", textAlign: "center", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                            <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
                               <button
                                 type="button"
                                 onClick={() => openInvoice(ev, true)}
@@ -739,7 +769,8 @@ function BillingContent() {
                                   display: "inline-flex",
                                   alignItems: "center",
                                   gap: "4px",
-                                  padding: "6px 12px",
+                                  height: "30px",
+                                  padding: "0 12px",
                                   borderRadius: "6px",
                                   border: "none",
                                   background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
@@ -747,7 +778,8 @@ function BillingContent() {
                                   fontWeight: 700,
                                   fontSize: "12px",
                                   cursor: "pointer",
-                                  boxShadow: "0 2px 8px rgba(124, 58, 237, 0.25)",
+                                  whiteSpace: "nowrap",
+                                  boxShadow: "0 2px 6px rgba(124, 58, 237, 0.25)",
                                 }}
                                 title="Print or save as PDF"
                               >
@@ -758,7 +790,10 @@ function BillingContent() {
                                 type="button"
                                 onClick={() => openInvoice(ev, false)}
                                 style={{
-                                  padding: "6px 10px",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  height: "30px",
+                                  padding: "0 10px",
                                   borderRadius: "6px",
                                   border: "1px solid #ddd6fe",
                                   background: "#f5f3ff",
@@ -766,6 +801,7 @@ function BillingContent() {
                                   fontWeight: 600,
                                   fontSize: "12px",
                                   cursor: "pointer",
+                                  whiteSpace: "nowrap",
                                 }}
                                 title="View detailed bill"
                               >
