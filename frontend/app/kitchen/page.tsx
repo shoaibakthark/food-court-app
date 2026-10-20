@@ -109,7 +109,6 @@ const KITCHEN_ROLES = [
 export default function KitchenPage() {
   const router = useRouter();
   const { user, isOwner } = useAuth();
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // Active view tab: 'daily' | 'monthly' | 'staff' | 'payments'
   const [activeTab, setActiveTab] = useState<"daily" | "monthly" | "staff" | "payments">("daily");
@@ -143,7 +142,7 @@ export default function KitchenPage() {
     name: "",
     mobile: "",
     kitchen_role: "Kitchen Helper",
-    wage_type: "daily", // 'daily' or 'monthly'
+    wage_type: "daily",
     wage_rate: "800",
     status: "active",
     address: "",
@@ -236,7 +235,6 @@ export default function KitchenPage() {
             existing_duty_id: existingDuty.id,
           };
         } else {
-          // No record yet for this date
           const isMonthly = s.wage_type === "monthly";
           const defaultDailyWage = isMonthly ? 0 : Number(s.wage_rate) || 0;
 
@@ -668,1175 +666,1956 @@ export default function KitchenPage() {
   }, [staffList, staffFilter, searchStaff]);
 
   return (
-    <div className="flex h-screen bg-[#150624] text-white overflow-hidden font-sans">
-      {/* Sidebar Navigation */}
-      <AppSidebar sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
+    <main className="dashboard">
+      {/* App Fixed Sidebar */}
+      <AppSidebar activeRoute="/kitchen" />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full min-w-0 overflow-y-auto bg-gradient-to-b from-[#1b082e] via-[#150624] to-[#0f041a]">
-        <OwnerBanner />
-
-        {/* Top Header Bar */}
-        <header className="sticky top-0 z-20 flex items-center justify-between px-4 sm:px-8 py-3.5 bg-[#200a36]/90 backdrop-blur-md border-b border-purple-900/40 shadow-lg">
-          <div className="flex items-center gap-3">
-            <MobileMenuButton onClick={() => setSidebarOpen(true)} />
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-2xl leading-none">👨‍🍳</span>
-                <h1 className="text-xl sm:text-2xl font-bold tracking-tight bg-gradient-to-r from-purple-200 via-pink-200 to-amber-200 bg-clip-text text-transparent">
-                  Kitchen Staff & Wages
-                </h1>
-              </div>
-              <p className="text-xs text-purple-300/70 hidden sm:block mt-0.5">
-                Fast daily variable wage tracking & monthly staff accounts
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => openPaymentModal()}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs sm:text-sm font-medium transition-all shadow-sm"
-              title="Record Cash or UPI payment"
-            >
-              <span>💵</span>
-              <span className="hidden md:inline">Record Payment</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setEditingStaff(null);
-                setStaffForm({
-                  name: "",
-                  mobile: "",
-                  kitchen_role: "Kitchen Helper",
-                  wage_type: "daily",
-                  wage_rate: "800",
-                  status: "active",
-                  address: "",
-                  notes: "",
-                });
-                setShowAddStaffModal(true);
+      {/* Main Content with standard margin-left: 250px so sidebar never cuts off */}
+      <div className="main-content">
+        {/* Topbar matching app standard light theme */}
+        <header className="topbar">
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+            <MobileMenuButton />
+            <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#24103f" }}>
+              🍳 Kitchen Staff & Wages
+            </h1>
+            <span
+              style={{
+                fontSize: "12px",
+                color: "#6b5b7e",
+                background: "#f0edf5",
+                padding: "4px 10px",
+                borderRadius: "12px",
+                fontWeight: 600,
               }}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-semibold transition-all shadow-md shadow-purple-950/40"
             >
-              <span>+</span>
-              <span>Add Staff</span>
-            </button>
-
-            <TopbarUserBadge />
+              {dailyStaff.length} Daily • {monthlyStaff.length} Monthly
+            </span>
           </div>
-        </header>
 
-        {/* Global Feedback Banner */}
-        {saveSuccessMsg && (
-          <div className="mx-4 sm:mx-8 mt-4 p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-200 text-sm flex items-center justify-between animate-fadeIn">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">🎉</span>
-              <span className="font-medium">{saveSuccessMsg}</span>
-            </div>
-            <button
-              onClick={() => setSaveSuccessMsg(null)}
-              className="text-emerald-400 hover:text-white text-xs px-2 py-0.5"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        {errorMsg && (
-          <div className="mx-4 sm:mx-8 mt-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/40 text-rose-200 text-sm flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">⚠️</span>
-              <span>{errorMsg}</span>
-            </div>
-            <button
-              onClick={() => setErrorMsg(null)}
-              className="text-rose-400 hover:text-white text-xs px-2 py-0.5"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        {/* Top Summary Metric Cards - Aligned Symmetrically */}
-        <div className="px-4 sm:px-8 pt-5 pb-3">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
-            {/* Card 1: Today's Working Staff */}
-            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 shadow-sm flex flex-col justify-between h-28">
-              <div className="flex items-center justify-between text-xs text-purple-300/80 font-medium">
-                <span>Working Today</span>
-                <span className="text-emerald-400 text-sm">🟢</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
-                  {dailySheetTotals.presentCount}
-                </span>
-                <span className="text-xs text-purple-300/60 font-medium">
-                  / {dailyStaff.length} Daily Staff
-                </span>
-              </div>
-              <div className="text-[11px] text-purple-300/70 truncate">
-                {dailySheetTotals.absentCount > 0 ? `${dailySheetTotals.absentCount} marked absent today` : "Full roster present"}
-              </div>
-            </div>
-
-            {/* Card 2: Today's Total Wages */}
-            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 shadow-sm flex flex-col justify-between h-28">
-              <div className="flex items-center justify-between text-xs text-purple-300/80 font-medium">
-                <span>Today's Wages Total</span>
-                <span className="text-amber-400 text-sm">💰</span>
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl sm:text-3xl font-extrabold text-amber-300 tracking-tight">
-                  ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
-                </span>
-              </div>
-              <div className="text-[11px] text-purple-300/70 flex items-center justify-between gap-1">
-                <span>Paid: ₹{dailySheetTotals.totalPaidToday.toLocaleString("en-IN")}</span>
-                <span className="text-amber-400/90 font-semibold">Due: ₹{dailySheetTotals.pendingToday.toLocaleString("en-IN")}</span>
-              </div>
-            </div>
-
-            {/* Card 3: Monthly Staff */}
-            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 shadow-sm flex flex-col justify-between h-28">
-              <div className="flex items-center justify-between text-xs text-purple-300/80 font-medium">
-                <span>Monthly Staff</span>
-                <span className="text-indigo-400 text-sm">💼</span>
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-2xl sm:text-3xl font-extrabold text-indigo-300 tracking-tight">
-                  {monthlyStaff.length}
-                </span>
-                <span className="text-xs text-purple-300/60 font-medium">Active</span>
-              </div>
-              <div className="text-[11px] text-purple-300/70 truncate">
-                {monthlyStaff.length > 0
-                  ? monthlyStaff.map((m) => m.name).join(", ")
-                  : "No monthly staff"}
-              </div>
-            </div>
-
-            {/* Card 4: Total Pending Balances */}
-            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 shadow-sm flex flex-col justify-between h-28">
-              <div className="flex items-center justify-between text-xs text-purple-300/80 font-medium">
-                <span>Total Balance Due</span>
-                <span className="text-rose-400 text-sm">⏳</span>
-              </div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl sm:text-3xl font-extrabold text-rose-300 tracking-tight">
-                  ₹{(summary?.total_pending_balance || 0).toLocaleString("en-IN")}
-                </span>
-              </div>
-              <div className="text-[11px] text-purple-300/70 truncate">
-                Accrued wage balance across all staff
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* View Switcher Tabs - Symmetrically Aligned */}
-        <div className="px-4 sm:px-8 pt-1">
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#200a36]/70 border border-purple-900/40 w-full sm:w-fit overflow-x-auto">
-            <button
-              onClick={() => setActiveTab("daily")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
-                activeTab === "daily"
-                  ? "bg-purple-600 text-white shadow-md shadow-purple-950/50"
-                  : "text-purple-300/70 hover:text-white hover:bg-purple-900/30"
-              }`}
-            >
-              <span>📅</span>
-              <span>Daily Wages Entry</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-purple-900/60 text-[10px] text-purple-200">
-                {dailyStaff.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("monthly")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
-                activeTab === "monthly"
-                  ? "bg-purple-600 text-white shadow-md shadow-purple-950/50"
-                  : "text-purple-300/70 hover:text-white hover:bg-purple-900/30"
-              }`}
-            >
-              <span>💼</span>
-              <span>Monthly Staff</span>
-              <span className="px-1.5 py-0.5 rounded-full bg-purple-900/60 text-[10px] text-purple-200">
-                {monthlyStaff.length}
-              </span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("staff")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
-                activeTab === "staff"
-                  ? "bg-purple-600 text-white shadow-md shadow-purple-950/50"
-                  : "text-purple-300/70 hover:text-white hover:bg-purple-900/30"
-              }`}
-            >
-              <span>👥</span>
-              <span>Staff & Balances</span>
-            </button>
-
-            <button
-              onClick={() => setActiveTab("payments")}
-              className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
-                activeTab === "payments"
-                  ? "bg-purple-600 text-white shadow-md shadow-purple-950/50"
-                  : "text-purple-300/70 hover:text-white hover:bg-purple-900/30"
-              }`}
-            >
-              <span>🧾</span>
-              <span>Payment History</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Tab 1: DAILY WAGES ENTRY (THE MAIN HERO WORKSPACE) */}
-        {activeTab === "daily" && (
-          <div className="px-4 sm:px-8 py-4 space-y-4">
-            {/* Date Navigator Banner - Perfectly Aligned */}
-            <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-[#260c40] via-[#200a36] to-[#1d0733] border border-purple-800/40 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3">
-              {/* Left Side: Date Switcher */}
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <div className="flex items-center gap-1 bg-[#150624]/90 p-1 rounded-xl border border-purple-900/50">
-                  <button
-                    onClick={() => changeDateBy(-1)}
-                    className="px-2.5 py-1 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-semibold transition"
-                    title="Previous Day"
-                  >
-                    ◀ Prev
-                  </button>
-                  <button
-                    onClick={setDateToday}
-                    className="px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-bold transition"
-                  >
-                    Today
-                  </button>
-                  <button
-                    onClick={() => changeDateBy(1)}
-                    className="px-2.5 py-1 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-semibold transition"
-                    title="Next Day"
-                  >
-                    Next ▶
-                  </button>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    className="h-9 px-3 rounded-xl bg-[#150624] border border-purple-800/50 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-purple-400"
-                  />
-                  <span className="text-xs sm:text-sm font-bold text-purple-200 hidden sm:inline">
-                    {formattedDateTitle}
-                  </span>
-                </div>
-              </div>
-
-              {/* Right Side: Quick Roster Actions & Save Button */}
-              <div className="flex items-center gap-2 flex-wrap">
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+            {!isOwner && (
+              <>
                 <button
                   type="button"
-                  onClick={() => setAllDailyStatus("present")}
-                  className="h-9 px-3 rounded-xl bg-emerald-950/50 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/50 text-xs font-bold transition flex items-center gap-1.5"
+                  onClick={() => openPaymentModal()}
+                  style={{
+                    background: "#ecfdf5",
+                    color: "#047857",
+                    border: "1px solid #a7f3d0",
+                    borderRadius: "8px",
+                    padding: "8px 14px",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    transition: "all 0.15s ease",
+                  }}
+                  title="Record Cash or UPI payment"
                 >
-                  <span>✓</span>
-                  <span>All Present</span>
+                  💵 Record Payment
                 </button>
+
                 <button
                   type="button"
-                  onClick={() => setAllDailyStatus("absent")}
-                  className="h-9 px-3 rounded-xl bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 text-xs font-bold transition flex items-center gap-1.5"
-                >
-                  <span>✗</span>
-                  <span>All Absent</span>
-                </button>
-
-                <button
-                  onClick={handleSaveDailyWages}
-                  disabled={savingDaily}
-                  className="h-9 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-950/50 transition-all disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <span>💾</span>
-                  <span>{savingDaily ? "Saving..." : "Save Today's Wages"}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Instruction Tip */}
-            <div className="flex items-center gap-2 text-xs text-purple-300/80 px-1">
-              <span className="text-amber-400 font-bold">💡 Tip:</span>
-              <span>
-                Wages change day-to-day. Simply type today's exact wage amount for each worker, or tick "Paid Cash" if handed out.
-              </span>
-            </div>
-
-            {/* Section 1: Daily Working Staff Sheet */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between px-1">
-                <h2 className="text-sm sm:text-base font-bold text-white flex items-center gap-2">
-                  <span>🔪</span>
-                  <span>Daily Working Staff ({dailyStaff.length})</span>
-                </h2>
-                <span className="text-xs text-purple-300/70">
-                  Total Day Wage: <strong className="text-amber-300 font-bold">₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}</strong>
-                </span>
-              </div>
-
-              {dailyStaff.length === 0 ? (
-                <div className="p-8 rounded-2xl bg-[#200a36]/50 border border-purple-900/40 text-center">
-                  <p className="text-purple-300/70 text-sm">No daily wage staff found.</p>
-                  <button
-                    onClick={() => {
-                      setEditingStaff(null);
-                      setStaffForm({
-                        name: "",
-                        mobile: "",
-                        kitchen_role: "Kitchen Helper",
-                        wage_type: "daily",
-                        wage_rate: "800",
-                        status: "active",
-                        address: "",
-                        notes: "",
-                      });
-                      setShowAddStaffModal(true);
-                    }}
-                    className="mt-3 px-4 py-1.5 rounded-lg bg-purple-600 text-white text-xs font-semibold"
-                  >
-                    + Add Daily Staff
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-2.5">
-                  {/* Table Header Row on Desktop (md+) for Perfect Alignment */}
-                  <div className="hidden md:grid md:grid-cols-12 gap-3 px-4 py-2 text-[11px] font-bold text-purple-300/60 uppercase tracking-wider">
-                    <div className="md:col-span-3">Staff Member</div>
-                    <div className="md:col-span-3 text-center">Attendance</div>
-                    <div className="md:col-span-2 text-center">Today's Wage (₹)</div>
-                    <div className="md:col-span-2 text-center">Payment Status</div>
-                    <div className="md:col-span-2">Note / Shift</div>
-                  </div>
-
-                  {dailyStaff.map((staff) => {
-                    const row = dailyRows[staff.id] || {
-                      staff_id: staff.id,
-                      staff_name: staff.name,
-                      kitchen_role: staff.kitchen_role,
-                      wage_type: "daily",
-                      default_rate: Number(staff.wage_rate) || 0,
-                      current_balance: Number(staff.balance) || 0,
-                      status: "present",
-                      today_wage: Number(staff.wage_rate) || 0,
-                      paid_today: false,
-                      payment_mode: "Cash",
-                      note: "",
-                      existing_duty_id: null,
-                    };
-
-                    const isAbsent = row.status === "absent";
-                    const isHalf = row.status === "half";
-                    const isPresent = row.status === "present";
-
-                    return (
-                      <div
-                        key={staff.id}
-                        className={`p-3.5 sm:p-4 rounded-2xl border transition-all ${
-                          isAbsent
-                            ? "bg-[#1d0733]/40 border-purple-950/40 opacity-70"
-                            : isHalf
-                            ? "bg-[#250d3d]/90 border-amber-600/30 shadow-sm"
-                            : "bg-[#200a36]/90 border-purple-800/40 shadow-sm hover:border-purple-700/60"
-                        }`}
-                      >
-                        {/* Desktop & Tablet Grid Row (md+) */}
-                        <div className="hidden md:grid md:grid-cols-12 gap-3 items-center">
-                          {/* Col 1: Staff Info (3 cols) */}
-                          <div className="md:col-span-3 flex items-center gap-3 min-w-0">
-                            <div
-                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
-                                isAbsent
-                                  ? "bg-rose-950/50 text-rose-300 border border-rose-800/40"
-                                  : isHalf
-                                  ? "bg-amber-950/50 text-amber-300 border border-amber-800/40"
-                                  : "bg-purple-900/50 text-purple-200 border border-purple-700/50"
-                              }`}
-                            >
-                              {staff.name.slice(0, 2).toUpperCase()}
-                            </div>
-
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-bold text-white text-sm tracking-tight truncate">
-                                  {staff.name}
-                                </span>
-                                <span className="px-1.5 py-0.5 rounded bg-purple-950/80 border border-purple-800/40 text-[10px] text-purple-300 font-medium whitespace-nowrap">
-                                  {staff.kitchen_role}
-                                </span>
-                              </div>
-                              <div className="flex items-center gap-1.5 text-xs text-purple-300/70 mt-0.5">
-                                <span className="whitespace-nowrap">Base: ₹{Number(staff.wage_rate).toLocaleString("en-IN")}</span>
-                                <span>•</span>
-                                <button
-                                  type="button"
-                                  onClick={() => openPaymentModal(staff)}
-                                  className={`font-semibold hover:underline truncate ${
-                                    staff.balance > 0 ? "text-amber-300" : "text-emerald-400"
-                                  }`}
-                                  title="Click to settle balance"
-                                >
-                                  Due: ₹{Number(staff.balance).toLocaleString("en-IN")}
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Col 2: Attendance Buttons (3 cols) */}
-                          <div className="md:col-span-3 flex items-center justify-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => handleDailyStatusChange(staff.id, "present")}
-                              className={`h-9 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                isPresent
-                                  ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/50 scale-105"
-                                  : "bg-[#150624] text-purple-300 hover:text-white border border-purple-900/60"
-                              }`}
-                            >
-                              <span>🟢</span>
-                              <span>Present</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleDailyStatusChange(staff.id, "half")}
-                              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                isHalf
-                                  ? "bg-amber-600 text-white shadow-md shadow-amber-950/50 scale-105"
-                                  : "bg-[#150624] text-purple-300 hover:text-white border border-purple-900/60"
-                              }`}
-                            >
-                              <span>🟡</span>
-                              <span>Half</span>
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => handleDailyStatusChange(staff.id, "absent")}
-                              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
-                                isAbsent
-                                  ? "bg-rose-600 text-white shadow-md shadow-rose-950/50 scale-105"
-                                  : "bg-[#150624] text-purple-300 hover:text-white border border-purple-900/60"
-                              }`}
-                            >
-                              <span>🔴</span>
-                              <span>Absent</span>
-                            </button>
-                          </div>
-
-                          {/* Col 3: Today's Wage Input (2 cols) */}
-                          <div className="md:col-span-2 flex items-center justify-center">
-                            <div className="relative flex items-center w-32">
-                              <span className="absolute left-3 text-xs text-purple-300/80 font-bold pointer-events-none">
-                                ₹
-                              </span>
-                              <input
-                                type="number"
-                                disabled={isAbsent}
-                                value={row.today_wage}
-                                onChange={(e) => {
-                                  const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                  updateDailyRow(staff.id, { today_wage: val });
-                                }}
-                                className={`w-full h-9 pl-7 pr-3 rounded-xl text-sm font-bold text-right transition-all focus:outline-none ${
-                                  isAbsent
-                                    ? "bg-[#150624]/40 border border-purple-950 text-purple-500/50 cursor-not-allowed"
-                                    : "bg-[#150624] border border-purple-600/70 text-amber-300 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
-                                }`}
-                                placeholder="0"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Col 4: Payment Status (2 cols) */}
-                          <div className="md:col-span-2 flex items-center justify-center">
-                            <label
-                              className={`h-9 px-3 rounded-xl border cursor-pointer text-xs font-semibold transition-all select-none flex items-center gap-2 ${
-                                row.paid_today
-                                  ? "bg-emerald-950/60 border-emerald-500/70 text-emerald-300 shadow-sm"
-                                  : "bg-[#150624]/60 border-purple-900/50 text-purple-300/70 hover:border-purple-700"
-                              } ${isAbsent ? "opacity-50 cursor-not-allowed" : ""}`}
-                            >
-                              <input
-                                type="checkbox"
-                                disabled={isAbsent}
-                                checked={row.paid_today}
-                                onChange={(e) => {
-                                  updateDailyRow(staff.id, { paid_today: e.target.checked });
-                                }}
-                                className="rounded text-emerald-500 focus:ring-emerald-400"
-                              />
-                              <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
-                            </label>
-                          </div>
-
-                          {/* Col 5: Note Input (2 cols) */}
-                          <div className="md:col-span-2">
-                            <input
-                              type="text"
-                              value={row.note}
-                              onChange={(e) => updateDailyRow(staff.id, { note: e.target.value })}
-                              placeholder="Note (e.g. bonus)"
-                              className="w-full h-9 px-3 rounded-xl bg-[#150624]/80 border border-purple-900/50 text-xs text-purple-200 placeholder-purple-400/40 focus:outline-none focus:border-purple-500"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Mobile Card Layout (< md) */}
-                        <div className="md:hidden space-y-3">
-                          {/* Row 1: Avatar, Name, Role, Balance */}
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2.5">
-                              <div
-                                className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
-                                  isAbsent
-                                    ? "bg-rose-950/50 text-rose-300 border border-rose-800/40"
-                                    : isHalf
-                                    ? "bg-amber-950/50 text-amber-300 border border-amber-800/40"
-                                    : "bg-purple-900/50 text-purple-200 border border-purple-700/50"
-                                }`}
-                              >
-                                {staff.name.slice(0, 2).toUpperCase()}
-                              </div>
-                              <div>
-                                <div className="font-bold text-white text-sm">{staff.name}</div>
-                                <div className="text-[11px] text-purple-300/70">{staff.kitchen_role}</div>
-                              </div>
-                            </div>
-
-                            <button
-                              type="button"
-                              onClick={() => openPaymentModal(staff)}
-                              className={`text-xs font-semibold px-2 py-1 rounded-lg ${
-                                staff.balance > 0 ? "bg-amber-950/70 text-amber-300" : "bg-emerald-950/60 text-emerald-400"
-                              }`}
-                            >
-                              Due: ₹{Number(staff.balance).toLocaleString("en-IN")}
-                            </button>
-                          </div>
-
-                          {/* Row 2: Attendance Toggle (Full width segmented control) */}
-                          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-[#150624]">
-                            <button
-                              type="button"
-                              onClick={() => handleDailyStatusChange(staff.id, "present")}
-                              className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
-                                isPresent ? "bg-emerald-600 text-white shadow-sm" : "text-purple-300"
-                              }`}
-                            >
-                              <span>🟢</span>
-                              <span>Present</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDailyStatusChange(staff.id, "half")}
-                              className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
-                                isHalf ? "bg-amber-600 text-white shadow-sm" : "text-purple-300"
-                              }`}
-                            >
-                              <span>🟡</span>
-                              <span>Half</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDailyStatusChange(staff.id, "absent")}
-                              className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
-                                isAbsent ? "bg-rose-600 text-white shadow-sm" : "text-purple-300"
-                              }`}
-                            >
-                              <span>🔴</span>
-                              <span>Absent</span>
-                            </button>
-                          </div>
-
-                          {/* Row 3: Today's Wage & Paid Checkbox */}
-                          <div className="grid grid-cols-2 gap-2 items-center">
-                            <div className="relative flex items-center">
-                              <span className="absolute left-2.5 text-xs text-purple-300/80 font-bold pointer-events-none">
-                                ₹
-                              </span>
-                              <input
-                                type="number"
-                                disabled={isAbsent}
-                                value={row.today_wage}
-                                onChange={(e) => {
-                                  const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                  updateDailyRow(staff.id, { today_wage: val });
-                                }}
-                                className="w-full h-9 pl-6 pr-2.5 rounded-xl bg-[#150624] border border-purple-700 text-sm font-bold text-amber-300 text-right focus:outline-none"
-                                placeholder="0"
-                              />
-                            </div>
-
-                            <label
-                              className={`h-9 px-3 rounded-xl border cursor-pointer text-xs font-semibold flex items-center justify-center gap-1.5 ${
-                                row.paid_today
-                                  ? "bg-emerald-950/60 border-emerald-500/70 text-emerald-300"
-                                  : "bg-[#150624] border-purple-900 text-purple-300"
-                              }`}
-                            >
-                              <input
-                                type="checkbox"
-                                disabled={isAbsent}
-                                checked={row.paid_today}
-                                onChange={(e) => updateDailyRow(staff.id, { paid_today: e.target.checked })}
-                                className="rounded text-emerald-500"
-                              />
-                              <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
-                            </label>
-                          </div>
-
-                          {/* Row 4: Note Input */}
-                          <input
-                            type="text"
-                            value={row.note}
-                            onChange={(e) => updateDailyRow(staff.id, { note: e.target.value })}
-                            placeholder="Note (optional)"
-                            className="w-full h-8 px-2.5 rounded-xl bg-[#150624]/80 border border-purple-900/50 text-xs text-purple-200 placeholder-purple-400/40"
-                          />
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            {/* Section 2: Monthly Staff Attendance (Separated & Symmetrical) */}
-            {monthlyStaff.length > 0 && (
-              <div className="mt-6 pt-4 border-t border-purple-900/40">
-                <div className="flex items-center justify-between mb-3 px-1">
-                  <div>
-                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                      <span>💼</span>
-                      <span>Monthly Staff Attendance ({monthlyStaff.length})</span>
-                    </h3>
-                    <p className="text-[11px] text-purple-300/60">
-                      Fixed monthly salary staff — mark daily presence here. Daily wages are not deducted.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => setActiveTab("monthly")}
-                    className="text-xs text-purple-300 hover:text-white font-medium underline"
-                  >
-                    Manage Monthly Salaries →
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {monthlyStaff.map((staff) => {
-                    const row = dailyRows[staff.id] || {
-                      staff_id: staff.id,
-                      staff_name: staff.name,
-                      kitchen_role: staff.kitchen_role,
-                      wage_type: "monthly",
-                      default_rate: Number(staff.wage_rate) || 0,
-                      current_balance: Number(staff.balance) || 0,
-                      status: "present",
-                      today_wage: 0,
-                      paid_today: false,
-                      payment_mode: "Cash",
-                      note: "",
-                      existing_duty_id: null,
-                    };
-
-                    const isPresent = row.status !== "absent";
-
-                    return (
-                      <div
-                        key={staff.id}
-                        className="p-3.5 rounded-2xl bg-[#200a36]/70 border border-purple-800/40 flex items-center justify-between gap-3"
-                      >
-                        <div>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-white text-sm">{staff.name}</span>
-                            <span className="px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-700/50 text-[10px] text-indigo-300 font-semibold">
-                              {staff.kitchen_role}
-                            </span>
-                          </div>
-                          <div className="text-xs text-purple-300/70 mt-1">
-                            Salary: <strong className="text-indigo-300 font-bold">₹{Number(staff.wage_rate).toLocaleString("en-IN")}/mo</strong>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newSt = isPresent ? "absent" : "present";
-                              updateDailyRow(staff.id, { status: newSt, today_wage: 0 });
-                            }}
-                            className={`h-8 px-3 rounded-xl text-xs font-bold transition-all ${
-                              isPresent
-                                ? "bg-emerald-600/30 text-emerald-300 border border-emerald-500/50"
-                                : "bg-rose-600/30 text-rose-300 border border-rose-500/50"
-                            }`}
-                          >
-                            {isPresent ? "🟢 Present" : "🔴 On Leave"}
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => openPaymentModal(staff)}
-                            className="h-8 px-2.5 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-semibold border border-purple-700/40"
-                            title="Pay Advance"
-                          >
-                            Advance 💵
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            {/* Sticky Save Bar at Bottom */}
-            <div className="sticky bottom-3 z-10 p-3 sm:p-4 rounded-2xl bg-[#1b082e]/95 backdrop-blur-md border border-purple-700/50 shadow-2xl flex items-center justify-between gap-3">
-              <div className="text-xs sm:text-sm">
-                <span className="text-purple-300/70">Today's Wages Total: </span>
-                <strong className="text-amber-300 font-bold text-sm sm:text-base">
-                  ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
-                </strong>
-                <span className="text-purple-400/60 ml-2 hidden sm:inline">
-                  ({dailySheetTotals.presentCount} present, {dailySheetTotals.absentCount} absent)
-                </span>
-              </div>
-
-              <button
-                onClick={handleSaveDailyWages}
-                disabled={savingDaily}
-                className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-950/60 transition-all disabled:opacity-50 flex items-center gap-2"
-              >
-                <span>💾</span>
-                <span>{savingDaily ? "Saving..." : "Save Daily Wages"}</span>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 2: MONTHLY STAFF (SALARY & ADVANCES) */}
-        {activeTab === "monthly" && (
-          <div className="px-4 sm:px-8 py-4 space-y-4">
-            {/* Header / Month Filter */}
-            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <span>💼</span>
-                  <span>Monthly Fixed Salary Staff</span>
-                </h2>
-                <p className="text-xs text-purple-300/70 mt-0.5">
-                  Manage minimal monthly salaried staff, attendance days, and salary advances.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <label className="text-xs text-purple-300 font-semibold">Month:</label>
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-xs sm:text-sm font-semibold focus:outline-none"
-                />
-              </div>
-            </div>
-
-            {monthlyStaff.length === 0 ? (
-              <div className="p-8 rounded-2xl bg-[#200a36]/40 border border-purple-900/30 text-center">
-                <p className="text-purple-300/70 text-sm">No monthly salary staff configured.</p>
-                <button
                   onClick={() => {
                     setEditingStaff(null);
                     setStaffForm({
                       name: "",
                       mobile: "",
-                      kitchen_role: "Head Chef",
-                      wage_type: "monthly",
-                      wage_rate: "20000",
+                      kitchen_role: "Kitchen Helper",
+                      wage_type: "daily",
+                      wage_rate: "800",
                       status: "active",
                       address: "",
                       notes: "",
                     });
                     setShowAddStaffModal(true);
                   }}
-                  className="mt-3 px-4 py-2 rounded-xl bg-purple-600 text-white text-xs font-semibold"
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "8px 16px",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    boxShadow: "0 4px 14px rgba(124, 58, 237, 0.3)",
+                    transition: "all 0.15s ease",
+                  }}
                 >
-                  + Add Monthly Staff
+                  <span>+</span> Add Staff
                 </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {monthlyStaffMetrics.map(({ staff, salary, daysPresent, paidThisMonth, balanceDue, payments }) => (
-                  <div
-                    key={staff.id}
-                    className="p-5 rounded-2xl bg-[#200a36]/90 border border-purple-800/40 shadow-md space-y-4"
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold text-white tracking-tight">{staff.name}</h3>
-                          <span className="px-2 py-0.5 rounded-md bg-indigo-950/80 border border-indigo-700/50 text-[10px] text-indigo-300 font-semibold">
-                            {staff.kitchen_role}
-                          </span>
-                        </div>
-                        {staff.mobile && (
-                          <p className="text-xs text-purple-300/70 mt-0.5">📞 {staff.mobile}</p>
-                        )}
-                      </div>
-
-                      <button
-                        onClick={() => openPaymentModal(staff)}
-                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/50 text-xs font-semibold transition shrink-0"
-                      >
-                        💵 Pay Advance
-                      </button>
-                    </div>
-
-                    {/* Stats Grid */}
-                    <div className="grid grid-cols-3 gap-2.5 p-3 rounded-xl bg-[#150624]/70 border border-purple-900/40 text-center">
-                      <div>
-                        <div className="text-[10px] text-purple-300/70 font-semibold uppercase">Fixed Salary</div>
-                        <div className="text-sm sm:text-base font-bold text-white mt-0.5">
-                          ₹{salary.toLocaleString("en-IN")}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="text-[10px] text-purple-300/70 font-semibold uppercase">Paid in {selectedMonth}</div>
-                        <div className="text-sm sm:text-base font-bold text-emerald-300 mt-0.5">
-                          ₹{paidThisMonth.toLocaleString("en-IN")}
-                        </div>
-                      </div>
-
-                      <div>
-                        <div className="text-[10px] text-purple-300/70 font-semibold uppercase">Salary Balance</div>
-                        <div className="text-sm sm:text-base font-bold text-amber-300 mt-0.5">
-                          ₹{balanceDue.toLocaleString("en-IN")}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Attendance Note */}
-                    <div className="flex items-center justify-between text-xs text-purple-300/80 px-1">
-                      <span>Recorded presence: <strong className="text-purple-200">{daysPresent} days</strong></span>
-                      <button
-                        onClick={() => {
-                          setEditingStaff(staff);
-                          setStaffForm({
-                            name: staff.name,
-                            mobile: staff.mobile || "",
-                            kitchen_role: staff.kitchen_role,
-                            wage_type: staff.wage_type,
-                            wage_rate: String(staff.wage_rate),
-                            status: staff.status,
-                            address: staff.address || "",
-                            notes: staff.notes || "",
-                          });
-                          setShowAddStaffModal(true);
-                        }}
-                        className="text-purple-400 hover:text-white underline text-[11px]"
-                      >
-                        Edit Staff Info
-                      </button>
-                    </div>
-
-                    {/* Recent Payments for this staff in selected month */}
-                    {payments.length > 0 && (
-                      <div className="pt-2 border-t border-purple-900/40 space-y-1.5">
-                        <div className="text-[11px] font-semibold text-purple-300/60 uppercase">
-                          Advances / Payments this month
-                        </div>
-                        {payments.slice(0, 3).map((p) => (
-                          <div
-                            key={p.id}
-                            className="flex items-center justify-between text-xs py-1 px-2 rounded-lg bg-[#150624]/40"
-                          >
-                            <span className="text-purple-300/70">{p.payment_date} ({p.payment_mode})</span>
-                            <span className="font-semibold text-emerald-300">₹{Number(p.amount).toLocaleString("en-IN")}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
+              </>
             )}
+
+            <TopbarUserBadge />
           </div>
-        )}
+        </header>
 
-        {/* Tab 3: ALL STAFF & BALANCES (DIRECTORY) */}
-        {activeTab === "staff" && (
-          <div className="px-4 sm:px-8 py-4 space-y-4">
-            {/* Search and Filters */}
-            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-1 max-w-md">
-                <span className="text-purple-400 text-sm">🔍</span>
-                <input
-                  type="text"
-                  placeholder="Search staff by name or role..."
-                  value={searchStaff}
-                  onChange={(e) => setSearchStaff(e.target.value)}
-                  className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-xs sm:text-sm focus:outline-none"
-                />
+        {/* Page Content with Clean White / Light Theme */}
+        <div className="page-content" style={{ maxWidth: "1600px", padding: "24px 32px" }}>
+          <OwnerBanner />
+
+          {/* Global Feedback Banner */}
+          {saveSuccessMsg && (
+            <div
+              style={{
+                background: "#ecfdf5",
+                border: "1px solid #a7f3d0",
+                color: "#065f46",
+                padding: "12px 18px",
+                borderRadius: "12px",
+                marginBottom: "20px",
+                fontSize: "14px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontWeight: 600,
+              }}
+            >
+              <span>🎉 {saveSuccessMsg}</span>
+              <button
+                type="button"
+                onClick={() => setSaveSuccessMsg(null)}
+                style={{ border: "none", background: "transparent", color: "#065f46", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div
+              style={{
+                background: "#fef2f2",
+                border: "1px solid #fecaca",
+                color: "#991b1b",
+                padding: "12px 18px",
+                borderRadius: "12px",
+                marginBottom: "20px",
+                fontSize: "14px",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                fontWeight: 600,
+              }}
+            >
+              <span>⚠️ {errorMsg}</span>
+              <button
+                type="button"
+                onClick={() => setErrorMsg(null)}
+                style={{ border: "none", background: "transparent", color: "#991b1b", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+          )}
+
+          {/* Top Summary Metric Cards (Clean White Theme) */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
+              gap: "16px",
+              marginBottom: "24px",
+            }}
+          >
+            {/* Card 1: Today's Working Staff */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e9e3f3",
+                borderRadius: "16px",
+                padding: "18px 20px",
+                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                height: "115px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 600 }}>Working Today</span>
+                <span style={{ fontSize: "14px" }}>🟢</span>
               </div>
-
-              <div className="flex items-center gap-1.5 bg-[#150624] p-1 rounded-xl border border-purple-900/40 self-start sm:self-auto">
-                <button
-                  onClick={() => setStaffFilter("all")}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                    staffFilter === "all" ? "bg-purple-600 text-white" : "text-purple-300/70 hover:text-white"
-                  }`}
-                >
-                  All ({staffList.length})
-                </button>
-                <button
-                  onClick={() => setStaffFilter("daily")}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                    staffFilter === "daily" ? "bg-purple-600 text-white" : "text-purple-300/70 hover:text-white"
-                  }`}
-                >
-                  Daily Staff ({dailyStaff.length})
-                </button>
-                <button
-                  onClick={() => setStaffFilter("monthly")}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition ${
-                    staffFilter === "monthly" ? "bg-purple-600 text-white" : "text-purple-300/70 hover:text-white"
-                  }`}
-                >
-                  Monthly Staff ({monthlyStaff.length})
-                </button>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                <span style={{ fontSize: "28px", fontWeight: 800, color: "#24103f", letterSpacing: "-0.5px" }}>
+                  {dailySheetTotals.presentCount}
+                </span>
+                <span style={{ fontSize: "12px", color: "#8a7b9b", fontWeight: 600 }}>
+                  / {dailyStaff.length} Daily Staff
+                </span>
+              </div>
+              <div style={{ fontSize: "11px", color: "#8a7b9b" }}>
+                {dailySheetTotals.absentCount > 0 ? `${dailySheetTotals.absentCount} marked absent today` : "Full attendance today"}
               </div>
             </div>
 
-            {/* Staff Table */}
-            <div className="overflow-x-auto rounded-2xl border border-purple-800/40 bg-[#200a36]/80 shadow-md">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <thead className="bg-[#150624]/90 text-purple-300/70 uppercase text-[11px] font-semibold border-b border-purple-900/40">
-                  <tr>
-                    <th className="py-3 px-4">Staff Member</th>
-                    <th className="py-3 px-3">Role</th>
-                    <th className="py-3 px-3">Type</th>
-                    <th className="py-3 px-3 text-right">Rate / Salary</th>
-                    <th className="py-3 px-3 text-right">Total Accrued</th>
-                    <th className="py-3 px-3 text-right">Total Paid</th>
-                    <th className="py-3 px-3 text-right">Pending Balance</th>
-                    <th className="py-3 px-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-purple-900/30">
-                  {filteredStaffList.length === 0 ? (
-                    <tr>
-                      <td colSpan={8} className="py-8 text-center text-purple-300/60">
-                        No staff members found matching criteria.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredStaffList.map((s) => (
-                      <tr key={s.id} className="hover:bg-purple-900/20 transition">
-                        <td className="py-3.5 px-4 font-bold text-white">
-                          <div className="flex items-center gap-2">
-                            <span>{s.name}</span>
-                            {s.status === "inactive" && (
-                              <span className="px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 text-[10px]">
-                                Inactive
-                              </span>
-                            )}
+            {/* Card 2: Today's Total Wages */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e9e3f3",
+                borderRadius: "16px",
+                padding: "18px 20px",
+                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                height: "115px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 600 }}>Today's Wages Total</span>
+                <span style={{ fontSize: "14px" }}>💰</span>
+              </div>
+              <div>
+                <span style={{ fontSize: "28px", fontWeight: 800, color: "#b45309", letterSpacing: "-0.5px" }}>
+                  ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div style={{ fontSize: "11px", color: "#6b5b7e", display: "flex", justifyContent: "space-between" }}>
+                <span>Paid: ₹{dailySheetTotals.totalPaidToday.toLocaleString("en-IN")}</span>
+                <span style={{ fontWeight: 700, color: "#b45309" }}>Due: ₹{dailySheetTotals.pendingToday.toLocaleString("en-IN")}</span>
+              </div>
+            </div>
+
+            {/* Card 3: Monthly Staff */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e9e3f3",
+                borderRadius: "16px",
+                padding: "18px 20px",
+                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                height: "115px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 600 }}>Monthly Salaried</span>
+                <span style={{ fontSize: "14px" }}>💼</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
+                <span style={{ fontSize: "28px", fontWeight: 800, color: "#4338ca", letterSpacing: "-0.5px" }}>
+                  {monthlyStaff.length}
+                </span>
+                <span style={{ fontSize: "12px", color: "#8a7b9b", fontWeight: 600 }}>Active</span>
+              </div>
+              <div style={{ fontSize: "11px", color: "#8a7b9b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {monthlyStaff.length > 0 ? monthlyStaff.map((m) => m.name).join(", ") : "No monthly staff"}
+              </div>
+            </div>
+
+            {/* Card 4: Total Pending Balances */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e9e3f3",
+                borderRadius: "16px",
+                padding: "18px 20px",
+                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                height: "115px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 600 }}>Total Balance Due</span>
+                <span style={{ fontSize: "14px" }}>⏳</span>
+              </div>
+              <div>
+                <span style={{ fontSize: "28px", fontWeight: 800, color: "#be123c", letterSpacing: "-0.5px" }}>
+                  ₹{(summary?.total_pending_balance || 0).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div style={{ fontSize: "11px", color: "#8a7b9b" }}>
+                Accrued wage balance across all staff
+              </div>
+            </div>
+          </div>
+
+          {/* View Switcher Tabs (White Pill Style) */}
+          <div style={{ marginBottom: "20px" }}>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "#ffffff",
+                padding: "4px",
+                borderRadius: "12px",
+                border: "1px solid #e9e3f3",
+                boxShadow: "0 1px 4px rgba(30, 8, 54, 0.04)",
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setActiveTab("daily")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 16px",
+                  borderRadius: "10px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: "none",
+                  transition: "all 0.15s ease",
+                  background: activeTab === "daily" ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" : "transparent",
+                  color: activeTab === "daily" ? "#ffffff" : "#6b5b7e",
+                  boxShadow: activeTab === "daily" ? "0 2px 8px rgba(124, 58, 237, 0.25)" : "none",
+                }}
+              >
+                <span>📅</span>
+                <span>Daily Wages Entry</span>
+                <span
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: "10px",
+                    fontSize: "10px",
+                    background: activeTab === "daily" ? "rgba(255,255,255,0.25)" : "#ede9fe",
+                    color: activeTab === "daily" ? "#ffffff" : "#6d28d9",
+                  }}
+                >
+                  {dailyStaff.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("monthly")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 16px",
+                  borderRadius: "10px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: "none",
+                  transition: "all 0.15s ease",
+                  background: activeTab === "monthly" ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" : "transparent",
+                  color: activeTab === "monthly" ? "#ffffff" : "#6b5b7e",
+                  boxShadow: activeTab === "monthly" ? "0 2px 8px rgba(124, 58, 237, 0.25)" : "none",
+                }}
+              >
+                <span>💼</span>
+                <span>Monthly Staff</span>
+                <span
+                  style={{
+                    padding: "2px 6px",
+                    borderRadius: "10px",
+                    fontSize: "10px",
+                    background: activeTab === "monthly" ? "rgba(255,255,255,0.25)" : "#ede9fe",
+                    color: activeTab === "monthly" ? "#ffffff" : "#6d28d9",
+                  }}
+                >
+                  {monthlyStaff.length}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("staff")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 16px",
+                  borderRadius: "10px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: "none",
+                  transition: "all 0.15s ease",
+                  background: activeTab === "staff" ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" : "transparent",
+                  color: activeTab === "staff" ? "#ffffff" : "#6b5b7e",
+                  boxShadow: activeTab === "staff" ? "0 2px 8px rgba(124, 58, 237, 0.25)" : "none",
+                }}
+              >
+                <span>👥</span>
+                <span>Staff & Balances</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveTab("payments")}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  padding: "8px 16px",
+                  borderRadius: "10px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  border: "none",
+                  transition: "all 0.15s ease",
+                  background: activeTab === "payments" ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" : "transparent",
+                  color: activeTab === "payments" ? "#ffffff" : "#6b5b7e",
+                  boxShadow: activeTab === "payments" ? "0 2px 8px rgba(124, 58, 237, 0.25)" : "none",
+                }}
+              >
+                <span>🧾</span>
+                <span>Payment History</span>
+              </button>
+            </div>
+          </div>
+
+          {/* TAB 1: DAILY WAGES ENTRY (HERO WORKSPACE ON WHITE BG) */}
+          {activeTab === "daily" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Date Navigator Banner (Crisp White Card) */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e9e3f3",
+                  borderRadius: "16px",
+                  padding: "16px 20px",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "14px",
+                }}
+              >
+                {/* Left side: Date navigation */}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "4px",
+                      background: "#f5f3ff",
+                      padding: "4px",
+                      borderRadius: "10px",
+                      border: "1px solid #e9e3f3",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => changeDateBy(-1)}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "#ffffff",
+                        color: "#6d28d9",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                      }}
+                      title="Previous Day"
+                    >
+                      ◀ Prev
+                    </button>
+                    <button
+                      type="button"
+                      onClick={setDateToday}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "#ede9fe",
+                        color: "#5b21b6",
+                        fontWeight: 800,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Today
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => changeDateBy(1)}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "8px",
+                        border: "none",
+                        background: "#ffffff",
+                        color: "#6d28d9",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
+                      }}
+                      title="Next Day"
+                    >
+                      Next ▶
+                    </button>
+                  </div>
+
+                  <input
+                    type="date"
+                    value={selectedDate}
+                    onChange={(e) => setSelectedDate(e.target.value)}
+                    style={{
+                      height: "36px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #d8b4fe",
+                      background: "#ffffff",
+                      color: "#24103f",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      outline: "none",
+                    }}
+                  />
+
+                  <span
+                    style={{
+                      background: "#f5f3ff",
+                      color: "#6d28d9",
+                      padding: "6px 12px",
+                      borderRadius: "10px",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      border: "1px solid #ede9fe",
+                    }}
+                  >
+                    {formattedDateTitle}
+                  </span>
+                </div>
+
+                {/* Right side: Quick Roster Actions & Save Button */}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => setAllDailyStatus("present")}
+                    style={{
+                      height: "36px",
+                      padding: "0 14px",
+                      borderRadius: "10px",
+                      border: "1px solid #a7f3d0",
+                      background: "#ecfdf5",
+                      color: "#047857",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✓ All Present
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAllDailyStatus("absent")}
+                    style={{
+                      height: "36px",
+                      padding: "0 14px",
+                      borderRadius: "10px",
+                      border: "1px solid #fecaca",
+                      background: "#fef2f2",
+                      color: "#b91c1c",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✗ All Absent
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleSaveDailyWages}
+                    disabled={savingDaily}
+                    style={{
+                      height: "36px",
+                      padding: "0 18px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 12px rgba(5, 150, 105, 0.25)",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>💾</span>
+                    <span>{savingDaily ? "Saving..." : "Save Today's Wages"}</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Instruction Tip */}
+              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#6b5b7e" }}>
+                <span style={{ color: "#d97706", fontWeight: 700 }}>💡 Tip:</span>
+                <span>
+                  Wages change every day. Simply type today's exact rupee amount for each worker, or check "Paid Cash" if handed out.
+                </span>
+              </div>
+
+              {/* Section 1: Daily Working Staff Table (White Theme with Crisp Grid) */}
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 4px" }}>
+                  <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#24103f" }}>
+                    🔪 Daily Working Staff ({dailyStaff.length})
+                  </h2>
+                  <span style={{ fontSize: "13px", color: "#6b5b7e" }}>
+                    Total Day Wage:{" "}
+                    <strong style={{ color: "#b45309", fontWeight: 800 }}>
+                      ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
+                    </strong>
+                  </span>
+                </div>
+
+                {dailyStaff.length === 0 ? (
+                  <div
+                    style={{
+                      background: "#ffffff",
+                      borderRadius: "16px",
+                      border: "1px solid #e9e3f3",
+                      padding: "40px",
+                      textAlign: "center",
+                    }}
+                  >
+                    <p style={{ color: "#8a7b9b", fontSize: "14px", margin: 0 }}>No daily wage staff found.</p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingStaff(null);
+                        setStaffForm({
+                          name: "",
+                          mobile: "",
+                          kitchen_role: "Kitchen Helper",
+                          wage_type: "daily",
+                          wage_rate: "800",
+                          status: "active",
+                          address: "",
+                          notes: "",
+                        });
+                        setShowAddStaffModal(true);
+                      }}
+                      style={{
+                        marginTop: "12px",
+                        padding: "8px 16px",
+                        background: "#7c3aed",
+                        color: "#fff",
+                        borderRadius: "8px",
+                        border: "none",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      + Add Daily Staff
+                    </button>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                    {/* Header Row on Desktop */}
+                    <div
+                      className="hidden md:grid"
+                      style={{
+                        gridTemplateColumns: "3fr 3fr 2fr 2fr 2fr",
+                        gap: "14px",
+                        padding: "0 18px",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        color: "#8a7b9b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.5px",
+                      }}
+                    >
+                      <div>Staff Member</div>
+                      <div style={{ textAlign: "center" }}>Attendance</div>
+                      <div style={{ textAlign: "center" }}>Today's Wage (₹)</div>
+                      <div style={{ textAlign: "center" }}>Payment Status</div>
+                      <div>Note / Shift</div>
+                    </div>
+
+                    {dailyStaff.map((staff) => {
+                      const row = dailyRows[staff.id] || {
+                        staff_id: staff.id,
+                        staff_name: staff.name,
+                        kitchen_role: staff.kitchen_role,
+                        wage_type: "daily",
+                        default_rate: Number(staff.wage_rate) || 0,
+                        current_balance: Number(staff.balance) || 0,
+                        status: "present",
+                        today_wage: Number(staff.wage_rate) || 0,
+                        paid_today: false,
+                        payment_mode: "Cash",
+                        note: "",
+                        existing_duty_id: null,
+                      };
+
+                      const isAbsent = row.status === "absent";
+                      const isHalf = row.status === "half";
+                      const isPresent = row.status === "present";
+
+                      return (
+                        <div
+                          key={staff.id}
+                          style={{
+                            background: isAbsent ? "#f8fafc" : "#ffffff",
+                            border: isAbsent
+                              ? "1px solid #e2e8f0"
+                              : isHalf
+                              ? "1px solid #fde68a"
+                              : "1px solid #e9e3f3",
+                            borderRadius: "16px",
+                            padding: "16px 18px",
+                            boxShadow: "0 1px 4px rgba(30, 8, 54, 0.03)",
+                            opacity: isAbsent ? 0.65 : 1,
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          {/* Desktop Grid (md+) */}
+                          <div
+                            className="hidden md:grid"
+                            style={{
+                              gridTemplateColumns: "3fr 3fr 2fr 2fr 2fr",
+                              gap: "14px",
+                              alignItems: "center",
+                            }}
+                          >
+                            {/* Col 1: Staff Info */}
+                            <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+                              <div
+                                style={{
+                                  width: "40px",
+                                  height: "40px",
+                                  borderRadius: "10px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontWeight: 800,
+                                  fontSize: "14px",
+                                  flexShrink: 0,
+                                  background: isAbsent ? "#f1f5f9" : isHalf ? "#fef3c7" : "#ede9fe",
+                                  color: isAbsent ? "#64748b" : isHalf ? "#b45309" : "#6d28d9",
+                                  border: isAbsent ? "1px solid #cbd5e1" : isHalf ? "1px solid #fcd34d" : "1px solid #ddd6fe",
+                                }}
+                              >
+                                {staff.name.slice(0, 2).toUpperCase()}
+                              </div>
+
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                                  <span style={{ fontWeight: 800, fontSize: "14px", color: "#1e0836" }}>
+                                    {staff.name}
+                                  </span>
+                                  <span
+                                    style={{
+                                      fontSize: "10px",
+                                      fontWeight: 600,
+                                      padding: "2px 6px",
+                                      borderRadius: "6px",
+                                      background: "#f5f3ff",
+                                      color: "#6d28d9",
+                                      border: "1px solid #ede9fe",
+                                    }}
+                                  >
+                                    {staff.kitchen_role}
+                                  </span>
+                                </div>
+                                <div style={{ fontSize: "12px", color: "#6b5b7e", marginTop: "2px", display: "flex", gap: "6px" }}>
+                                  <span>Base: ₹{Number(staff.wage_rate).toLocaleString("en-IN")}</span>
+                                  <span>•</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => openPaymentModal(staff)}
+                                    style={{
+                                      border: "none",
+                                      background: "transparent",
+                                      padding: 0,
+                                      cursor: "pointer",
+                                      fontWeight: 700,
+                                      color: staff.balance > 0 ? "#b45309" : "#059669",
+                                      textDecoration: "underline",
+                                      fontSize: "12px",
+                                    }}
+                                    title="Click to settle balance"
+                                  >
+                                    Due: ₹{Number(staff.balance).toLocaleString("en-IN")}
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Col 2: Attendance Toggle */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
+                              <button
+                                type="button"
+                                onClick={() => handleDailyStatusChange(staff.id, "present")}
+                                style={{
+                                  height: "36px",
+                                  padding: "0 12px",
+                                  borderRadius: "10px",
+                                  fontSize: "12px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  transition: "all 0.15s ease",
+                                  border: isPresent ? "none" : "1px solid #e2e8f0",
+                                  background: isPresent ? "#059669" : "#ffffff",
+                                  color: isPresent ? "#ffffff" : "#475569",
+                                  boxShadow: isPresent ? "0 2px 6px rgba(5, 150, 105, 0.25)" : "none",
+                                }}
+                              >
+                                <span>🟢 Present</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDailyStatusChange(staff.id, "half")}
+                                style={{
+                                  height: "36px",
+                                  padding: "0 10px",
+                                  borderRadius: "10px",
+                                  fontSize: "12px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  transition: "all 0.15s ease",
+                                  border: isHalf ? "none" : "1px solid #e2e8f0",
+                                  background: isHalf ? "#f59e0b" : "#ffffff",
+                                  color: isHalf ? "#ffffff" : "#475569",
+                                  boxShadow: isHalf ? "0 2px 6px rgba(245, 158, 11, 0.25)" : "none",
+                                }}
+                              >
+                                <span>🟡 Half</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDailyStatusChange(staff.id, "absent")}
+                                style={{
+                                  height: "36px",
+                                  padding: "0 10px",
+                                  borderRadius: "10px",
+                                  fontSize: "12px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                  transition: "all 0.15s ease",
+                                  border: isAbsent ? "none" : "1px solid #e2e8f0",
+                                  background: isAbsent ? "#e11d48" : "#ffffff",
+                                  color: isAbsent ? "#ffffff" : "#475569",
+                                  boxShadow: isAbsent ? "0 2px 6px rgba(225, 29, 72, 0.25)" : "none",
+                                }}
+                              >
+                                <span>🔴 Absent</span>
+                              </button>
+                            </div>
+
+                            {/* Col 3: Today's Wage Input */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <div style={{ position: "relative", width: "130px" }}>
+                                <span
+                                  style={{
+                                    position: "absolute",
+                                    left: "10px",
+                                    top: "9px",
+                                    fontSize: "13px",
+                                    fontWeight: 700,
+                                    color: "#8a7b9b",
+                                    pointerEvents: "none",
+                                  }}
+                                >
+                                  ₹
+                                </span>
+                                <input
+                                  type="number"
+                                  disabled={isAbsent}
+                                  value={row.today_wage}
+                                  onChange={(e) => {
+                                    const val = Math.max(0, parseFloat(e.target.value) || 0);
+                                    updateDailyRow(staff.id, { today_wage: val });
+                                  }}
+                                  style={{
+                                    width: "100%",
+                                    height: "36px",
+                                    paddingLeft: "26px",
+                                    paddingRight: "10px",
+                                    borderRadius: "10px",
+                                    border: isAbsent ? "1px solid #e2e8f0" : "1px solid #d8b4fe",
+                                    background: isAbsent ? "#f1f5f9" : "#ffffff",
+                                    color: isAbsent ? "#94a3b8" : "#1e0836",
+                                    fontWeight: 800,
+                                    fontSize: "14px",
+                                    textAlign: "right",
+                                    outline: "none",
+                                  }}
+                                  placeholder="0"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Col 4: Payment Status Checkbox */}
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
+                              <label
+                                style={{
+                                  height: "36px",
+                                  padding: "0 12px",
+                                  borderRadius: "10px",
+                                  border: row.paid_today ? "1px solid #a7f3d0" : "1px solid #e2e8f0",
+                                  background: row.paid_today ? "#ecfdf5" : "#ffffff",
+                                  color: row.paid_today ? "#047857" : "#64748b",
+                                  fontWeight: 700,
+                                  fontSize: "12px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "8px",
+                                  cursor: isAbsent ? "not-allowed" : "pointer",
+                                  userSelect: "none",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  disabled={isAbsent}
+                                  checked={row.paid_today}
+                                  onChange={(e) => {
+                                    updateDailyRow(staff.id, { paid_today: e.target.checked });
+                                  }}
+                                  style={{ accentColor: "#059669", cursor: "pointer" }}
+                                />
+                                <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
+                              </label>
+                            </div>
+
+                            {/* Col 5: Note Input */}
+                            <div>
+                              <input
+                                type="text"
+                                value={row.note}
+                                onChange={(e) => updateDailyRow(staff.id, { note: e.target.value })}
+                                placeholder="Note (e.g. bonus)"
+                                style={{
+                                  width: "100%",
+                                  height: "36px",
+                                  padding: "0 12px",
+                                  borderRadius: "10px",
+                                  border: "1px solid #e2e8f0",
+                                  background: "#ffffff",
+                                  color: "#24103f",
+                                  fontSize: "12px",
+                                  outline: "none",
+                                }}
+                              />
+                            </div>
                           </div>
-                          {s.mobile && (
-                            <span className="text-[11px] text-purple-300/60 font-normal block">{s.mobile}</span>
-                          )}
-                        </td>
-                        <td className="py-3.5 px-3 text-purple-200">{s.kitchen_role}</td>
-                        <td className="py-3.5 px-3">
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[10px] font-semibold uppercase ${
-                              s.wage_type === "monthly"
-                                ? "bg-indigo-950 border border-indigo-700/50 text-indigo-300"
-                                : "bg-amber-950 border border-amber-700/50 text-amber-300"
-                            }`}
-                          >
-                            {s.wage_type}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-medium text-purple-200">
-                          ₹{Number(s.wage_rate).toLocaleString("en-IN")}
-                          <span className="text-[10px] text-purple-400/60 block">
-                            {s.wage_type === "monthly" ? "/month" : "/day"}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-medium text-purple-200">
-                          ₹{Number(s.total_wages).toLocaleString("en-IN")}
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-medium text-emerald-300">
-                          ₹{Number(s.total_paid).toLocaleString("en-IN")}
-                        </td>
-                        <td className="py-3.5 px-3 text-right font-bold">
-                          <span
-                            className={`px-2 py-0.5 rounded-lg ${
-                              s.balance > 0
-                                ? "bg-amber-950/80 border border-amber-700/50 text-amber-300"
-                                : "bg-emerald-950/60 text-emerald-400"
-                            }`}
-                          >
-                            ₹{Number(s.balance).toLocaleString("en-IN")}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <div className="flex items-center justify-center gap-1.5">
-                            <button
-                              onClick={() => openPaymentModal(s)}
-                              className="px-2.5 py-1 rounded-lg bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 text-xs font-semibold border border-emerald-500/40"
-                              title="Pay Balance"
-                            >
-                              Pay 💵
-                            </button>
-                            <button
-                              onClick={() => {
-                                setEditingStaff(s);
-                                setStaffForm({
-                                  name: s.name,
-                                  mobile: s.mobile || "",
-                                  kitchen_role: s.kitchen_role,
-                                  wage_type: s.wage_type,
-                                  wage_rate: String(s.wage_rate),
-                                  status: s.status,
-                                  address: s.address || "",
-                                  notes: s.notes || "",
-                                });
-                                setShowAddStaffModal(true);
+
+                          {/* Mobile View (< md) */}
+                          <div className="md:hidden" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                <div
+                                  style={{
+                                    width: "36px",
+                                    height: "36px",
+                                    borderRadius: "8px",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontWeight: 800,
+                                    fontSize: "12px",
+                                    background: isAbsent ? "#f1f5f9" : "#ede9fe",
+                                    color: isAbsent ? "#64748b" : "#6d28d9",
+                                  }}
+                                >
+                                  {staff.name.slice(0, 2).toUpperCase()}
+                                </div>
+                                <div>
+                                  <div style={{ fontWeight: 800, fontSize: "14px", color: "#1e0836" }}>{staff.name}</div>
+                                  <div style={{ fontSize: "11px", color: "#6b5b7e" }}>{staff.kitchen_role}</div>
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => openPaymentModal(staff)}
+                                style={{
+                                  border: "none",
+                                  background: staff.balance > 0 ? "#fef3c7" : "#ecfdf5",
+                                  color: staff.balance > 0 ? "#b45309" : "#047857",
+                                  padding: "4px 8px",
+                                  borderRadius: "6px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Due: ₹{Number(staff.balance).toLocaleString("en-IN")}
+                              </button>
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
+                              <button
+                                type="button"
+                                onClick={() => handleDailyStatusChange(staff.id, "present")}
+                                style={{
+                                  height: "32px",
+                                  borderRadius: "8px",
+                                  border: "none",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: isPresent ? "#059669" : "#f1f5f9",
+                                  color: isPresent ? "#fff" : "#475569",
+                                }}
+                              >
+                                🟢 Present
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDailyStatusChange(staff.id, "half")}
+                                style={{
+                                  height: "32px",
+                                  borderRadius: "8px",
+                                  border: "none",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: isHalf ? "#f59e0b" : "#f1f5f9",
+                                  color: isHalf ? "#fff" : "#475569",
+                                }}
+                              >
+                                🟡 Half
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDailyStatusChange(staff.id, "absent")}
+                                style={{
+                                  height: "32px",
+                                  borderRadius: "8px",
+                                  border: "none",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: isAbsent ? "#e11d48" : "#f1f5f9",
+                                  color: isAbsent ? "#fff" : "#475569",
+                                }}
+                              >
+                                🔴 Absent
+                              </button>
+                            </div>
+
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", alignItems: "center" }}>
+                              <div style={{ position: "relative" }}>
+                                <span style={{ position: "absolute", left: "8px", top: "7px", fontSize: "12px", color: "#8a7b9b" }}>₹</span>
+                                <input
+                                  type="number"
+                                  disabled={isAbsent}
+                                  value={row.today_wage}
+                                  onChange={(e) => updateDailyRow(staff.id, { today_wage: parseFloat(e.target.value) || 0 })}
+                                  style={{
+                                    width: "100%",
+                                    height: "32px",
+                                    paddingLeft: "20px",
+                                    paddingRight: "8px",
+                                    borderRadius: "8px",
+                                    border: "1px solid #d8b4fe",
+                                    fontWeight: 800,
+                                    fontSize: "13px",
+                                    textAlign: "right",
+                                  }}
+                                />
+                              </div>
+
+                              <label
+                                style={{
+                                  height: "32px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: "6px",
+                                  borderRadius: "8px",
+                                  padding: "0 10px",
+                                  background: row.paid_today ? "#ecfdf5" : "#f8fafc",
+                                  border: row.paid_today ? "1px solid #a7f3d0" : "1px solid #e2e8f0",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  color: row.paid_today ? "#047857" : "#475569",
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  disabled={isAbsent}
+                                  checked={row.paid_today}
+                                  onChange={(e) => updateDailyRow(staff.id, { paid_today: e.target.checked })}
+                                />
+                                <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
+                              </label>
+                            </div>
+
+                            <input
+                              type="text"
+                              value={row.note}
+                              onChange={(e) => updateDailyRow(staff.id, { note: e.target.value })}
+                              placeholder="Note (optional)"
+                              style={{
+                                height: "30px",
+                                padding: "0 8px",
+                                borderRadius: "6px",
+                                border: "1px solid #e2e8f0",
+                                fontSize: "11px",
                               }}
-                              className="px-2 py-1 rounded-lg bg-purple-900/50 hover:bg-purple-800 text-purple-200 text-xs"
-                              title="Edit"
-                            >
-                              ✏️
-                            </button>
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2: Monthly Staff Attendance (Separated Card on White BG) */}
+              {monthlyStaff.length > 0 && (
+                <div
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #e9e3f3",
+                    borderRadius: "16px",
+                    padding: "18px 20px",
+                    boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#24103f" }}>
+                        💼 Monthly Staff Attendance Today ({monthlyStaff.length})
+                      </h3>
+                      <p style={{ margin: "2px 0 0 0", fontSize: "11px", color: "#6b5b7e" }}>
+                        Fixed monthly salary staff — mark daily presence here. Daily wages are not deducted from salary.
+                      </p>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab("monthly")}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        color: "#6d28d9",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        textDecoration: "underline",
+                      }}
+                    >
+                      Manage Monthly Salaries →
+                    </button>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "12px" }}>
+                    {monthlyStaff.map((staff) => {
+                      const row = dailyRows[staff.id] || {
+                        staff_id: staff.id,
+                        staff_name: staff.name,
+                        kitchen_role: staff.kitchen_role,
+                        wage_type: "monthly",
+                        default_rate: Number(staff.wage_rate) || 0,
+                        current_balance: Number(staff.balance) || 0,
+                        status: "present",
+                        today_wage: 0,
+                        paid_today: false,
+                        payment_mode: "Cash",
+                        note: "",
+                        existing_duty_id: null,
+                      };
+
+                      const isPresent = row.status !== "absent";
+
+                      return (
+                        <div
+                          key={staff.id}
+                          style={{
+                            background: "#fdfcff",
+                            border: "1px solid #ede9fe",
+                            borderRadius: "14px",
+                            padding: "14px 16px",
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "space-between",
+                            gap: "12px",
+                          }}
+                        >
+                          <div>
+                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                              <span style={{ fontWeight: 800, fontSize: "14px", color: "#1e0836" }}>{staff.name}</span>
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 600,
+                                  padding: "2px 6px",
+                                  borderRadius: "6px",
+                                  background: "#e0e7ff",
+                                  color: "#3730a3",
+                                }}
+                              >
+                                {staff.kitchen_role}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: "12px", color: "#6b5b7e", marginTop: "2px" }}>
+                              Salary: <strong style={{ color: "#4338ca", fontWeight: 700 }}>₹{Number(staff.wage_rate).toLocaleString("en-IN")}/mo</strong>
+                            </div>
+                          </div>
+
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                             <button
-                              onClick={() => handleDeleteStaff(s.id, s.name)}
-                              className="px-2 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900/60 text-rose-300 text-xs border border-rose-900/50"
-                              title="Delete"
+                              type="button"
+                              onClick={() => {
+                                const newSt = isPresent ? "absent" : "present";
+                                updateDailyRow(staff.id, { status: newSt, today_wage: 0 });
+                              }}
+                              style={{
+                                height: "32px",
+                                padding: "0 10px",
+                                borderRadius: "8px",
+                                border: isPresent ? "1px solid #a7f3d0" : "1px solid #fecaca",
+                                background: isPresent ? "#ecfdf5" : "#fef2f2",
+                                color: isPresent ? "#047857" : "#b91c1c",
+                                fontWeight: 700,
+                                fontSize: "11px",
+                                cursor: "pointer",
+                              }}
+                            >
+                              {isPresent ? "🟢 Present" : "🔴 On Leave"}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => openPaymentModal(staff)}
+                              style={{
+                                height: "32px",
+                                padding: "0 10px",
+                                borderRadius: "8px",
+                                border: "1px solid #ddd6fe",
+                                background: "#f5f3ff",
+                                color: "#6d28d9",
+                                fontWeight: 700,
+                                fontSize: "11px",
+                                cursor: "pointer",
+                              }}
+                              title="Pay Advance"
+                            >
+                              Advance 💵
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Sticky Save Bar at Bottom */}
+              <div
+                style={{
+                  position: "sticky",
+                  bottom: "16px",
+                  zIndex: 20,
+                  background: "rgba(255, 255, 255, 0.95)",
+                  backdropFilter: "blur(10px)",
+                  border: "1px solid #d8b4fe",
+                  borderRadius: "16px",
+                  padding: "14px 20px",
+                  boxShadow: "0 8px 24px rgba(30, 8, 54, 0.12)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                }}
+              >
+                <div style={{ fontSize: "14px", color: "#475569" }}>
+                  <span>Today's Total Day Wages: </span>
+                  <strong style={{ fontSize: "17px", color: "#1e0836", fontWeight: 800 }}>
+                    ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
+                  </strong>
+                  <span style={{ fontSize: "12px", color: "#8a7b9b", marginLeft: "8px" }}>
+                    ({dailySheetTotals.presentCount} present, {dailySheetTotals.absentCount} absent)
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleSaveDailyWages}
+                  disabled={savingDaily}
+                  style={{
+                    height: "40px",
+                    padding: "0 22px",
+                    borderRadius: "10px",
+                    border: "none",
+                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                    color: "#ffffff",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    boxShadow: "0 4px 14px rgba(5, 150, 105, 0.3)",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <span>💾</span>
+                  <span>{savingDaily ? "Saving..." : "Save Daily Wages"}</span>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: MONTHLY STAFF MANAGEMENT (WHITE THEME) */}
+          {activeTab === "monthly" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Header / Month Filter */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e9e3f3",
+                  borderRadius: "16px",
+                  padding: "16px 20px",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                }}
+              >
+                <div>
+                  <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#24103f" }}>
+                    💼 Monthly Fixed Salary Staff
+                  </h2>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#6b5b7e" }}>
+                    Manage monthly salaried staff, attendance days, and salary advances.
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#6b5b7e" }}>Month:</label>
+                  <input
+                    type="month"
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    style={{
+                      height: "36px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #d8b4fe",
+                      background: "#ffffff",
+                      color: "#24103f",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+              </div>
+
+              {monthlyStaff.length === 0 ? (
+                <div
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "16px",
+                    border: "1px solid #e9e3f3",
+                    padding: "40px",
+                    textAlign: "center",
+                  }}
+                >
+                  <p style={{ color: "#8a7b9b", fontSize: "14px", margin: 0 }}>No monthly salary staff configured.</p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingStaff(null);
+                      setStaffForm({
+                        name: "",
+                        mobile: "",
+                        kitchen_role: "Head Chef",
+                        wage_type: "monthly",
+                        wage_rate: "20000",
+                        status: "active",
+                        address: "",
+                        notes: "",
+                      });
+                      setShowAddStaffModal(true);
+                    }}
+                    style={{
+                      marginTop: "12px",
+                      padding: "8px 16px",
+                      background: "#7c3aed",
+                      color: "#fff",
+                      borderRadius: "8px",
+                      border: "none",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    + Add Monthly Staff
+                  </button>
+                </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "16px" }}>
+                  {monthlyStaffMetrics.map(({ staff, salary, daysPresent, paidThisMonth, balanceDue, payments }) => (
+                    <div
+                      key={staff.id}
+                      style={{
+                        background: "#ffffff",
+                        border: "1px solid #e9e3f3",
+                        borderRadius: "16px",
+                        padding: "20px",
+                        boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "16px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
+                        <div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>{staff.name}</h3>
+                            <span
+                              style={{
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                                background: "#e0e7ff",
+                                color: "#3730a3",
+                              }}
+                            >
+                              {staff.kitchen_role}
+                            </span>
+                          </div>
+                          {staff.mobile && (
+                            <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#6b5b7e" }}>📞 {staff.mobile}</p>
+                          )}
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => openPaymentModal(staff)}
+                          style={{
+                            padding: "6px 14px",
+                            borderRadius: "8px",
+                            border: "1px solid #a7f3d0",
+                            background: "#ecfdf5",
+                            color: "#047857",
+                            fontWeight: 700,
+                            fontSize: "12px",
+                            cursor: "pointer",
+                          }}
+                        >
+                          💵 Pay Advance
+                        </button>
+                      </div>
+
+                      {/* 3 Metric Grid */}
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "1fr 1fr 1fr",
+                          gap: "10px",
+                          background: "#f8fafc",
+                          padding: "12px",
+                          borderRadius: "12px",
+                          border: "1px solid #f1f5f9",
+                          textAlign: "center",
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Fixed Salary</div>
+                          <div style={{ fontSize: "15px", fontWeight: 800, color: "#1e0836", marginTop: "2px" }}>
+                            ₹{salary.toLocaleString("en-IN")}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Paid in {selectedMonth}</div>
+                          <div style={{ fontSize: "15px", fontWeight: 800, color: "#059669", marginTop: "2px" }}>
+                            ₹{paidThisMonth.toLocaleString("en-IN")}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Salary Due</div>
+                          <div style={{ fontSize: "15px", fontWeight: 800, color: "#b45309", marginTop: "2px" }}>
+                            ₹{balanceDue.toLocaleString("en-IN")}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px" }}>
+                        <span style={{ color: "#6b5b7e" }}>
+                          Attendance: <strong style={{ color: "#1e0836" }}>{daysPresent} days present</strong>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setEditingStaff(staff);
+                            setStaffForm({
+                              name: staff.name,
+                              mobile: staff.mobile || "",
+                              kitchen_role: staff.kitchen_role,
+                              wage_type: staff.wage_type,
+                              wage_rate: String(staff.wage_rate),
+                              status: staff.status,
+                              address: staff.address || "",
+                              notes: staff.notes || "",
+                            });
+                            setShowAddStaffModal(true);
+                          }}
+                          style={{
+                            border: "none",
+                            background: "transparent",
+                            color: "#7c3aed",
+                            fontWeight: 700,
+                            cursor: "pointer",
+                            textDecoration: "underline",
+                            fontSize: "11px",
+                          }}
+                        >
+                          Edit Staff Info
+                        </button>
+                      </div>
+
+                      {payments.length > 0 && (
+                        <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
+                          <span style={{ fontSize: "10px", fontWeight: 700, color: "#8a7b9b", textTransform: "uppercase" }}>
+                            Recent payments this month
+                          </span>
+                          {payments.slice(0, 3).map((p) => (
+                            <div
+                              key={p.id}
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                fontSize: "12px",
+                                background: "#f8fafc",
+                                padding: "6px 10px",
+                                borderRadius: "8px",
+                              }}
+                            >
+                              <span style={{ color: "#64748b" }}>{p.payment_date} ({p.payment_mode})</span>
+                              <strong style={{ color: "#059669" }}>₹{Number(p.amount).toLocaleString("en-IN")}</strong>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 3: ALL STAFF & BALANCES (DIRECTORY ON WHITE BG) */}
+          {activeTab === "staff" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              {/* Search and Filters */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e9e3f3",
+                  borderRadius: "16px",
+                  padding: "16px 20px",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: "12px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, maxWidth: "400px" }}>
+                  <span style={{ color: "#8a7b9b" }}>🔍</span>
+                  <input
+                    type="text"
+                    placeholder="Search staff by name or role..."
+                    value={searchStaff}
+                    onChange={(e) => setSearchStaff(e.target.value)}
+                    style={{
+                      width: "100%",
+                      height: "36px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #e2e8f0",
+                      background: "#ffffff",
+                      fontSize: "13px",
+                      outline: "none",
+                    }}
+                  />
+                </div>
+
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                    background: "#f1f5f9",
+                    padding: "4px",
+                    borderRadius: "10px",
+                  }}
+                >
+                  <button
+                    type="button"
+                    onClick={() => setStaffFilter("all")}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      border: "none",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      background: staffFilter === "all" ? "#7c3aed" : "transparent",
+                      color: staffFilter === "all" ? "#fff" : "#475569",
+                    }}
+                  >
+                    All ({staffList.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffFilter("daily")}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      border: "none",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      background: staffFilter === "daily" ? "#7c3aed" : "transparent",
+                      color: staffFilter === "daily" ? "#fff" : "#475569",
+                    }}
+                  >
+                    Daily Staff ({dailyStaff.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStaffFilter("monthly")}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      border: "none",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      background: staffFilter === "monthly" ? "#7c3aed" : "transparent",
+                      color: staffFilter === "monthly" ? "#fff" : "#475569",
+                    }}
+                  >
+                    Monthly Staff ({monthlyStaff.length})
+                  </button>
+                </div>
+              </div>
+
+              {/* Staff Table */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "16px",
+                  border: "1px solid #e9e3f3",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  overflowX: "auto",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                  <thead style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                    <tr>
+                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Staff Member</th>
+                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Role</th>
+                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Type</th>
+                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Rate / Salary</th>
+                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Total Accrued</th>
+                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Total Paid</th>
+                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Pending Due</th>
+                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredStaffList.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} style={{ padding: "30px", textAlign: "center", color: "#8a7b9b" }}>
+                          No staff members found matching criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredStaffList.map((s) => (
+                        <tr key={s.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "14px 18px" }}>
+                            <div style={{ fontWeight: 800, color: "#1e0836" }}>{s.name}</div>
+                            {s.mobile && (
+                              <div style={{ fontSize: "11px", color: "#8a7b9b" }}>{s.mobile}</div>
+                            )}
+                          </td>
+                          <td style={{ padding: "14px 14px", color: "#475569" }}>{s.kitchen_role}</td>
+                          <td style={{ padding: "14px 14px" }}>
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                fontWeight: 700,
+                                textTransform: "uppercase",
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                                background: s.wage_type === "monthly" ? "#e0e7ff" : "#fef3c7",
+                                color: s.wage_type === "monthly" ? "#3730a3" : "#b45309",
+                              }}
+                            >
+                              {s.wage_type}
+                            </span>
+                          </td>
+                          <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 700, color: "#1e0836" }}>
+                            ₹{Number(s.wage_rate).toLocaleString("en-IN")}
+                            <span style={{ fontSize: "10px", color: "#8a7b9b", display: "block", fontWeight: 500 }}>
+                              {s.wage_type === "monthly" ? "/month" : "/day"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 700, color: "#1e0836" }}>
+                            ₹{Number(s.total_wages).toLocaleString("en-IN")}
+                          </td>
+                          <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 700, color: "#059669" }}>
+                            ₹{Number(s.total_paid).toLocaleString("en-IN")}
+                          </td>
+                          <td style={{ padding: "14px 14px", textAlign: "right" }}>
+                            <span
+                              style={{
+                                fontWeight: 800,
+                                padding: "3px 8px",
+                                borderRadius: "6px",
+                                background: s.balance > 0 ? "#fef3c7" : "#ecfdf5",
+                                color: s.balance > 0 ? "#b45309" : "#047857",
+                              }}
+                            >
+                              ₹{Number(s.balance).toLocaleString("en-IN")}
+                            </span>
+                          </td>
+                          <td style={{ padding: "14px 18px", textAlign: "center" }}>
+                            <div style={{ display: "inline-flex", gap: "6px" }}>
+                              <button
+                                type="button"
+                                onClick={() => openPaymentModal(s)}
+                                style={{
+                                  padding: "4px 10px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #a7f3d0",
+                                  background: "#ecfdf5",
+                                  color: "#047857",
+                                  fontWeight: 700,
+                                  fontSize: "11px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                Pay 💵
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingStaff(s);
+                                  setStaffForm({
+                                    name: s.name,
+                                    mobile: s.mobile || "",
+                                    kitchen_role: s.kitchen_role,
+                                    wage_type: s.wage_type,
+                                    wage_rate: String(s.wage_rate),
+                                    status: s.status,
+                                    address: s.address || "",
+                                    notes: s.notes || "",
+                                  });
+                                  setShowAddStaffModal(true);
+                                }}
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #e2e8f0",
+                                  background: "#ffffff",
+                                  cursor: "pointer",
+                                  fontSize: "11px",
+                                }}
+                              >
+                                ✏️
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteStaff(s.id, s.name)}
+                                style={{
+                                  padding: "4px 8px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #fecaca",
+                                  background: "#fef2f2",
+                                  color: "#b91c1c",
+                                  cursor: "pointer",
+                                  fontSize: "11px",
+                                }}
+                              >
+                                🗑️
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: PAYMENT HISTORY (WHITE THEME) */}
+          {activeTab === "payments" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#24103f" }}>
+                    🧾 Kitchen Staff Payment Ledger ({paymentsList.length})
+                  </h2>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#6b5b7e" }}>
+                    Record of all cash payouts, UPI transfers, and advances handed to kitchen staff.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => openPaymentModal()}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                    color: "#ffffff",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                  }}
+                >
+                  + Record Payment
+                </button>
+              </div>
+
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "16px",
+                  border: "1px solid #e9e3f3",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  overflowX: "auto",
+                }}
+              >
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                  <thead style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                    <tr>
+                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Date</th>
+                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Staff Member</th>
+                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Amount (₹)</th>
+                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Mode</th>
+                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Note / Reference</th>
+                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentsList.length === 0 ? (
+                      <tr>
+                        <td colSpan={6} style={{ padding: "30px", textAlign: "center", color: "#8a7b9b" }}>
+                          No payments recorded yet.
+                        </td>
+                      </tr>
+                    ) : (
+                      paymentsList.map((p) => (
+                        <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "14px 18px", color: "#1e0836", fontWeight: 600 }}>{p.payment_date}</td>
+                          <td style={{ padding: "14px 18px", fontWeight: 800, color: "#1e0836" }}>{p.staff_name || `Staff #${p.staff_id}`}</td>
+                          <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 800, color: "#059669" }}>
+                            ₹{Number(p.amount).toLocaleString("en-IN")}
+                          </td>
+                          <td style={{ padding: "14px 14px", textAlign: "center" }}>
+                            <span
+                              style={{
+                                fontSize: "10px",
+                                fontWeight: 700,
+                                padding: "2px 8px",
+                                borderRadius: "6px",
+                                background: "#f1f5f9",
+                                color: "#475569",
+                              }}
+                            >
+                              {p.payment_mode}
+                            </span>
+                          </td>
+                          <td style={{ padding: "14px 18px", color: "#64748b" }}>
+                            {p.note || "-"}
+                            {p.reference_no && (
+                              <span style={{ fontSize: "10px", color: "#8a7b9b", display: "block" }}>Ref: {p.reference_no}</span>
+                            )}
+                          </td>
+                          <td style={{ padding: "14px 18px", textAlign: "center" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePayment(p.id)}
+                              style={{
+                                padding: "4px 8px",
+                                borderRadius: "6px",
+                                border: "1px solid #fecaca",
+                                background: "#fef2f2",
+                                color: "#b91c1c",
+                                cursor: "pointer",
+                                fontSize: "11px",
+                              }}
+                              title="Delete Payment"
                             >
                               🗑️
                             </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* Tab 4: PAYMENT HISTORY */}
-        {activeTab === "payments" && (
-          <div className="px-4 sm:px-8 py-4 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-base font-bold text-white flex items-center gap-2">
-                  <span>🧾</span>
-                  <span>Kitchen Staff Payment Ledger ({paymentsList.length})</span>
-                </h2>
-                <p className="text-xs text-purple-300/70 mt-0.5">
-                  Record of all cash payouts, UPI transfers, and advances handed to kitchen staff.
-                </p>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-
-              <button
-                onClick={() => openPaymentModal()}
-                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs sm:text-sm font-semibold shadow-md transition"
-              >
-                + Record Payment
-              </button>
             </div>
+          )}
+        </div>
 
-            <div className="overflow-x-auto rounded-2xl border border-purple-800/40 bg-[#200a36]/80 shadow-md">
-              <table className="w-full text-left text-xs sm:text-sm">
-                <thead className="bg-[#150624]/90 text-purple-300/70 uppercase text-[11px] font-semibold border-b border-purple-900/40">
-                  <tr>
-                    <th className="py-3 px-4">Date</th>
-                    <th className="py-3 px-4">Staff Member</th>
-                    <th className="py-3 px-3 text-right">Amount (₹)</th>
-                    <th className="py-3 px-3 text-center">Mode</th>
-                    <th className="py-3 px-4">Note / Reference</th>
-                    <th className="py-3 px-4 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-purple-900/30">
-                  {paymentsList.length === 0 ? (
-                    <tr>
-                      <td colSpan={6} className="py-8 text-center text-purple-300/60">
-                        No payments recorded yet.
-                      </td>
-                    </tr>
-                  ) : (
-                    paymentsList.map((p) => (
-                      <tr key={p.id} className="hover:bg-purple-900/20 transition">
-                        <td className="py-3 px-4 font-medium text-purple-200">{p.payment_date}</td>
-                        <td className="py-3 px-4 font-bold text-white">{p.staff_name || `Staff #${p.staff_id}`}</td>
-                        <td className="py-3 px-3 text-right font-bold text-emerald-300">
-                          ₹{Number(p.amount).toLocaleString("en-IN")}
-                        </td>
-                        <td className="py-3 px-3 text-center">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-purple-950 border border-purple-800 text-purple-200">
-                            {p.payment_mode}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-purple-300/80 text-xs">
-                          {p.note || "-"}
-                          {p.reference_no && (
-                            <span className="block text-[10px] text-purple-400/60">Ref: {p.reference_no}</span>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <button
-                            onClick={() => handleDeletePayment(p.id)}
-                            className="px-2 py-1 rounded-lg bg-rose-950/40 hover:bg-rose-900 text-rose-300 text-xs border border-rose-900"
-                            title="Delete Payment"
-                          >
-                            🗑️
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
-
-        {/* MODAL: Add / Edit Staff */}
+        {/* MODAL: Add / Edit Staff (White Dialog) */}
         {showAddStaffModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-            <div className="w-full max-w-md rounded-2xl bg-[#200a36] border border-purple-700/60 p-6 shadow-2xl">
-              <div className="flex items-center justify-between pb-3 border-b border-purple-800/40">
-                <h3 className="text-base font-bold text-white">
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "16px",
+              background: "rgba(15, 6, 28, 0.6)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "460px",
+                background: "#ffffff",
+                borderRadius: "18px",
+                padding: "24px",
+                boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
+                border: "1px solid #e9e3f3",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9" }}>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
                   {editingStaff ? "Edit Kitchen Staff" : "Add Kitchen Staff"}
                 </h3>
                 <button
+                  type="button"
                   onClick={() => setShowAddStaffModal(false)}
-                  className="text-purple-400 hover:text-white text-sm"
+                  style={{ border: "none", background: "transparent", color: "#64748b", cursor: "pointer", fontSize: "14px" }}
                 >
                   ✕
                 </button>
               </div>
 
-              <form onSubmit={handleSaveStaff} className="mt-4 space-y-3.5">
+              <form onSubmit={handleSaveStaff} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
                 <div>
-                  <label className="text-xs font-semibold text-purple-200 block mb-1">
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                     Staff Name *
                   </label>
                   <input
@@ -1844,20 +2623,36 @@ export default function KitchenPage() {
                     required
                     value={staffForm.name}
                     onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })}
-                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #d8b4fe",
+                      fontSize: "13px",
+                      outline: "none",
+                    }}
                     placeholder="e.g. Ramesh Kumar"
                   />
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                   <div>
-                    <label className="text-xs font-semibold text-purple-200 block mb-1">
+                    <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                       Role / Designation
                     </label>
                     <select
                       value={staffForm.kitchen_role}
                       onChange={(e) => setStaffForm({ ...staffForm, kitchen_role: e.target.value })}
-                      className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                      style={{
+                        width: "100%",
+                        height: "38px",
+                        padding: "0 10px",
+                        borderRadius: "10px",
+                        border: "1px solid #d8b4fe",
+                        fontSize: "13px",
+                        background: "#fff",
+                      }}
                     >
                       {KITCHEN_ROLES.map((r) => (
                         <option key={r} value={r}>
@@ -1868,55 +2663,73 @@ export default function KitchenPage() {
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-purple-200 block mb-1">
+                    <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                       Mobile Number
                     </label>
                     <input
                       type="tel"
                       value={staffForm.mobile}
                       onChange={(e) => setStaffForm({ ...staffForm, mobile: e.target.value })}
-                      className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                      style={{
+                        width: "100%",
+                        height: "38px",
+                        padding: "0 12px",
+                        borderRadius: "10px",
+                        border: "1px solid #d8b4fe",
+                        fontSize: "13px",
+                        outline: "none",
+                      }}
                       placeholder="9876543210"
                     />
                   </div>
                 </div>
 
-                {/* Wage Type Selection */}
+                {/* Wage Type */}
                 <div>
-                  <label className="text-xs font-semibold text-purple-200 block mb-1.5">
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "6px" }}>
                     Wage Type *
                   </label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
                     <button
                       type="button"
                       onClick={() => setStaffForm({ ...staffForm, wage_type: "daily", wage_rate: "800" })}
-                      className={`p-2.5 rounded-xl border text-xs font-bold transition flex flex-col items-center gap-1 ${
-                        staffForm.wage_type === "daily"
-                          ? "bg-purple-600 border-purple-400 text-white shadow-md"
-                          : "bg-[#150624] border-purple-900 text-purple-300 hover:text-white"
-                      }`}
+                      style={{
+                        padding: "10px",
+                        borderRadius: "10px",
+                        border: staffForm.wage_type === "daily" ? "2px solid #7c3aed" : "1px solid #e2e8f0",
+                        background: staffForm.wage_type === "daily" ? "#f5f3ff" : "#ffffff",
+                        cursor: "pointer",
+                        textAlign: "center",
+                      }}
                     >
-                      <span>🔪 Daily Wage Staff</span>
-                      <span className="text-[10px] font-normal text-purple-200/70">Varies every day</span>
+                      <div style={{ fontWeight: 800, fontSize: "12px", color: staffForm.wage_type === "daily" ? "#6d28d9" : "#475569" }}>
+                        🔪 Daily Wage Staff
+                      </div>
+                      <div style={{ fontSize: "10px", color: "#8a7b9b", marginTop: "2px" }}>Varies every day</div>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => setStaffForm({ ...staffForm, wage_type: "monthly", wage_rate: "20000" })}
-                      className={`p-2.5 rounded-xl border text-xs font-bold transition flex flex-col items-center gap-1 ${
-                        staffForm.wage_type === "monthly"
-                          ? "bg-indigo-600 border-indigo-400 text-white shadow-md"
-                          : "bg-[#150624] border-purple-900 text-purple-300 hover:text-white"
-                      }`}
+                      style={{
+                        padding: "10px",
+                        borderRadius: "10px",
+                        border: staffForm.wage_type === "monthly" ? "2px solid #4338ca" : "1px solid #e2e8f0",
+                        background: staffForm.wage_type === "monthly" ? "#e0e7ff" : "#ffffff",
+                        cursor: "pointer",
+                        textAlign: "center",
+                      }}
                     >
-                      <span>💼 Monthly Salaried</span>
-                      <span className="text-[10px] font-normal text-purple-200/70">Fixed monthly pay</span>
+                      <div style={{ fontWeight: 800, fontSize: "12px", color: staffForm.wage_type === "monthly" ? "#3730a3" : "#475569" }}>
+                        💼 Monthly Salaried
+                      </div>
+                      <div style={{ fontSize: "10px", color: "#8a7b9b", marginTop: "2px" }}>Fixed monthly pay</div>
                     </button>
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-purple-200 block mb-1">
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                     {staffForm.wage_type === "monthly" ? "Monthly Salary (₹)" : "Default Daily Rate (₹)"}
                   </label>
                   <input
@@ -1925,40 +2738,77 @@ export default function KitchenPage() {
                     min="0"
                     value={staffForm.wage_rate}
                     onChange={(e) => setStaffForm({ ...staffForm, wage_rate: e.target.value })}
-                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400 font-bold"
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #d8b4fe",
+                      fontSize: "14px",
+                      fontWeight: 800,
+                      color: "#1e0836",
+                      outline: "none",
+                    }}
                     placeholder="e.g. 800 or 20000"
                   />
-                  <span className="text-[10px] text-purple-300/60 mt-1 block">
+                  <span style={{ fontSize: "11px", color: "#8a7b9b", marginTop: "3px", display: "block" }}>
                     {staffForm.wage_type === "monthly"
                       ? "Paid monthly. Daily attendance tracks presence without deducting daily wage."
-                      : "Can be freely changed on any day when recording daily duty."}
+                      : "Can be freely changed on any day when recording daily wages."}
                   </span>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-purple-200 block mb-1">
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                     Notes / Remarks (Optional)
                   </label>
                   <input
                     type="text"
                     value={staffForm.notes}
                     onChange={(e) => setStaffForm({ ...staffForm, notes: e.target.value })}
-                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
-                    placeholder="e.g. Specialty in Biryani, Part-time"
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #e2e8f0",
+                      fontSize: "13px",
+                      outline: "none",
+                    }}
+                    placeholder="e.g. Specialty in Biryani"
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-purple-800/40">
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9" }}>
                   <button
                     type="button"
                     onClick={() => setShowAddStaffModal(false)}
-                    className="h-9 px-4 rounded-xl bg-purple-950 text-purple-300 hover:text-white text-xs font-semibold"
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                      background: "#fff",
+                      color: "#64748b",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="h-9 px-5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white text-xs font-bold shadow-md"
+                    style={{
+                      padding: "8px 18px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 12px rgba(124, 58, 237, 0.25)",
+                    }}
                   >
                     {editingStaff ? "Update Staff" : "Add Staff"}
                   </button>
@@ -1968,26 +2818,49 @@ export default function KitchenPage() {
           </div>
         )}
 
-        {/* MODAL: Record Payment / Advance */}
+        {/* MODAL: Record Payment / Advance (White Dialog) */}
         {showPaymentModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-sm animate-fadeIn">
-            <div className="w-full max-w-md rounded-2xl bg-[#200a36] border border-emerald-700/60 p-6 shadow-2xl">
-              <div className="flex items-center justify-between pb-3 border-b border-purple-800/40">
-                <div className="flex items-center gap-2">
-                  <span className="text-xl">💵</span>
-                  <h3 className="text-base font-bold text-white">Record Staff Payment / Advance</h3>
-                </div>
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "16px",
+              background: "rgba(15, 6, 28, 0.6)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "460px",
+                background: "#ffffff",
+                borderRadius: "18px",
+                padding: "24px",
+                boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
+                border: "1px solid #e9e3f3",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9" }}>
+                <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836", display: "flex", alignItems: "center", gap: "6px" }}>
+                  <span>💵</span>
+                  <span>Record Staff Payment / Advance</span>
+                </h3>
                 <button
+                  type="button"
                   onClick={() => setShowPaymentModal(false)}
-                  className="text-purple-400 hover:text-white text-sm"
+                  style={{ border: "none", background: "transparent", color: "#64748b", cursor: "pointer", fontSize: "14px" }}
                 >
                   ✕
                 </button>
               </div>
 
-              <form onSubmit={handleSavePayment} className="mt-4 space-y-3.5">
+              <form onSubmit={handleSavePayment} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
                 <div>
-                  <label className="text-xs font-semibold text-purple-200 block mb-1">
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                     Select Staff Member *
                   </label>
                   <select
@@ -2002,7 +2875,16 @@ export default function KitchenPage() {
                         amount: st && st.balance > 0 ? String(st.balance) : "",
                       });
                     }}
-                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400 font-semibold"
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      padding: "0 10px",
+                      borderRadius: "10px",
+                      border: "1px solid #d8b4fe",
+                      fontSize: "13px",
+                      background: "#fff",
+                      fontWeight: 700,
+                    }}
                   >
                     {staffList.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -2012,10 +2894,10 @@ export default function KitchenPage() {
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px" }}>
                   <div>
-                    <label className="text-xs font-semibold text-purple-200 block mb-1">
-                      Payment Amount (₹) *
+                    <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
+                      Amount (₹) *
                     </label>
                     <input
                       type="number"
@@ -2024,13 +2906,23 @@ export default function KitchenPage() {
                       step="any"
                       value={paymentForm.amount}
                       onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                      className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-emerald-600/70 text-emerald-300 text-sm font-bold focus:outline-none focus:border-emerald-400"
+                      style={{
+                        width: "100%",
+                        height: "38px",
+                        padding: "0 12px",
+                        borderRadius: "10px",
+                        border: "1px solid #a7f3d0",
+                        fontSize: "14px",
+                        fontWeight: 800,
+                        color: "#059669",
+                        outline: "none",
+                      }}
                       placeholder="e.g. 800"
                     />
                   </div>
 
                   <div>
-                    <label className="text-xs font-semibold text-purple-200 block mb-1">
+                    <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                       Payment Date
                     </label>
                     <input
@@ -2038,26 +2930,39 @@ export default function KitchenPage() {
                       required
                       value={paymentForm.payment_date}
                       onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
-                      className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                      style={{
+                        width: "100%",
+                        height: "38px",
+                        padding: "0 10px",
+                        borderRadius: "10px",
+                        border: "1px solid #e2e8f0",
+                        fontSize: "13px",
+                        outline: "none",
+                      }}
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-purple-200 block mb-1">
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "6px" }}>
                     Payment Mode
                   </label>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
                     {["Cash", "UPI", "Bank Transfer"].map((mode) => (
                       <button
                         key={mode}
                         type="button"
                         onClick={() => setPaymentForm({ ...paymentForm, payment_mode: mode })}
-                        className={`h-9 rounded-xl border text-xs font-semibold transition flex items-center justify-center ${
-                          paymentForm.payment_mode === mode
-                            ? "bg-emerald-600 text-white border-emerald-400 shadow-sm"
-                            : "bg-[#150624] text-purple-300 border-purple-900"
-                        }`}
+                        style={{
+                          height: "36px",
+                          borderRadius: "8px",
+                          border: paymentForm.payment_mode === mode ? "2px solid #059669" : "1px solid #e2e8f0",
+                          background: paymentForm.payment_mode === mode ? "#ecfdf5" : "#ffffff",
+                          color: paymentForm.payment_mode === mode ? "#047857" : "#475569",
+                          fontWeight: 700,
+                          fontSize: "12px",
+                          cursor: "pointer",
+                        }}
                       >
                         {mode}
                       </button>
@@ -2066,29 +2971,56 @@ export default function KitchenPage() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-purple-200 block mb-1">
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                     Payment Note / Description
                   </label>
                   <input
                     type="text"
                     value={paymentForm.note}
                     onChange={(e) => setPaymentForm({ ...paymentForm, note: e.target.value })}
-                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #e2e8f0",
+                      fontSize: "13px",
+                      outline: "none",
+                    }}
                     placeholder="e.g. Daily cash wage settlement / Advance"
                   />
                 </div>
 
-                <div className="flex items-center justify-end gap-2 pt-3 border-t border-purple-800/40">
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9" }}>
                   <button
                     type="button"
                     onClick={() => setShowPaymentModal(false)}
-                    className="h-9 px-4 rounded-xl bg-purple-950 text-purple-300 hover:text-white text-xs font-semibold"
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                      background: "#fff",
+                      color: "#64748b",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="h-9 px-5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white text-xs font-bold shadow-md"
+                    style={{
+                      padding: "8px 18px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 12px rgba(5, 150, 105, 0.25)",
+                    }}
                   >
                     Record Payment 💵
                   </button>
@@ -2098,6 +3030,6 @@ export default function KitchenPage() {
           </div>
         )}
       </div>
-    </div>
+    </main>
   );
 }
