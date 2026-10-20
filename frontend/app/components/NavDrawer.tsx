@@ -139,6 +139,7 @@ export function AppSidebar({ activeRoute }: { activeRoute: string }) {
           <span className="sidebar-title">MANAGEMENT</span>
           <nav onClick={close}>
             <NavLink href="/staff" icon="♙" label="Staff" active={activeRoute === "/staff"} />
+            <NavLink href="/kitchen" icon="🍳" label="Kitchen & Wages" active={activeRoute === "/kitchen"} />
             <NavLink href="/sub-teams" icon="♧" label="Sub Teams" active={activeRoute === "/sub-teams"} />
             <NavLink href="/billing" icon="🧾" label="Billing & Invoices" active={activeRoute === "/billing"} />
             <NavLink href="/payments" icon="▥" label="Payments" active={activeRoute === "/payments"} />

@@ -600,4 +600,53 @@ class User(Base):
         nullable=False  # 'admin' (full access), 'owner' (read only), 'manager' (staff payment page only)
     )
 
+
+# ============================================================
+# KITCHEN STAFF, WAGES & PAYMENTS
+# ============================================================
+
+class KitchenStaff(Base):
+    __tablename__ = "kitchen_staff"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(150), nullable=False)
+    mobile = Column(String(20), nullable=True)
+    kitchen_role = Column(String(100), nullable=False)  # Head Chef, Cook, Assistant, Helper, Dishwasher, etc.
+    wage_type = Column(String(20), nullable=False, default="monthly")  # 'monthly' or 'daily'
+    wage_rate = Column(Numeric(12, 2), nullable=False, default=0)     # Monthly salary or Daily wage rate
+    status = Column(String(20), nullable=False, default="active")     # 'active' or 'inactive'
+    joined_date = Column(Date, nullable=True)
+    address = Column(String(255), nullable=True)
+    notes = Column(String(500), nullable=True)
+
+
+class KitchenWage(Base):
+    __tablename__ = "kitchen_wages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    staff_id = Column(Integer, ForeignKey("kitchen_staff.id", ondelete="CASCADE"), nullable=False)
+    period = Column(String(50), nullable=False)                       # e.g., '2026-10' or '2026-10-20'
+    wage_type = Column(String(20), nullable=False)                    # 'monthly' or 'daily'
+    days_worked = Column(Numeric(6, 2), nullable=False, default=1)   # Days worked (for daily) or attendance
+    base_rate = Column(Numeric(12, 2), nullable=False)                # Rate at time of wage calculation
+    calculated_wage = Column(Numeric(12, 2), nullable=False)          # days_worked * base_rate or monthly rate
+    bonus = Column(Numeric(12, 2), nullable=False, default=0)
+    deduction = Column(Numeric(12, 2), nullable=False, default=0)
+    total_wage = Column(Numeric(12, 2), nullable=False)               # calculated_wage + bonus - deduction
+    date_recorded = Column(Date, nullable=False)
+    notes = Column(String(500), nullable=True)
+
+
+class KitchenPayment(Base):
+    __tablename__ = "kitchen_payments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    staff_id = Column(Integer, ForeignKey("kitchen_staff.id", ondelete="CASCADE"), nullable=False)
+    amount = Column(Numeric(12, 2), nullable=False)
+    payment_date = Column(Date, nullable=False)
+    payment_mode = Column(String(50), nullable=False, default="Cash")  # 'Cash', 'UPI', 'Bank Transfer', 'Cheque'
+    reference_no = Column(String(100), nullable=True)
+    note = Column(String(500), nullable=True)
+
+
 

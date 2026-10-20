@@ -448,3 +448,137 @@ class ExpenseResponse(BaseModel):
     }
 
 
+# ============================================================
+# KITCHEN STAFF SCHEMAS
+# ============================================================
+
+class KitchenStaffCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=150)
+    mobile: str | None = None
+    kitchen_role: str = Field(min_length=1, max_length=100)
+    wage_type: str = "monthly"  # 'monthly' or 'daily'
+    wage_rate: Decimal = Field(ge=0, default=Decimal("0.00"))
+    status: str = "active"      # 'active' or 'inactive'
+    joined_date: date | None = None
+    address: str | None = None
+    notes: str | None = None
+
+
+class KitchenStaffUpdate(BaseModel):
+    name: str | None = None
+    mobile: str | None = None
+    kitchen_role: str | None = None
+    wage_type: str | None = None
+    wage_rate: Decimal | None = None
+    status: str | None = None
+    joined_date: date | None = None
+    address: str | None = None
+    notes: str | None = None
+
+
+class KitchenStaffResponse(BaseModel):
+    id: int
+    name: str
+    mobile: str | None = None
+    kitchen_role: str
+    wage_type: str
+    wage_rate: Decimal
+    status: str
+    joined_date: date | None = None
+    address: str | None = None
+    notes: str | None = None
+    total_wages: Decimal = Decimal("0.00")
+    total_paid: Decimal = Decimal("0.00")
+    balance: Decimal = Decimal("0.00")
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# ============================================================
+# KITCHEN WAGE SCHEMAS
+# ============================================================
+
+class KitchenWageCreate(BaseModel):
+    staff_id: int
+    period: str = Field(min_length=1, max_length=50)
+    wage_type: str | None = None
+    days_worked: Decimal = Field(gt=0, default=Decimal("1.0"))
+    base_rate: Decimal | None = None
+    bonus: Decimal = Field(ge=0, default=Decimal("0.00"))
+    deduction: Decimal = Field(ge=0, default=Decimal("0.00"))
+    date_recorded: date | None = None
+    notes: str | None = None
+
+
+class KitchenAutoWageRequest(BaseModel):
+    staff_ids: list[int] | None = None
+    period: str = Field(min_length=1, max_length=50)
+    days_worked: Decimal = Field(gt=0, default=Decimal("1.0"))
+    date_recorded: date | None = None
+
+
+class KitchenWageResponse(BaseModel):
+    id: int
+    staff_id: int
+    staff_name: str | None = None
+    period: str
+    wage_type: str
+    days_worked: Decimal
+    base_rate: Decimal
+    calculated_wage: Decimal
+    bonus: Decimal
+    deduction: Decimal
+    total_wage: Decimal
+    date_recorded: date
+    notes: str | None = None
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# ============================================================
+# KITCHEN PAYMENT SCHEMAS
+# ============================================================
+
+class KitchenPaymentCreate(BaseModel):
+    staff_id: int
+    amount: Decimal = Field(gt=0)
+    payment_date: date | None = None
+    payment_mode: str = "Cash"  # 'Cash', 'UPI', 'Bank Transfer', 'Cheque'
+    reference_no: str | None = None
+    note: str | None = None
+
+
+class KitchenPaymentResponse(BaseModel):
+    id: int
+    staff_id: int
+    staff_name: str | None = None
+    amount: Decimal
+    payment_date: date
+    payment_mode: str
+    reference_no: str | None = None
+    note: str | None = None
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# ============================================================
+# KITCHEN SUMMARY SCHEMAS
+# ============================================================
+
+class KitchenSummaryResponse(BaseModel):
+    total_staff: int
+    active_staff: int
+    monthly_staff_count: int
+    daily_staff_count: int
+    total_wages: Decimal
+    total_paid: Decimal
+    total_pending_balance: Decimal
+
+
+

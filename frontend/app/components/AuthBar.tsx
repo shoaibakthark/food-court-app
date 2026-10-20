@@ -163,7 +163,7 @@ export function NavLink({
   label: string;
 }) {
   const { isManager } = useAuth();
-  const isLocked = isManager && !href.startsWith("/staff");
+  const isLocked = isManager && !href.startsWith("/staff") && !href.startsWith("/kitchen");
 
   if (isLocked) {
     return (

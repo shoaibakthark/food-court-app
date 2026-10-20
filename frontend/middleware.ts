@@ -31,8 +31,8 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // 5. If manager tries to access any non-staff route -> redirect strictly to /staff
-  if (role === "manager" && !pathname.startsWith("/staff") && pathname !== "/login") {
+  // 5. If manager tries to access any non-staff/kitchen route -> redirect strictly to /staff
+  if (role === "manager" && !pathname.startsWith("/staff") && !pathname.startsWith("/kitchen") && pathname !== "/login") {
     return NextResponse.redirect(new URL("/staff", request.url));
   }
 

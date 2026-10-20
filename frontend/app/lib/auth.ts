@@ -90,7 +90,7 @@ export function clearAuthUser(): void {
 
 export function isManagerAllowedPath(pathname: string): boolean {
   if (!pathname) return false;
-  return pathname.startsWith("/staff") || pathname.startsWith("/login");
+  return pathname.startsWith("/staff") || pathname.startsWith("/kitchen") || pathname.startsWith("/login");
 }
 
 export function canAccessPage(user: AuthUser | null, pathname: string): boolean {
