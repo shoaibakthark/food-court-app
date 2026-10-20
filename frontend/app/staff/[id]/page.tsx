@@ -284,8 +284,22 @@ export default function StaffDetailsPage() {
       {/* Main Content */}
       <div className="main-content">
         {/* Top Header */}
-        <header className="topbar">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        <header
+          className="topbar"
+          style={{
+            minHeight: "72px",
+            height: "auto",
+            padding: "12px 24px",
+            background: "#ffffff",
+            borderBottom: "1px solid #e2e8f0",
+            gap: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 260px" }}>
             <MobileMenuButton />
             <Link
               href="/staff"
@@ -293,18 +307,21 @@ export default function StaffDetailsPage() {
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "6px",
+                height: "38px",
                 color: "#6b5b7e",
                 textDecoration: "none",
                 fontSize: "13px",
                 fontWeight: 600,
                 background: "#f0edf5",
-                padding: "6px 12px",
+                padding: "0 14px",
                 borderRadius: "8px",
+                whiteSpace: "nowrap",
+                flexShrink: 0,
               }}
             >
               ← Staff List
             </Link>
-            <h1 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#24103f" }}>
+            <h1 style={{ margin: 0, fontSize: "20px", fontWeight: 700, color: "#24103f", whiteSpace: "nowrap" }}>
               {staff.name}
             </h1>
             <span
@@ -313,15 +330,16 @@ export default function StaffDetailsPage() {
                 fontWeight: 700,
                 background: "#f3eaf7",
                 color: "#603b7d",
-                padding: "3px 10px",
+                padding: "4px 10px",
                 borderRadius: "12px",
+                whiteSpace: "nowrap",
               }}
             >
               {staff.role_name || "General Staff"}
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 auto" }}>
             {!isOwner && (
               <button
                 type="button"
@@ -329,16 +347,19 @@ export default function StaffDetailsPage() {
                 style={{
                   display: "inline-flex",
                   alignItems: "center",
-                  gap: "8px",
+                  gap: "6px",
+                  height: "38px",
                   background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                   color: "#ffffff",
                   border: "none",
                   borderRadius: "8px",
-                  padding: "10px 18px",
+                  padding: "0 16px",
                   fontWeight: 700,
-                  fontSize: "13px",
+                  fontSize: "12px",
                   cursor: "pointer",
-                  boxShadow: "0 4px 14px rgba(124, 58, 237, 0.3)",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  boxShadow: "0 2px 6px rgba(124, 58, 237, 0.25)",
                 }}
               >
                 <span>+</span> Record Wage Payment

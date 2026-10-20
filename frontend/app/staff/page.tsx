@@ -298,10 +298,24 @@ export default function StaffPage() {
       {/* Main Content */}
       <div className="main-content">
         {/* Topbar */}
-        <header className="topbar">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        <header
+          className="topbar"
+          style={{
+            minHeight: "72px",
+            height: "auto",
+            padding: "12px 24px",
+            background: "#ffffff",
+            borderBottom: "1px solid #e2e8f0",
+            gap: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 260px" }}>
             <MobileMenuButton />
-            <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#24103f" }}>
+            <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#24103f", whiteSpace: "nowrap" }}>
               Staff & Crew Management
             </h1>
             <span
@@ -312,21 +326,42 @@ export default function StaffPage() {
                 padding: "4px 10px",
                 borderRadius: "12px",
                 fontWeight: 600,
+                whiteSpace: "nowrap",
               }}
             >
               {staffList.length} Team Members
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            <div className="search-box">
-              <span style={{ color: "#8a7b9b" }}>🔍</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 auto" }}>
+            <div
+              className="search-box"
+              style={{
+                width: "250px",
+                height: "38px",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 10px",
+                gap: "8px",
+              }}
+            >
+              <span style={{ color: "#8a7b9b", fontSize: "14px" }}>🔍</span>
               <input
                 type="text"
-                placeholder="Search staff name, role, phone..."
+                placeholder="Search staff, role, phone..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{ border: "none", background: "transparent", outline: "none", width: "100%", fontSize: "13px" }}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  outline: "none",
+                  width: "100%",
+                  fontSize: "13px",
+                  color: "#0f172a",
+                }}
               />
               {search && (
                 <button
@@ -349,14 +384,20 @@ export default function StaffPage() {
                     setRoleModalOpen(true);
                   }}
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    height: "38px",
                     background: "#f5f3ff",
                     color: "#6d28d9",
                     border: "1px solid #ddd6fe",
                     borderRadius: "8px",
-                    padding: "8px 14px",
+                    padding: "0 14px",
                     fontWeight: 700,
                     fontSize: "12px",
                     cursor: "pointer",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
                     transition: "all 0.15s ease",
                   }}
                 >
@@ -370,15 +411,18 @@ export default function StaffPage() {
                     display: "inline-flex",
                     alignItems: "center",
                     gap: "6px",
+                    height: "38px",
                     background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                     color: "#ffffff",
                     border: "none",
                     borderRadius: "8px",
-                    padding: "8px 16px",
+                    padding: "0 16px",
                     fontWeight: 700,
                     fontSize: "12px",
                     cursor: "pointer",
-                    boxShadow: "0 4px 14px rgba(124, 58, 237, 0.3)",
+                    whiteSpace: "nowrap",
+                    flexShrink: 0,
+                    boxShadow: "0 2px 6px rgba(124, 58, 237, 0.25)",
                     transition: "all 0.15s ease",
                   }}
                 >
@@ -664,14 +708,14 @@ export default function StaffPage() {
                 <table style={{ width: "100%", minWidth: "750px", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
                   <thead>
                     <tr style={{ background: "#f8f7fb", borderBottom: "1px solid #e9e5f0", color: "#5d4e70", fontWeight: 600 }}>
-                      <th style={{ padding: "14px 18px" }}>Staff Member</th>
-                      <th style={{ padding: "14px 18px" }}>Mobile Number</th>
-                      <th style={{ padding: "14px 18px" }}>Assigned Role</th>
-                      <th style={{ padding: "14px 18px", textAlign: "center" }}>Events Worked</th>
-                      <th style={{ padding: "14px 18px", textAlign: "right" }}>Daily Wage</th>
-                      <th style={{ padding: "14px 18px", textAlign: "right" }}>Total Earned</th>
-                      <th style={{ padding: "14px 18px", textAlign: "right" }}>Pending Wage</th>
-                      <th style={{ padding: "14px 18px", textAlign: "center" }}>Actions</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Staff Member</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Mobile Number</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Assigned Role</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "center", whiteSpace: "nowrap" }}>Events Worked</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "right", whiteSpace: "nowrap" }}>Daily Wage</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "right", whiteSpace: "nowrap" }}>Total Earned</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "right", whiteSpace: "nowrap" }}>Pending Wage</th>
+                      <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "center", whiteSpace: "nowrap" }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -773,18 +817,22 @@ export default function StaffPage() {
                             ₹{formatMoney(staff.pending_balance || 0)}
                           </span>
                         </td>
-                        <td style={{ padding: "14px 18px", textAlign: "center" }}>
-                          <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                        <td style={{ padding: "14px 18px", textAlign: "center", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                          <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
                             <Link
                               href={`/staff/${staff.id}`}
                               style={{
-                                padding: "5px 12px",
+                                display: "inline-flex",
+                                alignItems: "center",
+                                height: "30px",
+                                padding: "0 10px",
                                 borderRadius: "6px",
                                 background: "#f0edf5",
                                 color: "#24103f",
                                 fontWeight: 700,
                                 fontSize: "12px",
                                 textDecoration: "none",
+                                whiteSpace: "nowrap",
                               }}
                             >
                               Worked Events & Wages
@@ -795,7 +843,10 @@ export default function StaffPage() {
                                   type="button"
                                   onClick={() => openEditStaff(staff)}
                                   style={{
-                                    padding: "5px 10px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    height: "30px",
+                                    padding: "0 10px",
                                     borderRadius: "6px",
                                     background: "#f8f7fb",
                                     color: "#5d4e70",
@@ -803,6 +854,7 @@ export default function StaffPage() {
                                     fontSize: "12px",
                                     fontWeight: 600,
                                     cursor: "pointer",
+                                    whiteSpace: "nowrap",
                                   }}
                                 >
                                   Edit
@@ -811,7 +863,10 @@ export default function StaffPage() {
                                   type="button"
                                   onClick={() => handleDeleteStaff(staff)}
                                   style={{
-                                    padding: "5px 10px",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    height: "30px",
+                                    padding: "0 10px",
                                     borderRadius: "6px",
                                     background: "#fee2e2",
                                     color: "#b91c1c",
@@ -819,6 +874,7 @@ export default function StaffPage() {
                                     fontSize: "12px",
                                     fontWeight: 600,
                                     cursor: "pointer",
+                                    whiteSpace: "nowrap",
                                   }}
                                 >
                                   Delete

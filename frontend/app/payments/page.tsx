@@ -308,26 +308,70 @@ export default function PaymentsPage() {
       {/* Main Content */}
       <div className="main-content">
         {/* Topbar */}
-        <header className="topbar">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+        <header
+          className="topbar"
+          style={{
+            minHeight: "72px",
+            height: "auto",
+            padding: "12px 24px",
+            background: "#ffffff",
+            borderBottom: "1px solid #e2e8f0",
+            gap: "12px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            flexWrap: "wrap",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 260px" }}>
             <MobileMenuButton />
-            <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#24103f" }}>
+            <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#24103f", whiteSpace: "nowrap" }}>
               Payments & Receivables
             </h1>
-            <span style={{ fontSize: "12px", color: "#6b5b7e", background: "#f0edf5", padding: "4px 10px", borderRadius: "12px", fontWeight: 600 }}>
+            <span
+              style={{
+                fontSize: "12px",
+                color: "#6b5b7e",
+                background: "#f0edf5",
+                padding: "4px 10px",
+                borderRadius: "12px",
+                fontWeight: 600,
+                whiteSpace: "nowrap",
+              }}
+            >
               {payments.length} Transactions Recorded
             </span>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            <div className="search-box">
-              <span style={{ color: "#8a7b9b" }}>🔍</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 auto" }}>
+            <div
+              className="search-box"
+              style={{
+                width: "260px",
+                height: "38px",
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: "8px",
+                display: "flex",
+                alignItems: "center",
+                padding: "0 10px",
+                gap: "8px",
+              }}
+            >
+              <span style={{ color: "#8a7b9b", fontSize: "14px" }}>🔍</span>
               <input
                 type="text"
-                placeholder="Search by client, event #, note..."
+                placeholder="Search client, event #, note..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                style={{ border: "none", background: "transparent", outline: "none", width: "100%", fontSize: "13px" }}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  outline: "none",
+                  width: "100%",
+                  fontSize: "13px",
+                  color: "#0f172a",
+                }}
               />
               {searchQuery && (
                 <button
@@ -348,15 +392,18 @@ export default function PaymentsPage() {
                   display: "inline-flex",
                   alignItems: "center",
                   gap: "6px",
+                  height: "38px",
                   background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                   color: "#ffffff",
                   border: "none",
                   borderRadius: "8px",
-                  padding: "8px 16px",
+                  padding: "0 16px",
                   fontWeight: 700,
                   fontSize: "12px",
                   cursor: "pointer",
-                  boxShadow: "0 4px 14px rgba(124, 58, 237, 0.3)",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  boxShadow: "0 2px 6px rgba(124, 58, 237, 0.25)",
                   transition: "all 0.15s ease",
                 }}
               >
@@ -442,8 +489,8 @@ export default function PaymentsPage() {
           </div>
 
           {/* Tab Navigation */}
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e0ed", marginBottom: "20px" }}>
-            <div style={{ display: "flex", gap: "24px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #e5e0ed", marginBottom: "20px", flexWrap: "wrap", gap: "12px" }}>
+            <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
               <button
                 type="button"
                 onClick={() => setActiveTab("payments")}
@@ -793,22 +840,26 @@ export default function PaymentsPage() {
                                 />
                               </div>
                             </td>
-                            <td style={{ padding: "14px 18px", textAlign: "center", whiteSpace: "nowrap" }}>
-                              <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                            <td style={{ padding: "14px 18px", textAlign: "center", verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                              <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
                                 {!isOwner && (
                                   <button
                                     type="button"
                                     onClick={() => openRecordModal(ev.id)}
                                     style={{
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      height: "28px",
                                       background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
                                       color: "#ffffff",
                                       border: "none",
                                       borderRadius: "6px",
-                                      padding: "6px 12px",
+                                      padding: "0 12px",
                                       fontSize: "12px",
                                       fontWeight: 700,
                                       cursor: "pointer",
-                                      boxShadow: "0 2px 8px rgba(124, 58, 237, 0.25)",
+                                      whiteSpace: "nowrap",
+                                      boxShadow: "0 2px 6px rgba(124, 58, 237, 0.25)",
                                     }}
                                   >
                                     + Pay
@@ -817,17 +868,19 @@ export default function PaymentsPage() {
                                 <Link
                                   href={`/billing?eventId=${ev.id}`}
                                   style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "4px",
+                                    height: "28px",
                                     background: "#f5f3ff",
                                     color: "#6d28d9",
                                     border: "1px solid #ddd6fe",
                                     borderRadius: "5px",
-                                    padding: "5px 10px",
+                                    padding: "0 10px",
                                     fontSize: "12px",
                                     fontWeight: 700,
                                     textDecoration: "none",
-                                    display: "inline-flex",
-                                    alignItems: "center",
-                                    gap: "4px",
+                                    whiteSpace: "nowrap",
                                   }}
                                   title="Print or view Tax Invoice / Bill"
                                 >
@@ -836,13 +889,17 @@ export default function PaymentsPage() {
                                 <Link
                                   href={`/events/${ev.id}`}
                                   style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    height: "28px",
                                     background: "#f0edf5",
                                     color: "#24103f",
                                     borderRadius: "5px",
-                                    padding: "5px 10px",
+                                    padding: "0 10px",
                                     fontSize: "12px",
                                     fontWeight: 600,
                                     textDecoration: "none",
+                                    whiteSpace: "nowrap",
                                   }}
                                 >
                                   View
@@ -877,12 +934,12 @@ export default function PaymentsPage() {
                   <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
                     <thead>
                       <tr style={{ background: "#f8f7fb", borderBottom: "1px solid #e9e5f0", color: "#5d4e70", fontWeight: 600 }}>
-                        <th style={{ padding: "14px 18px" }}>Disbursement Date</th>
-                        <th style={{ padding: "14px 18px" }}>Record #</th>
-                        <th style={{ padding: "14px 18px" }}>Staff Member</th>
-                        <th style={{ padding: "14px 18px" }}>Event Reference</th>
-                        <th style={{ padding: "14px 18px" }}>Note / Role</th>
-                        <th style={{ padding: "14px 18px", textAlign: "right" }}>Wage Paid</th>
+                        <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Disbursement Date</th>
+                        <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Record #</th>
+                        <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Staff Member</th>
+                        <th style={{ padding: "14px 18px", verticalAlign: "middle", whiteSpace: "nowrap" }}>Event Reference</th>
+                        <th style={{ padding: "14px 18px", verticalAlign: "middle" }}>Note / Role</th>
+                        <th style={{ padding: "14px 18px", verticalAlign: "middle", textAlign: "right", whiteSpace: "nowrap" }}>Wage Paid</th>
                       </tr>
                     </thead>
                     <tbody>
