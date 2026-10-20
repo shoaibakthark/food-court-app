@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/auth";
 import { SidebarUserCard, OwnerBanner, NavLink, TopbarUserBadge, AppSidebar, MobileMenuButton } from "../components/AuthBar";
+import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
 
 const API_URL = typeof window !== "undefined" ? "/api/py" : "http://127.0.0.1:8000";
 
@@ -84,6 +85,21 @@ export default function ReportsPage() {
   const [staffPayments, setStaffPayments] = useState<StaffPaymentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [exportingExcel, setExportingExcel] = useState(false);
+
+  const handleExportExcel = async () => {
+    try {
+      setExportingExcel(true);
+      const res = await exportEntireDatabaseToExcel();
+      if (!res.success) {
+        alert("Failed to export Excel backup: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error exporting Excel backup: " + err.message);
+    } finally {
+      setExportingExcel(false);
+    }
+  };
 
   // Filters
   const [dateRange, setDateRange] = useState<"all" | "this_month" | "last_30" | "ytd">("all");
@@ -292,6 +308,30 @@ export default function ReportsPage() {
               <option value="last_30">Last 30 Days</option>
               <option value="ytd">Year to Date (YTD)</option>
             </select>
+
+            {/* Excel Backup Button */}
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={exportingExcel}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                color: "#fff",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 14px",
+                fontWeight: 700,
+                fontSize: "12px",
+                cursor: exportingExcel ? "not-allowed" : "pointer",
+                boxShadow: "0 2px 6px rgba(5, 150, 105, 0.3)",
+              }}
+              title="Download entire database as an Excel (.xlsx) spreadsheet"
+            >
+              📊 {exportingExcel ? "Exporting..." : "Backup to Excel"}
+            </button>
 
             {/* Print Button */}
             <button

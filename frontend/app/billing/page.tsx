@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { useAuth } from "../lib/auth";
 import { AppSidebar, MobileMenuButton } from "../components/NavDrawer";
 import { TopbarUserBadge, OwnerBanner } from "../components/AuthBar";
+import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
 
 const API_URL = typeof window !== "undefined" ? "/api/py" : "http://127.0.0.1:8000";
 

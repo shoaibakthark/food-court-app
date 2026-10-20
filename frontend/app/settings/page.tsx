@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/auth";
 import { SidebarUserCard, OwnerBanner, NavLink, TopbarUserBadge, AppSidebar, MobileMenuButton } from "../components/AuthBar";
+import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
 
 const API_URL = typeof window !== "undefined" ? "/api/py" : "http://127.0.0.1:8000";
 
@@ -53,6 +54,26 @@ export default function SettingsPage() {
     expenses: 0,
   });
   const [exporting, setExporting] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
+  const [exportProgress, setExportProgress] = useState<string | null>(null);
+
+  const handleExportExcel = async () => {
+    try {
+      setExportingExcel(true);
+      const res = await exportEntireDatabaseToExcel((msg) => setExportProgress(msg));
+      if (res.success) {
+        setSuccessMsg(`✓ Complete Excel database backup downloaded successfully (${res.totalRecords} total records across 8 sheets).`);
+        setTimeout(() => setSuccessMsg(null), 6000);
+      } else {
+        alert("Failed to export Excel backup: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error exporting Excel backup: " + err.message);
+    } finally {
+      setExportingExcel(false);
+      setExportProgress(null);
+    }
+  };
 
   // Load persisted settings
   useEffect(() => {
@@ -192,24 +213,47 @@ export default function SettingsPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             <button
               type="button"
+              onClick={handleExportExcel}
+              disabled={exportingExcel}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 15px",
+                fontWeight: 700,
+                fontSize: "12px",
+                cursor: exportingExcel ? "not-allowed" : "pointer",
+                boxShadow: "0 3px 10px rgba(5, 150, 105, 0.35)",
+              }}
+              title="Download entire database as an Excel (.xlsx) spreadsheet with multiple sheets"
+            >
+              📊 {exportingExcel ? (exportProgress || "Exporting Excel...") : "Backup to Excel (.xlsx)"}
+            </button>
+
+            <button
+              type="button"
               onClick={handleExportBackup}
               disabled={exporting}
               style={{
                 display: "inline-flex",
                 alignItems: "center",
                 gap: "6px",
-                background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                color: "#ffffff",
-                border: "none",
+                background: "#f1f5f9",
+                color: "#334155",
+                border: "1px solid #cbd5e1",
                 borderRadius: "8px",
-                padding: "8px 14px",
-                fontWeight: 700,
+                padding: "8px 12px",
+                fontWeight: 600,
                 fontSize: "12px",
                 cursor: exporting ? "not-allowed" : "pointer",
-                boxShadow: "0 4px 14px rgba(124, 58, 237, 0.35)",
               }}
+              title="Download raw JSON data backup"
             >
-              💾 {exporting ? "Exporting..." : "Export Backup"}
+              📦 {exporting ? "Exporting..." : "JSON"}
             </button>
 
             <TopbarUserBadge />
@@ -631,30 +675,85 @@ export default function SettingsPage() {
                   boxShadow: "0 2px 10px rgba(36, 16, 63, 0.03)",
                 }}
               >
-                <h3 style={{ margin: "0 0 8px 0", color: "#24103f", fontSize: "17px" }}>
-                  Database Backup & Archival
+                <h3 style={{ margin: "0 0 6px 0", color: "#24103f", fontSize: "18px", fontWeight: 800 }}>
+                  Database Backup & Complete Data Export
                 </h3>
-                <p style={{ margin: "0 0 16px 0", color: "#7a6e8a", fontSize: "13px" }}>
-                  Download a complete portable JSON export of all events, customers, staff, payments, and expenses for safekeeping.
+                <p style={{ margin: "0 0 16px 0", color: "#64748b", fontSize: "13px", lineHeight: 1.5 }}>
+                  Export all business records into a multi-tab Microsoft Excel (.xlsx) spreadsheet, formatted for direct reporting, accounting, and secure offline storage.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleExportBackup}
-                  disabled={exporting}
+
+                <div
                   style={{
-                    background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                    color: "#ffffff",
-                    border: "none",
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
                     borderRadius: "8px",
-                    padding: "10px 20px",
-                    fontWeight: 700,
-                    fontSize: "13px",
-                    cursor: exporting ? "not-allowed" : "pointer",
-                    boxShadow: "0 4px 14px rgba(124, 58, 237, 0.35)",
+                    padding: "12px 16px",
+                    marginBottom: "18px",
+                    fontSize: "12.5px",
+                    color: "#334155",
                   }}
                 >
-                  {exporting ? "Generating Backup File..." : "Download Complete JSON Backup"}
-                </button>
+                  <div style={{ fontWeight: 700, color: "#0f172a", marginBottom: "6px" }}>
+                    Included in this Complete Backup (8 Sheets):
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "6px" }}>
+                    <span>✓ <strong>Events & Invoices</strong> (Dates, Pax, Quotes, Balances)</span>
+                    <span>✓ <strong>Payments Received</strong> (Receipts, Methods, Categories)</span>
+                    <span>✓ <strong>Expenses Ledger</strong> (Payees, Vouchers, Modes)</span>
+                    <span>✓ <strong>Expense Settlements</strong> (Cleared Ledger Records)</span>
+                    <span>✓ <strong>Customers Directory</strong> (Names, Mobiles, Venues)</span>
+                    <span>✓ <strong>Staff & Crew</strong> (Roles, Contacts, Wage Rates)</span>
+                    <span>✓ <strong>Food Menu Catalog</strong> (Courses, Rates, Items)</span>
+                    <span>✓ <strong>Decor Inventory</strong> (Props, Status, Rental Rates)</span>
+                  </div>
+                </div>
+
+                <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+                  <button
+                    type="button"
+                    onClick={handleExportExcel}
+                    disabled={exportingExcel}
+                    style={{
+                      background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "11px 22px",
+                      fontWeight: 700,
+                      fontSize: "13.5px",
+                      cursor: exportingExcel ? "not-allowed" : "pointer",
+                      boxShadow: "0 4px 14px rgba(5, 150, 105, 0.4)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                    }}
+                  >
+                    <span>📊</span>
+                    <span>{exportingExcel ? (exportProgress || "Generating Excel Backup...") : "Download Complete Excel Backup (.xlsx)"}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleExportBackup}
+                    disabled={exporting}
+                    style={{
+                      background: "#ffffff",
+                      color: "#475569",
+                      border: "1.5px solid #cbd5e1",
+                      borderRadius: "8px",
+                      padding: "10px 18px",
+                      fontWeight: 600,
+                      fontSize: "13px",
+                      cursor: exporting ? "not-allowed" : "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>📦</span>
+                    <span>{exporting ? "Generating..." : "Download Raw JSON Backup"}</span>
+                  </button>
+                </div>
               </div>
             </div>
           )}
