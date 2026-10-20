@@ -1812,6 +1812,39 @@ def create_expense_settlement(
         if amount <= 0:
             raise HTTPException(status_code=400, detail="Settlement amount must be greater than zero")
 
+        # Outstanding credit balance check: prevent excess or duplicate clearances
+        vendor_expenses = db.query(models.Expense).filter(
+            models.Expense.vendor.ilike(vendor)
+        ).all()
+
+        credit_expenses = [
+            e for e in vendor_expenses
+            if e.payment_method and any(
+                term in e.payment_method.lower()
+                for term in ("credit", "account", "due", "payable")
+            )
+        ]
+        total_credit = sum((Decimal(str(e.amount or 0)) for e in credit_expenses), Decimal("0"))
+
+        vendor_settlements = db.query(models.ExpenseSettlement).filter(
+            models.ExpenseSettlement.vendor.ilike(vendor)
+        ).all()
+        total_cleared = sum((Decimal(str(s.amount or 0)) for s in vendor_settlements), Decimal("0"))
+
+        pending_balance = max(Decimal("0"), total_credit - total_cleared)
+
+        if pending_balance <= Decimal("0"):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot record clearance: Supplier '{vendor}' has ₹0 outstanding credit due (already fully settled).",
+            )
+
+        if amount > pending_balance:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Clearance amount (₹{amount:,.2f}) exceeds the outstanding credit balance of ₹{pending_balance:,.2f} for '{vendor}'. Maximum allowed clearance is ₹{pending_balance:,.2f}.",
+            )
+
         date_val = payload.get("settlement_date") or payload.get("date")
         if date_val and isinstance(date_val, str) and date_val.strip():
             from datetime import datetime
