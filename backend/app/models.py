@@ -667,4 +667,14 @@ class KitchenDuty(Base):
 
 
 
-
+
+class ExpenseSettlement(Base):
+    __tablename__ = "expense_settlements"
+
+    id = Column(Integer, primary_key=True, index=True)
+    vendor = Column(String(150), nullable=False, index=True)
+    amount = Column(Numeric(12, 2), nullable=False)
+    settlement_date = Column(Date, nullable=False)
+    payment_mode = Column(String(50), nullable=False, default="Cash")  # 'Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Company Card'
+    reference_no = Column(String(100), nullable=True)
+    note = Column(String(500), nullable=True)

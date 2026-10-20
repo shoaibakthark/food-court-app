@@ -1857,6 +1857,110 @@ def delete_expense_endpoint(
     return {"message": "Expense deleted successfully"}
 
 
+# ============================================================
+# EXPENSE SETTLEMENTS (CLEAR LEDGER AMOUNTS)
+# ============================================================
+
+@app.get("/expenses/settlements")
+def get_expense_settlements(
+    vendor: Optional[str] = None,
+    db: Session = Depends(get_db),
+):
+    try:
+        models.Base.metadata.create_all(bind=engine)
+        query = db.query(models.ExpenseSettlement)
+        if vendor and vendor.strip():
+            query = query.filter(models.ExpenseSettlement.vendor.ilike(f"%{vendor.strip()}%"))
+        settlements = query.order_by(models.ExpenseSettlement.settlement_date.desc(), models.ExpenseSettlement.id.desc()).all()
+        return [
+            {
+                "id": s.id,
+                "vendor": s.vendor,
+                "amount": float(s.amount),
+                "settlement_date": str(s.settlement_date),
+                "payment_mode": s.payment_mode or "Cash",
+                "reference_no": s.reference_no,
+                "note": s.note,
+            }
+            for s in settlements
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get settlements: {str(e)}")
+
+
+@app.post("/expenses/settlements")
+def create_expense_settlement(
+    payload: dict,
+    db: Session = Depends(get_db),
+):
+    try:
+        models.Base.metadata.create_all(bind=engine)
+        vendor = str(payload.get("vendor", "")).strip()
+        if not vendor:
+            raise HTTPException(status_code=400, detail="Vendor / Payee name is required")
+
+        amount_raw = payload.get("amount", 0)
+        amount = Decimal(str(amount_raw))
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="Settlement amount must be greater than zero")
+
+        date_val = payload.get("settlement_date") or payload.get("date")
+        if date_val and isinstance(date_val, str) and date_val.strip():
+            from datetime import datetime
+            try:
+                parsed_date = datetime.strptime(date_val.strip()[:10], "%Y-%m-%d").date()
+            except ValueError:
+                parsed_date = DateType.today()
+        else:
+            parsed_date = DateType.today()
+
+        settlement = models.ExpenseSettlement(
+            vendor=vendor,
+            amount=amount,
+            settlement_date=parsed_date,
+            payment_mode=str(payload.get("payment_mode") or "Cash").strip(),
+            reference_no=str(payload.get("reference_no") or "").strip() or None,
+            note=str(payload.get("note") or "").strip() or None,
+        )
+        db.add(settlement)
+        db.commit()
+        db.refresh(settlement)
+        return {
+            "id": settlement.id,
+            "vendor": settlement.vendor,
+            "amount": float(settlement.amount),
+            "settlement_date": str(settlement.settlement_date),
+            "payment_mode": settlement.payment_mode,
+            "reference_no": settlement.reference_no,
+            "note": settlement.note,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to record settlement: {str(e)}")
+
+
+@app.delete("/expenses/settlements/{settlement_id}")
+def delete_expense_settlement(
+    settlement_id: int,
+    db: Session = Depends(get_db),
+):
+    try:
+        settlement = db.query(models.ExpenseSettlement).filter(models.ExpenseSettlement.id == settlement_id).first()
+        if not settlement:
+            raise HTTPException(status_code=404, detail="Settlement not found")
+        db.delete(settlement)
+        db.commit()
+        return {"message": "Settlement deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete settlement: {str(e)}")
+
+
+
 
 # ============================================================
 # SUB-TEAMS

@@ -24,6 +24,16 @@ type ExpenseRecord = {
   event_place?: string | null;
 };
 
+type ExpenseSettlementRecord = {
+  id: number;
+  vendor: string;
+  amount: number;
+  settlement_date: string;
+  payment_mode: string;
+  reference_no?: string | null;
+  note?: string | null;
+};
+
 type EventOption = {
   id: number;
   date: string;
@@ -33,7 +43,7 @@ type EventOption = {
 };
 
 type DatePreset = "all" | "today" | "this_week" | "this_month" | "last_month" | "custom";
-type LedgerTab = "general" | "vendors" | "audit";
+type LedgerTab = "general" | "vendors" | "settlement" | "audit";
 
 const CATEGORIES = [
   "Raw Materials & Groceries",
@@ -85,6 +95,7 @@ export default function ExpensesPage() {
   const { user, isOwner } = useAuth();
 
   const [expenses, setExpenses] = useState<ExpenseRecord[]>([]);
+  const [settlements, setSettlements] = useState<ExpenseSettlementRecord[]>([]);
   const [events, setEvents] = useState<EventOption[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -96,7 +107,7 @@ export default function ExpensesPage() {
   // Selected Vendor for Individual Account Ledger View
   const [selectedVendor, setSelectedVendor] = useState<string | null>(null);
 
-  // Filters
+  // Filters for General Ledger
   const [searchQuery, setSearchQuery] = useState("");
   const [datePreset, setDatePreset] = useState<DatePreset>("all");
   const [customStartDate, setCustomStartDate] = useState("");
@@ -106,12 +117,16 @@ export default function ExpensesPage() {
   const [allocationFilter, setAllocationFilter] = useState("All"); // All | Event | Overhead
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc"); // desc = latest first, asc = oldest first
 
-  // Modal State for Add / Edit
+  // Filters for Settlement Section
+  const [settlementSearch, setSettlementSearch] = useState("");
+  const [settlementStatusFilter, setSettlementStatusFilter] = useState<"all" | "due" | "settled">("all");
+
+  // Modal State for Add / Edit Expense
   const [modalOpen, setModalOpen] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Form Fields
+  // Form Fields for Add / Edit Expense
   const [formTitle, setFormTitle] = useState("");
   const [formCategory, setFormCategory] = useState(CATEGORIES[0]);
   const [formAmount, setFormAmount] = useState("");
@@ -122,14 +137,25 @@ export default function ExpensesPage() {
   const [formBillNumber, setFormBillNumber] = useState("");
   const [formNote, setFormNote] = useState("");
 
+  // Modal State for CLEAR LEDGER AMOUNT / SETTLEMENT
+  const [settleModalOpen, setSettleModalOpen] = useState(false);
+  const [settling, setSettling] = useState(false);
+  const [settleVendor, setSettleVendor] = useState("");
+  const [settleAmount, setSettleAmount] = useState("");
+  const [settleDate, setSettleDate] = useState(new Date().toISOString().slice(0, 10));
+  const [settleMode, setSettleMode] = useState(PAYMENT_METHODS[0]);
+  const [settleReference, setSettleReference] = useState("");
+  const [settleNote, setSettleNote] = useState("");
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
 
-      const [expRes, eventsRes] = await Promise.all([
+      const [expRes, eventsRes, settleRes] = await Promise.all([
         fetch(`${API_URL}/expenses`, { cache: "no-store" }),
         fetch(`${API_URL}/events`, { cache: "no-store" }),
+        fetch(`${API_URL}/expenses/settlements`, { cache: "no-store" }).catch(() => null),
       ]);
 
       if (expRes.ok) {
@@ -151,6 +177,11 @@ export default function ExpensesPage() {
             : []
         );
       }
+
+      if (settleRes && settleRes.ok) {
+        const sData = await settleRes.json();
+        setSettlements(Array.isArray(sData) ? sData : []);
+      }
     } catch (err) {
       console.error("Failed to load expenses data:", err);
       setError("Unable to connect to the server. Please ensure the backend is running.");
@@ -169,8 +200,11 @@ export default function ExpensesPage() {
     expenses.forEach((e) => {
       if (e.vendor && e.vendor.trim()) set.add(e.vendor.trim());
     });
+    settlements.forEach((s) => {
+      if (s.vendor && s.vendor.trim()) set.add(s.vendor.trim());
+    });
     return Array.from(set).sort();
-  }, [expenses]);
+  }, [expenses, settlements]);
 
   // Helper date boundary calculators
   const dateBoundaries = useMemo(() => {
@@ -266,7 +300,6 @@ export default function ExpensesPage() {
 
   // Chronologically sorted entries with Running Balance (Accounting Ledger calculation)
   const ledgerEntries = useMemo(() => {
-    // Always sort oldest-to-newest first to compute correct cumulative balance
     const sorted = [...filteredExpenses].sort((a, b) => {
       const da = a.expense_date || "";
       const db = b.expense_date || "";
@@ -283,12 +316,21 @@ export default function ExpensesPage() {
       };
     });
 
-    // If display order is descending (latest first), reverse the display order
     if (sortOrder === "desc") {
       return [...computed].reverse();
     }
     return computed;
   }, [filteredExpenses, sortOrder]);
+
+  // Settlement totals mapped by vendor
+  const settlementsByVendor = useMemo(() => {
+    const map: Record<string, number> = {};
+    settlements.forEach((s) => {
+      const v = s.vendor?.trim() || "Direct / Unassigned Vendor";
+      map[v] = (map[v] || 0) + (s.amount || 0);
+    });
+    return map;
+  }, [settlements]);
 
   // Overall Financial Metrics
   const metrics = useMemo(() => {
@@ -326,6 +368,13 @@ export default function ExpensesPage() {
       categoryTotals[cat] = (categoryTotals[cat] || 0) + amt;
     });
 
+    let totalSettled = 0;
+    settlements.forEach((s) => {
+      totalSettled += s.amount || 0;
+    });
+
+    const netLedgerBalance = Math.max(0, totalExpense - totalSettled);
+
     let topCat = "None";
     let topCatAmt = 0;
     Object.entries(categoryTotals).forEach(([cat, val]) => {
@@ -342,10 +391,12 @@ export default function ExpensesPage() {
       overhead,
       cashTotal,
       digitalTotal,
+      totalSettled,
+      netLedgerBalance,
       topCat,
       topCatAmt,
     };
-  }, [expenses, dateBoundaries.currentYearMonth]);
+  }, [expenses, settlements, dateBoundaries.currentYearMonth]);
 
   // Filtered Totals for active ledger view
   const activeLedgerTotals = useMemo(() => {
@@ -362,13 +413,15 @@ export default function ExpensesPage() {
     return { sum, cash, digital, count: filteredExpenses.length };
   }, [filteredExpenses]);
 
-  // Grouped Vendor Ledgers (Accounts Payable / Supplier Accounts)
+  // Grouped Vendor Accounts & Balances
   const vendorLedgers = useMemo(() => {
     const map: Record<
       string,
       {
         name: string;
         totalAmount: number;
+        totalCleared: number;
+        pendingBalance: number;
         billCount: number;
         lastDate: string;
         categories: Record<string, number>;
@@ -382,6 +435,8 @@ export default function ExpensesPage() {
         map[vName] = {
           name: vName,
           totalAmount: 0,
+          totalCleared: 0,
+          pendingBalance: 0,
           billCount: 0,
           lastDate: "",
           categories: {},
@@ -399,8 +454,32 @@ export default function ExpensesPage() {
       item.expenses.push(e);
     });
 
+    // Populate settlements cleared
+    Object.values(map).forEach((item) => {
+      item.totalCleared = settlementsByVendor[item.name] || 0;
+      item.pendingBalance = Math.max(0, item.totalAmount - item.totalCleared);
+    });
+
     return Object.values(map).sort((a, b) => b.totalAmount - a.totalAmount);
-  }, [expenses]);
+  }, [expenses, settlementsByVendor]);
+
+  // Filtered Vendor Accounts for the Settlement Section
+  const filteredSettlementVendors = useMemo(() => {
+    return vendorLedgers.filter((v) => {
+      if (settlementSearch.trim()) {
+        const q = settlementSearch.toLowerCase().trim();
+        if (!v.name.toLowerCase().includes(q)) return false;
+      }
+      if (settlementStatusFilter === "due" && v.pendingBalance <= 0) return false;
+      if (settlementStatusFilter === "settled" && v.pendingBalance > 0) return false;
+      return true;
+    });
+  }, [vendorLedgers, settlementSearch, settlementStatusFilter]);
+
+  // Count of vendor accounts with pending due balances
+  const pendingVendorsCount = useMemo(() => {
+    return vendorLedgers.filter((v) => v.pendingBalance > 0).length;
+  }, [vendorLedgers]);
 
   // Active Selected Vendor Details & Running Ledger
   const selectedVendorData = useMemo(() => {
@@ -408,7 +487,6 @@ export default function ExpensesPage() {
     const vendorObj = vendorLedgers.find((v) => v.name === selectedVendor);
     if (!vendorObj) return null;
 
-    // Chronological order for vendor account ledger
     const sorted = [...vendorObj.expenses].sort((a, b) => {
       const da = a.expense_date || "";
       const db = b.expense_date || "";
@@ -427,7 +505,7 @@ export default function ExpensesPage() {
 
     return {
       ...vendorObj,
-      entries: computed.reverse(), // newest first with accurate running total
+      entries: computed.reverse(),
     };
   }, [selectedVendor, vendorLedgers]);
 
@@ -520,7 +598,7 @@ export default function ExpensesPage() {
       .sort((a, b) => b.total - a.total);
   }, [expenses, metrics.totalExpense]);
 
-  // Open Add Modal
+  // Open Add Expense Modal
   const openAddModal = (presetEventId?: number) => {
     setEditingExpenseId(null);
     setFormTitle("");
@@ -535,7 +613,7 @@ export default function ExpensesPage() {
     setModalOpen(true);
   };
 
-  // Open Edit Modal
+  // Open Edit Expense Modal
   const openEditModal = (exp: ExpenseRecord) => {
     setEditingExpenseId(exp.id);
     setFormTitle(exp.title);
@@ -550,7 +628,22 @@ export default function ExpensesPage() {
     setModalOpen(true);
   };
 
-  // Submit Modal (Create / Update)
+  // Open CLEAR LEDGER AMOUNT / SETTLEMENT MODAL
+  const openClearSettlementModal = (vendorName?: string, presetAmount?: number) => {
+    const targetVendor = vendorName || (vendorLedgers[0]?.name ?? "");
+    const vendorData = vendorLedgers.find((v) => v.name === targetVendor);
+    const amountToSet = presetAmount !== undefined ? String(presetAmount) : vendorData ? String(vendorData.pendingBalance) : "";
+
+    setSettleVendor(targetVendor);
+    setSettleAmount(amountToSet);
+    setSettleDate(new Date().toISOString().slice(0, 10));
+    setSettleMode(PAYMENT_METHODS[0]);
+    setSettleReference("");
+    setSettleNote(`Ledger clearance for ${targetVendor}`);
+    setSettleModalOpen(true);
+  };
+
+  // Submit Modal (Create / Update Expense)
   const handleSaveExpense = async (e: FormEvent) => {
     e.preventDefault();
     const title = formTitle.trim();
@@ -609,6 +702,69 @@ export default function ExpensesPage() {
     }
   };
 
+  // Submit CLEAR LEDGER AMOUNT (Settlement)
+  const handleSaveSettlement = async (e: FormEvent) => {
+    e.preventDefault();
+    const vendor = settleVendor.trim();
+    if (!vendor) {
+      alert("Please select or enter the vendor/payee name.");
+      return;
+    }
+    const amt = parseFloat(settleAmount);
+    if (!amt || amt <= 0) {
+      alert("Please enter a valid settlement amount greater than zero.");
+      return;
+    }
+
+    try {
+      setSettling(true);
+      const payload = {
+        vendor,
+        amount: amt,
+        settlement_date: settleDate,
+        payment_mode: settleMode,
+        reference_no: settleReference.trim() || null,
+        note: settleNote.trim() || null,
+      };
+
+      const res = await fetchWithAuth(`${API_URL}/expenses/settlements`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => null);
+        throw new Error(errData?.detail || "Failed to clear ledger amount");
+      }
+
+      setSuccessMsg(`✓ Ledger amount of ₹${formatMoney(amt)} cleared for ${vendor} successfully!`);
+      setSettleModalOpen(false);
+      await loadData();
+      setTimeout(() => setSuccessMsg(null), 4000);
+    } catch (err: any) {
+      alert(err.message || "Failed to record settlement");
+    } finally {
+      setSettling(false);
+    }
+  };
+
+  // Delete Settlement (Revert clearance)
+  const handleDeleteSettlement = async (id: number, vendor: string, amt: number) => {
+    if (!window.confirm(`Are you sure you want to void this settlement clearance of ₹${formatMoney(amt)} for ${vendor}? This will restore the pending balance.`)) {
+      return;
+    }
+    try {
+      const res = await fetchWithAuth(`${API_URL}/expenses/settlements/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Failed to void settlement");
+      setSuccessMsg(`Settlement clearance #${id} voided successfully.`);
+      await loadData();
+      setTimeout(() => setSuccessMsg(null), 3000);
+    } catch (err: any) {
+      alert(err.message || "Unable to void settlement");
+    }
+  };
+
   // Delete Expense
   const handleDeleteExpense = async (id: number, title: string) => {
     if (!window.confirm(`Are you sure you want to permanently delete expense record #${id} ("${title}") from the ledger?`)) {
@@ -661,7 +817,7 @@ export default function ExpensesPage() {
                 </span>
               </div>
               <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#8a7b9b" }}>
-                General debit ledger, supplier accounts, operational overheads, and financial auditing
+                General debit ledger, supplier accounts, settlements & amount clearances
               </p>
             </div>
           </div>
@@ -694,6 +850,32 @@ export default function ExpensesPage() {
                 </button>
               )}
             </div>
+
+            {/* Clear Ledger Amount Quick Button */}
+            {!isOwner && (
+              <button
+                type="button"
+                onClick={() => openClearSettlementModal()}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "8px",
+                  padding: "8px 14px",
+                  fontWeight: 700,
+                  fontSize: "12px",
+                  cursor: "pointer",
+                  whiteSpace: "nowrap",
+                  flexShrink: 0,
+                  boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
+                }}
+              >
+                <span>🤝</span> Clear Amount
+              </button>
+            )}
 
             {/* Print Ledger Button */}
             <button
@@ -764,10 +946,14 @@ export default function ExpensesPage() {
                 Food Court Event Management
               </h1>
               <h2 style={{ margin: "4px 0", fontSize: "16px", color: "#444" }}>
-                {selectedVendor ? `Vendor Account Statement: ${selectedVendor}` : "General Outflow Expense Ledger"}
+                {activeTab === "settlement"
+                  ? "Ledger Settlement & Clearance Statement"
+                  : selectedVendor
+                  ? `Vendor Account Statement: ${selectedVendor}`
+                  : "General Outflow Expense Ledger"}
               </h2>
               <p style={{ margin: 0, fontSize: "12px", color: "#666" }}>
-                Period: {datePreset.replace("_", " ").toUpperCase()} {customStartDate ? `(${customStartDate} to ${customEndDate || "Today"})` : ""}
+                Total Incurred: ₹{formatMoney(metrics.totalExpense)} • Total Cleared: ₹{formatMoney(metrics.totalSettled)} • Outstanding Balance: ₹{formatMoney(metrics.netLedgerBalance)}
               </p>
             </div>
             <div style={{ textAlign: "right", fontSize: "12px", color: "#555" }}>
@@ -860,97 +1046,21 @@ export default function ExpensesPage() {
                   left: 0,
                   right: 0,
                   height: "3px",
-                  background: "linear-gradient(90deg, #ef4444 0%, #f43f5e 100%)",
-                }}
-              />
-              <div style={{ fontSize: "12px", color: "#b91c1c", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Total Cumulative Outflows
-              </div>
-              <div style={{ fontSize: "26px", fontWeight: 800, color: "#991b1b", marginTop: "8px" }}>
-                ₹{formatMoney(metrics.totalExpense)}
-              </div>
-              <div style={{ fontSize: "12px", color: "#7a6e8a", marginTop: "6px" }}>
-                Across {expenses.length} debit vouchers logged
-              </div>
-            </div>
-
-            {/* 2. This Month MTD */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #ebe4f5",
-                borderRadius: "14px",
-                padding: "20px",
-                boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
-                position: "relative",
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                minHeight: "125px",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: "3px",
                   background: "linear-gradient(90deg, #7c3aed 0%, #a855f7 100%)",
                 }}
               />
               <div style={{ fontSize: "12px", color: "#6d28d9", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Current Month (MTD)
+                Total Ledger Incurred
               </div>
               <div style={{ fontSize: "26px", fontWeight: 800, color: "#1e0836", marginTop: "8px" }}>
-                ₹{formatMoney(metrics.mtdExpense)}
+                ₹{formatMoney(metrics.totalExpense)}
               </div>
-              <div style={{ fontSize: "12px", color: "#8a7b9b", marginTop: "6px" }}>
-                Disbursed this calendar month
-              </div>
-            </div>
-
-            {/* 3. Cost Allocation */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #ebe4f5",
-                borderRadius: "14px",
-                padding: "20px",
-                boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
-                position: "relative",
-                overflow: "hidden",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                minHeight: "125px",
-              }}
-            >
-              <div
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: "3px",
-                  background: "linear-gradient(90deg, #0284c7 0%, #38bdf8 100%)",
-                }}
-              />
-              <div style={{ fontSize: "12px", color: "#0369a1", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Allocation Split
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "18px", fontWeight: 800, color: "#1e0836" }}>
-                  Event: ₹{formatMoney(metrics.eventSpecific)}
-                </span>
-              </div>
-              <div style={{ fontSize: "12px", color: "#0369a1", marginTop: "6px" }}>
-                Overhead: ₹{formatMoney(metrics.overhead)}
+              <div style={{ fontSize: "12px", color: "#7a6e8a", marginTop: "6px" }}>
+                Across {expenses.length} debit bills logged
               </div>
             </div>
 
-            {/* 4. Cash vs Digital Mode */}
+            {/* 2. Total Cleared / Settled */}
             <div
               style={{
                 background: "#ffffff",
@@ -977,15 +1087,87 @@ export default function ExpensesPage() {
                 }}
               />
               <div style={{ fontSize: "12px", color: "#047857", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Disbursement Mode
+                Total Cleared / Settled
               </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginTop: "8px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "18px", fontWeight: 800, color: "#065f46" }}>
-                  Cash: ₹{formatMoney(metrics.cashTotal)}
-                </span>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#065f46", marginTop: "8px" }}>
+                ₹{formatMoney(metrics.totalSettled)}
               </div>
               <div style={{ fontSize: "12px", color: "#047857", marginTop: "6px" }}>
-                Digital/Bank: ₹{formatMoney(metrics.digitalTotal)}
+                {settlements.length} settlement clearances recorded
+              </div>
+            </div>
+
+            {/* 3. Pending Ledger Balance Due */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #ebe4f5",
+                borderRadius: "14px",
+                padding: "20px",
+                boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
+                position: "relative",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                minHeight: "125px",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: "3px",
+                  background: "linear-gradient(90deg, #ef4444 0%, #f43f5e 100%)",
+                }}
+              />
+              <div style={{ fontSize: "12px", color: "#b91c1c", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                Outstanding Ledger Due
+              </div>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#991b1b", marginTop: "8px" }}>
+                ₹{formatMoney(metrics.netLedgerBalance)}
+              </div>
+              <div style={{ fontSize: "12px", color: "#b91c1c", marginTop: "6px" }}>
+                {pendingVendorsCount > 0 ? `${pendingVendorsCount} supplier accounts awaiting settlement` : "All supplier balances settled"}
+              </div>
+            </div>
+
+            {/* 4. This Month MTD */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #ebe4f5",
+                borderRadius: "14px",
+                padding: "20px",
+                boxShadow: "0 2px 10px rgba(124, 58, 237, 0.04)",
+                position: "relative",
+                overflow: "hidden",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                minHeight: "125px",
+              }}
+            >
+              <div
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: "3px",
+                  background: "linear-gradient(90deg, #0284c7 0%, #38bdf8 100%)",
+                }}
+              />
+              <div style={{ fontSize: "12px", color: "#0369a1", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                Current Month (MTD)
+              </div>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#0369a1", marginTop: "8px" }}>
+                ₹{formatMoney(metrics.mtdExpense)}
+              </div>
+              <div style={{ fontSize: "12px", color: "#8a7b9b", marginTop: "6px" }}>
+                Disbursed this calendar month
               </div>
             </div>
           </div>
@@ -1044,7 +1226,33 @@ export default function ExpensesPage() {
                 marginBottom: "-2px",
               }}
             >
-              <span>🏪</span> Vendor & Supplier Ledgers ({vendorLedgers.length})
+              <span>🏪</span> Vendor & Supplier Accounts ({vendorLedgers.length})
+            </button>
+
+            {/* THE NEW SETTLEMENT SECTION TAB */}
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("settlement");
+                setSelectedVendor(null);
+              }}
+              style={{
+                background: activeTab === "settlement" ? "#ecfdf5" : "transparent",
+                border: "none",
+                borderBottom: activeTab === "settlement" ? "3px solid #059669" : "3px solid transparent",
+                padding: "12px 16px",
+                borderRadius: "8px 8px 0 0",
+                fontSize: "14px",
+                fontWeight: activeTab === "settlement" ? 800 : 600,
+                color: activeTab === "settlement" ? "#047857" : "#6c5e7e",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                marginBottom: "-2px",
+              }}
+            >
+              <span>🤝</span> Settlement & Clearances ({pendingVendorsCount > 0 ? `${pendingVendorsCount} Due` : "Settled"})
             </button>
 
             <button
@@ -1072,572 +1280,590 @@ export default function ExpensesPage() {
             </button>
           </div>
 
-          {/* LEDGER FILTER CONTROLS BAR (Shown for General Ledger) */}
-          {activeTab === "general" && (
-            <div
-              className="no-print"
-              style={{
-                background: "#ffffff",
-                border: "1px solid #ebe4f5",
-                borderRadius: "14px",
-                padding: "14px 18px",
-                boxShadow: "0 2px 8px rgba(124, 58, 237, 0.03)",
-                marginBottom: "20px",
-                display: "flex",
-                flexDirection: "column",
-                gap: "12px",
-              }}
-            >
-              {/* Row 1: Period Presets & Quick Filters */}
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px" }}>
-                  <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase", marginRight: "4px" }}>
-                    Period:
-                  </span>
-                  {(
-                    [
-                      { id: "all", label: "All Time" },
-                      { id: "this_month", label: "This Month" },
-                      { id: "last_month", label: "Last Month" },
-                      { id: "this_week", label: "This Week" },
-                      { id: "today", label: "Today" },
-                      { id: "custom", label: "Custom Range" },
-                    ] as const
-                  ).map((p) => {
-                    const active = datePreset === p.id;
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setDatePreset(p.id)}
-                        style={{
-                          padding: "5px 12px",
-                          borderRadius: "20px",
-                          border: active ? "1px solid #7c3aed" : "1px solid #e2d9ec",
-                          background: active ? "#7c3aed" : "#fcfaff",
-                          color: active ? "#ffffff" : "#4c3a60",
-                          fontSize: "12px",
-                          fontWeight: active ? 700 : 500,
-                          cursor: "pointer",
-                          transition: "all 0.15s ease",
-                        }}
-                      >
-                        {p.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Sort Order Toggle */}
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "12px", color: "#6d5b83", fontWeight: 600 }}>Ledger Sequence:</span>
-                  <button
-                    type="button"
-                    onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
-                    style={{
-                      padding: "5px 12px",
-                      borderRadius: "6px",
-                      border: "1px solid #dcd7e5",
-                      background: "#fcfaff",
-                      fontSize: "12px",
-                      color: "#1e0836",
-                      fontWeight: 700,
-                      cursor: "pointer",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      gap: "4px",
-                    }}
-                  >
-                    {sortOrder === "desc" ? "Newest First ▾" : "Oldest First (Ascending) ▴"}
-                  </button>
-                </div>
-              </div>
-
-              {/* Row 2: Custom Date Range (if custom selected) */}
-              {datePreset === "custom" && (
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "12px",
-                    padding: "10px 14px",
-                    background: "#f8f5fd",
-                    borderRadius: "8px",
-                    border: "1px dashed #d8cce8",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#6d28d9" }}>Custom Dates:</span>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "12px", color: "#555" }}>From:</span>
-                    <input
-                      type="date"
-                      value={customStartDate}
-                      onChange={(e) => setCustomStartDate(e.target.value)}
-                      style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #dcd7e5", fontSize: "12px" }}
-                    />
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "12px", color: "#555" }}>To:</span>
-                    <input
-                      type="date"
-                      value={customEndDate}
-                      onChange={(e) => setCustomEndDate(e.target.value)}
-                      style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #dcd7e5", fontSize: "12px" }}
-                    />
-                  </div>
-                </div>
-              )}
-
-              {/* Row 3: Dropdown filters */}
-              <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
-                  {/* Category Filter */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>Category:</span>
-                    <select
-                      value={categoryFilter}
-                      onChange={(e) => setCategoryFilter(e.target.value)}
-                      style={{
-                        height: "32px",
-                        padding: "0 10px",
-                        borderRadius: "6px",
-                        border: "1px solid #e2d9ec",
-                        background: "#fcfaff",
-                        fontSize: "12px",
-                        color: "#1e0836",
-                        outline: "none",
-                      }}
-                    >
-                      <option value="All">All Categories</option>
-                      {CATEGORIES.map((cat) => (
-                        <option key={cat} value={cat}>
-                          {cat}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Payment Method Filter */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>Method:</span>
-                    <select
-                      value={paymentMethodFilter}
-                      onChange={(e) => setPaymentMethodFilter(e.target.value)}
-                      style={{
-                        height: "32px",
-                        padding: "0 10px",
-                        borderRadius: "6px",
-                        border: "1px solid #e2d9ec",
-                        background: "#fcfaff",
-                        fontSize: "12px",
-                        color: "#1e0836",
-                        outline: "none",
-                      }}
-                    >
-                      <option value="All">All Methods</option>
-                      <option value="Cash">Cash Only</option>
-                      <option value="UPI">UPI / GPay Only</option>
-                      <option value="Bank">Bank Transfer Only</option>
-                      <option value="Card">Company Card Only</option>
-                      <option value="Cheque">Cheque Only</option>
-                    </select>
-                  </div>
-
-                  {/* Cost Allocation Filter */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                    <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>Allocation:</span>
-                    <select
-                      value={allocationFilter}
-                      onChange={(e) => setAllocationFilter(e.target.value)}
-                      style={{
-                        height: "32px",
-                        padding: "0 10px",
-                        borderRadius: "6px",
-                        border: "1px solid #e2d9ec",
-                        background: "#fcfaff",
-                        fontSize: "12px",
-                        color: "#1e0836",
-                        outline: "none",
-                      }}
-                    >
-                      <option value="All">All Expenses</option>
-                      <option value="Event">Event Specific Only</option>
-                      <option value="Overhead">General Overhead Only</option>
-                    </select>
-                  </div>
-
-                  {/* Clear Button */}
-                  {(categoryFilter !== "All" || paymentMethodFilter !== "All" || allocationFilter !== "All" || datePreset !== "all" || searchQuery) && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCategoryFilter("All");
-                        setPaymentMethodFilter("All");
-                        setAllocationFilter("All");
-                        setDatePreset("all");
-                        setCustomStartDate("");
-                        setCustomEndDate("");
-                        setSearchQuery("");
-                      }}
-                      style={{
-                        height: "32px",
-                        padding: "0 10px",
-                        borderRadius: "6px",
-                        border: "1px solid #fecaca",
-                        background: "#fff5f5",
-                        color: "#b91c1c",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      ✕ Reset Filters
-                    </button>
-                  )}
-                </div>
-
-                {/* Audited Total Pill */}
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <span style={{ fontSize: "12px", color: "#6d5b83" }}>Period Total:</span>
-                  <span
-                    style={{
-                      fontSize: "13px",
-                      fontWeight: 800,
-                      color: "#b91c1c",
-                      background: "#fee2e2",
-                      padding: "4px 10px",
-                      borderRadius: "8px",
-                      border: "1px solid #fca5a5",
-                    }}
-                  >
-                    - ₹{formatMoney(activeLedgerTotals.sum)}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
           {/* ======================================================== */}
           {/* TAB 1: GENERAL OUTFLOW LEDGER WITH RUNNING BALANCE */}
           {/* ======================================================== */}
           {activeTab === "general" && (
-            <div
-              style={{
-                background: "#ffffff",
-                borderRadius: "14px",
-                border: "1px solid #ebe4f5",
-                overflow: "hidden",
-                boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
-              }}
-            >
-              {loading ? (
-                <div style={{ padding: "48px", textAlign: "center", color: "#7a6e8a" }}>
-                  Loading financial expense ledger...
-                </div>
-              ) : ledgerEntries.length === 0 ? (
-                <div style={{ padding: "50px 20px", textAlign: "center" }}>
-                  <div style={{ fontSize: "36px", marginBottom: "12px" }}>💳</div>
-                  <h3 style={{ margin: "0 0 6px 0", color: "#1e0836" }}>No ledger entries found</h3>
-                  <p style={{ color: "#7a6e8a", fontSize: "14px", margin: "0 0 16px 0" }}>
-                    {searchQuery || categoryFilter !== "All" || datePreset !== "all" || allocationFilter !== "All"
-                      ? "No records match your active filters or date criteria."
-                      : "Start recording purchases, vendor bills, and operational expenses."}
-                  </p>
-                  {!isOwner && (
+            <div>
+              {/* Filter Controls Bar */}
+              <div
+                className="no-print"
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #ebe4f5",
+                  borderRadius: "14px",
+                  padding: "14px 18px",
+                  boxShadow: "0 2px 8px rgba(124, 58, 237, 0.03)",
+                  marginBottom: "20px",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "12px",
+                }}
+              >
+                {/* Row 1: Period Presets & Quick Filters */}
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase", marginRight: "4px" }}>
+                      Period:
+                    </span>
+                    {(
+                      [
+                        { id: "all", label: "All Time" },
+                        { id: "this_month", label: "This Month" },
+                        { id: "last_month", label: "Last Month" },
+                        { id: "this_week", label: "This Week" },
+                        { id: "today", label: "Today" },
+                        { id: "custom", label: "Custom Range" },
+                      ] as const
+                    ).map((p) => {
+                      const active = datePreset === p.id;
+                      return (
+                        <button
+                          key={p.id}
+                          type="button"
+                          onClick={() => setDatePreset(p.id)}
+                          style={{
+                            padding: "5px 12px",
+                            borderRadius: "20px",
+                            border: active ? "1px solid #7c3aed" : "1px solid #e2d9ec",
+                            background: active ? "#7c3aed" : "#fcfaff",
+                            color: active ? "#ffffff" : "#4c3a60",
+                            fontSize: "12px",
+                            fontWeight: active ? 700 : 500,
+                            cursor: "pointer",
+                            transition: "all 0.15s ease",
+                          }}
+                        >
+                          {p.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Sort Order Toggle */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "12px", color: "#6d5b83", fontWeight: 600 }}>Ledger Sequence:</span>
                     <button
                       type="button"
-                      onClick={() => openAddModal()}
+                      onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
                       style={{
-                        background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                        color: "#ffffff",
-                        border: "none",
-                        padding: "8px 18px",
-                        borderRadius: "8px",
+                        padding: "5px 12px",
+                        borderRadius: "6px",
+                        border: "1px solid #dcd7e5",
+                        background: "#fcfaff",
+                        fontSize: "12px",
+                        color: "#1e0836",
                         fontWeight: 700,
                         cursor: "pointer",
-                        boxShadow: "0 4px 14px rgba(124, 58, 237, 0.35)",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "4px",
                       }}
                     >
-                      + Record First Debit Entry
+                      {sortOrder === "desc" ? "Newest First ▾" : "Oldest First (Ascending) ▴"}
                     </button>
-                  )}
+                  </div>
                 </div>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table
-                    className="ledger-table"
+
+                {/* Row 2: Custom Date Range (if custom selected) */}
+                {datePreset === "custom" && (
+                  <div
                     style={{
-                      width: "100%",
-                      minWidth: "900px",
-                      borderCollapse: "collapse",
-                      fontSize: "13px",
-                      textAlign: "left",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "12px",
+                      padding: "10px 14px",
+                      background: "#f8f5fd",
+                      borderRadius: "8px",
+                      border: "1px dashed #d8cce8",
+                      flexWrap: "wrap",
                     }}
                   >
-                    <thead>
-                      <tr
+                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#6d28d9" }}>Custom Dates:</span>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontSize: "12px", color: "#555" }}>From:</span>
+                      <input
+                        type="date"
+                        value={customStartDate}
+                        onChange={(e) => setCustomStartDate(e.target.value)}
+                        style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #dcd7e5", fontSize: "12px" }}
+                      />
+                    </div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontSize: "12px", color: "#555" }}>To:</span>
+                      <input
+                        type="date"
+                        value={customEndDate}
+                        onChange={(e) => setCustomEndDate(e.target.value)}
+                        style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #dcd7e5", fontSize: "12px" }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Row 3: Dropdown filters */}
+                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
+                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
+                    {/* Category Filter */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>Category:</span>
+                      <select
+                        value={categoryFilter}
+                        onChange={(e) => setCategoryFilter(e.target.value)}
                         style={{
-                          background: "linear-gradient(180deg, #fbf9fe 0%, #f4effa 100%)",
-                          borderBottom: "2px solid #ece4f5",
-                          color: "#542b80",
-                          fontWeight: 700,
-                        }}
-                      >
-                        <th style={{ padding: "14px 18px" }}>Entry Date</th>
-                        <th style={{ padding: "14px 18px" }}>Voucher / Bill #</th>
-                        <th style={{ padding: "14px 18px" }}>Particulars / Item Description</th>
-                        <th style={{ padding: "14px 18px" }}>Category</th>
-                        <th style={{ padding: "14px 18px" }}>Vendor / Supplier</th>
-                        <th style={{ padding: "14px 18px" }}>Payment Mode</th>
-                        <th style={{ padding: "14px 18px", textAlign: "right" }}>Debit Amount (₹)</th>
-                        <th
-                          style={{
-                            padding: "14px 18px",
-                            textAlign: "right",
-                            background: "rgba(124, 58, 237, 0.05)",
-                            color: "#6d28d9",
-                          }}
-                        >
-                          Cumulative Outflow (₹)
-                        </th>
-                        <th className="no-print" style={{ padding: "14px 18px", textAlign: "center" }}>
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ledgerEntries.map((exp) => (
-                        <tr
-                          key={exp.id}
-                          style={{
-                            borderBottom: "1px solid #f2eff7",
-                            transition: "background 0.15s ease",
-                          }}
-                        >
-                          {/* Date */}
-                          <td style={{ padding: "14px 18px", fontWeight: 600, color: "#24103f", whiteSpace: "nowrap" }}>
-                            {formatDate(exp.expense_date)}
-                          </td>
-
-                          {/* Voucher / Bill # */}
-                          <td style={{ padding: "14px 18px", fontFamily: "monospace", color: "#6b5b7e", fontSize: "12px", whiteSpace: "nowrap" }}>
-                            {exp.bill_number ? (
-                              <span style={{ background: "#f5f3ff", padding: "2px 6px", borderRadius: "4px", border: "1px solid #ddd6fe", color: "#6d28d9", fontWeight: 700 }}>
-                                #{exp.bill_number}
-                              </span>
-                            ) : (
-                              <span style={{ color: "#9ca3af" }}>EXP-{String(exp.id).padStart(4, "0")}</span>
-                            )}
-                          </td>
-
-                          {/* Particulars */}
-                          <td style={{ padding: "14px 18px" }}>
-                            <div style={{ fontWeight: 700, color: "#1e0836" }}>{exp.title}</div>
-                            {exp.note && (
-                              <div style={{ fontSize: "11px", color: "#7a6e8a", marginTop: "2px", maxWidth: "260px" }}>
-                                {exp.note}
-                              </div>
-                            )}
-                            {exp.event_id && (
-                              <div style={{ marginTop: "4px" }}>
-                                <Link
-                                  href={`/events/${exp.event_id}`}
-                                  style={{
-                                    fontSize: "11px",
-                                    color: "#4f46e5",
-                                    fontWeight: 700,
-                                    textDecoration: "none",
-                                    background: "#eef2ff",
-                                    padding: "2px 6px",
-                                    borderRadius: "4px",
-                                    display: "inline-block",
-                                  }}
-                                >
-                                  Event #{exp.event_id} {exp.event_type ? `• ${exp.event_type}` : ""}
-                                </Link>
-                              </div>
-                            )}
-                          </td>
-
-                          {/* Category */}
-                          <td style={{ padding: "14px 18px" }}>
-                            <span
-                              style={{
-                                display: "inline-block",
-                                padding: "3px 8px",
-                                borderRadius: "6px",
-                                fontSize: "11px",
-                                fontWeight: 700,
-                                background: "#f3edf8",
-                                color: "#582a85",
-                              }}
-                            >
-                              {exp.category}
-                            </span>
-                          </td>
-
-                          {/* Vendor */}
-                          <td style={{ padding: "14px 18px", color: "#3c2e4e" }}>
-                            {exp.vendor ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedVendor(exp.vendor || null);
-                                  setActiveTab("vendors");
-                                }}
-                                style={{
-                                  border: "none",
-                                  background: "transparent",
-                                  padding: 0,
-                                  color: "#7c3aed",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                  textDecoration: "underline",
-                                  textAlign: "left",
-                                  fontSize: "13px",
-                                }}
-                                title="Click to view full vendor account statement"
-                              >
-                                {exp.vendor}
-                              </button>
-                            ) : (
-                              <span style={{ color: "#a59cb3", fontSize: "12px" }}>General / Cash Outflow</span>
-                            )}
-                          </td>
-
-                          {/* Payment Method */}
-                          <td style={{ padding: "14px 18px", whiteSpace: "nowrap" }}>
-                            <span
-                              style={{
-                                display: "inline-block",
-                                fontSize: "11px",
-                                fontWeight: 600,
-                                padding: "2px 8px",
-                                borderRadius: "4px",
-                                background: (exp.payment_method || "Cash").toLowerCase().includes("cash")
-                                  ? "#ecfdf5"
-                                  : "#eff6ff",
-                                color: (exp.payment_method || "Cash").toLowerCase().includes("cash")
-                                  ? "#047857"
-                                  : "#1d4ed8",
-                              }}
-                            >
-                              {(exp.payment_method || "Cash").toLowerCase().includes("cash") ? "💵 " : "🏦 "}
-                              {exp.payment_method || "Cash"}
-                            </span>
-                          </td>
-
-                          {/* Debit Amount */}
-                          <td
-                            style={{
-                              padding: "14px 18px",
-                              textAlign: "right",
-                              fontWeight: 800,
-                              color: "#b91c1c",
-                              fontSize: "14px",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            - ₹{formatMoney(exp.amount)}
-                          </td>
-
-                          {/* Running Balance */}
-                          <td
-                            style={{
-                              padding: "14px 18px",
-                              textAlign: "right",
-                              fontWeight: 800,
-                              color: "#4c1d95",
-                              fontSize: "14px",
-                              background: "rgba(124, 58, 237, 0.03)",
-                              whiteSpace: "nowrap",
-                            }}
-                          >
-                            ₹{formatMoney(exp.runningBalance)}
-                          </td>
-
-                          {/* Actions */}
-                          <td className="no-print" style={{ padding: "14px 18px", textAlign: "center", whiteSpace: "nowrap" }}>
-                            <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
-                              {!isOwner && (
-                                <>
-                                  <button
-                                    type="button"
-                                    onClick={() => openEditModal(exp)}
-                                    style={{
-                                      padding: "4px 8px",
-                                      borderRadius: "4px",
-                                      background: "#f0edf5",
-                                      color: "#24103f",
-                                      border: "none",
-                                      fontSize: "12px",
-                                      fontWeight: 600,
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    Edit
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => handleDeleteExpense(exp.id, exp.title)}
-                                    style={{
-                                      padding: "4px 8px",
-                                      borderRadius: "4px",
-                                      background: "#fee2e2",
-                                      color: "#b91c1c",
-                                      border: "none",
-                                      fontSize: "12px",
-                                      fontWeight: 600,
-                                      cursor: "pointer",
-                                    }}
-                                  >
-                                    Delete
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-
-                    {/* ACCOUNTING AUDIT FOOTER */}
-                    <tfoot>
-                      <tr
-                        style={{
-                          background: "#fdfcfe",
-                          borderTop: "2px solid #ddd6fe",
-                          fontWeight: 800,
+                          height: "32px",
+                          padding: "0 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #e2d9ec",
+                          background: "#fcfaff",
+                          fontSize: "12px",
                           color: "#1e0836",
+                          outline: "none",
                         }}
                       >
-                        <td colSpan={5} style={{ padding: "14px 18px", fontSize: "13px" }}>
-                          Audited Ledger Summary ({activeLedgerTotals.count} Entries) • Cash: ₹{formatMoney(activeLedgerTotals.cash)} • Digital: ₹{formatMoney(activeLedgerTotals.digital)}
-                        </td>
-                        <td style={{ padding: "14px 18px", textAlign: "right", fontSize: "12px", color: "#6b5b7e" }}>
-                          Total Debit:
-                        </td>
-                        <td style={{ padding: "14px 18px", textAlign: "right", fontSize: "15px", color: "#b91c1c" }}>
-                          - ₹{formatMoney(activeLedgerTotals.sum)}
-                        </td>
-                        <td
+                        <option value="All">All Categories</option>
+                        {CATEGORIES.map((cat) => (
+                          <option key={cat} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Payment Method Filter */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>Method:</span>
+                      <select
+                        value={paymentMethodFilter}
+                        onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                        style={{
+                          height: "32px",
+                          padding: "0 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #e2d9ec",
+                          background: "#fcfaff",
+                          fontSize: "12px",
+                          color: "#1e0836",
+                          outline: "none",
+                        }}
+                      >
+                        <option value="All">All Methods</option>
+                        <option value="Cash">Cash Only</option>
+                        <option value="UPI">UPI / GPay Only</option>
+                        <option value="Bank">Bank Transfer Only</option>
+                        <option value="Card">Company Card Only</option>
+                        <option value="Cheque">Cheque Only</option>
+                      </select>
+                    </div>
+
+                    {/* Cost Allocation Filter */}
+                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                      <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>Allocation:</span>
+                      <select
+                        value={allocationFilter}
+                        onChange={(e) => setAllocationFilter(e.target.value)}
+                        style={{
+                          height: "32px",
+                          padding: "0 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #e2d9ec",
+                          background: "#fcfaff",
+                          fontSize: "12px",
+                          color: "#1e0836",
+                          outline: "none",
+                        }}
+                      >
+                        <option value="All">All Expenses</option>
+                        <option value="Event">Event Specific Only</option>
+                        <option value="Overhead">General Overhead Only</option>
+                      </select>
+                    </div>
+
+                    {/* Clear Button */}
+                    {(categoryFilter !== "All" || paymentMethodFilter !== "All" || allocationFilter !== "All" || datePreset !== "all" || searchQuery) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCategoryFilter("All");
+                          setPaymentMethodFilter("All");
+                          setAllocationFilter("All");
+                          setDatePreset("all");
+                          setCustomStartDate("");
+                          setCustomEndDate("");
+                          setSearchQuery("");
+                        }}
+                        style={{
+                          height: "32px",
+                          padding: "0 10px",
+                          borderRadius: "6px",
+                          border: "1px solid #fecaca",
+                          background: "#fff5f5",
+                          color: "#b91c1c",
+                          fontSize: "11px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                        }}
+                      >
+                        ✕ Reset Filters
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Audited Total Pill */}
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontSize: "12px", color: "#6d5b83" }}>Period Total:</span>
+                    <span
+                      style={{
+                        fontSize: "13px",
+                        fontWeight: 800,
+                        color: "#b91c1c",
+                        background: "#fee2e2",
+                        padding: "4px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid #fca5a5",
+                      }}
+                    >
+                      - ₹{formatMoney(activeLedgerTotals.sum)}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #ebe4f5",
+                  overflow: "hidden",
+                  boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
+                }}
+              >
+                {loading ? (
+                  <div style={{ padding: "48px", textAlign: "center", color: "#7a6e8a" }}>
+                    Loading financial expense ledger...
+                  </div>
+                ) : ledgerEntries.length === 0 ? (
+                  <div style={{ padding: "50px 20px", textAlign: "center" }}>
+                    <div style={{ fontSize: "36px", marginBottom: "12px" }}>💳</div>
+                    <h3 style={{ margin: "0 0 6px 0", color: "#1e0836" }}>No ledger entries found</h3>
+                    <p style={{ color: "#7a6e8a", fontSize: "14px", margin: "0 0 16px 0" }}>
+                      {searchQuery || categoryFilter !== "All" || datePreset !== "all" || allocationFilter !== "All"
+                        ? "No records match your active filters or date criteria."
+                        : "Start recording purchases, vendor bills, and operational expenses."}
+                    </p>
+                    {!isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => openAddModal()}
+                        style={{
+                          background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                          color: "#ffffff",
+                          border: "none",
+                          padding: "8px 18px",
+                          borderRadius: "8px",
+                          fontWeight: 700,
+                          cursor: "pointer",
+                          boxShadow: "0 4px 14px rgba(124, 58, 237, 0.35)",
+                        }}
+                      >
+                        + Record First Debit Entry
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table
+                      className="ledger-table"
+                      style={{
+                        width: "100%",
+                        minWidth: "950px",
+                        borderCollapse: "collapse",
+                        fontSize: "13px",
+                        textAlign: "left",
+                      }}
+                    >
+                      <thead>
+                        <tr
                           style={{
-                            padding: "14px 18px",
-                            textAlign: "right",
-                            fontSize: "15px",
-                            color: "#6d28d9",
-                            background: "rgba(124, 58, 237, 0.08)",
+                            background: "linear-gradient(180deg, #fbf9fe 0%, #f4effa 100%)",
+                            borderBottom: "2px solid #ece4f5",
+                            color: "#542b80",
+                            fontWeight: 700,
                           }}
                         >
-                          ₹{formatMoney(activeLedgerTotals.sum)}
-                        </td>
-                        <td className="no-print" />
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              )}
+                          <th style={{ padding: "14px 18px" }}>Entry Date</th>
+                          <th style={{ padding: "14px 18px" }}>Voucher / Bill #</th>
+                          <th style={{ padding: "14px 18px" }}>Particulars / Item Description</th>
+                          <th style={{ padding: "14px 18px" }}>Category</th>
+                          <th style={{ padding: "14px 18px" }}>Vendor / Supplier</th>
+                          <th style={{ padding: "14px 18px" }}>Payment Mode</th>
+                          <th style={{ padding: "14px 18px", textAlign: "right" }}>Debit Amount (₹)</th>
+                          <th
+                            style={{
+                              padding: "14px 18px",
+                              textAlign: "right",
+                              background: "rgba(124, 58, 237, 0.05)",
+                              color: "#6d28d9",
+                            }}
+                          >
+                            Cumulative Outflow (₹)
+                          </th>
+                          <th className="no-print" style={{ padding: "14px 18px", textAlign: "center" }}>
+                            Actions
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ledgerEntries.map((exp) => (
+                          <tr
+                            key={exp.id}
+                            style={{
+                              borderBottom: "1px solid #f2eff7",
+                              transition: "background 0.15s ease",
+                            }}
+                          >
+                            {/* Date */}
+                            <td style={{ padding: "14px 18px", fontWeight: 600, color: "#24103f", whiteSpace: "nowrap" }}>
+                              {formatDate(exp.expense_date)}
+                            </td>
+
+                            {/* Voucher / Bill # */}
+                            <td style={{ padding: "14px 18px", fontFamily: "monospace", color: "#6b5b7e", fontSize: "12px", whiteSpace: "nowrap" }}>
+                              {exp.bill_number ? (
+                                <span style={{ background: "#f5f3ff", padding: "2px 6px", borderRadius: "4px", border: "1px solid #ddd6fe", color: "#6d28d9", fontWeight: 700 }}>
+                                  #{exp.bill_number}
+                                </span>
+                              ) : (
+                                <span style={{ color: "#9ca3af" }}>EXP-{String(exp.id).padStart(4, "0")}</span>
+                              )}
+                            </td>
+
+                            {/* Particulars */}
+                            <td style={{ padding: "14px 18px" }}>
+                              <div style={{ fontWeight: 700, color: "#1e0836" }}>{exp.title}</div>
+                              {exp.note && (
+                                <div style={{ fontSize: "11px", color: "#7a6e8a", marginTop: "2px", maxWidth: "260px" }}>
+                                  {exp.note}
+                                </div>
+                              )}
+                              {exp.event_id && (
+                                <div style={{ marginTop: "4px" }}>
+                                  <Link
+                                    href={`/events/${exp.event_id}`}
+                                    style={{
+                                      fontSize: "11px",
+                                      color: "#4f46e5",
+                                      fontWeight: 700,
+                                      textDecoration: "none",
+                                      background: "#eef2ff",
+                                      padding: "2px 6px",
+                                      borderRadius: "4px",
+                                      display: "inline-block",
+                                    }}
+                                  >
+                                    Event #{exp.event_id} {exp.event_type ? `• ${exp.event_type}` : ""}
+                                  </Link>
+                                </div>
+                              )}
+                            </td>
+
+                            {/* Category */}
+                            <td style={{ padding: "14px 18px" }}>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "3px 8px",
+                                  borderRadius: "6px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "#f3edf8",
+                                  color: "#582a85",
+                                }}
+                              >
+                                {exp.category}
+                              </span>
+                            </td>
+
+                            {/* Vendor */}
+                            <td style={{ padding: "14px 18px", color: "#3c2e4e" }}>
+                              {exp.vendor ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedVendor(exp.vendor || null);
+                                    setActiveTab("vendors");
+                                  }}
+                                  style={{
+                                    border: "none",
+                                    background: "transparent",
+                                    padding: 0,
+                                    color: "#7c3aed",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                    textDecoration: "underline",
+                                    textAlign: "left",
+                                    fontSize: "13px",
+                                  }}
+                                  title="Click to view full vendor account statement"
+                                >
+                                  {exp.vendor}
+                                </button>
+                              ) : (
+                                <span style={{ color: "#a59cb3", fontSize: "12px" }}>General Outflow</span>
+                              )}
+                            </td>
+
+                            {/* Payment Method */}
+                            <td style={{ padding: "14px 18px", whiteSpace: "nowrap" }}>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  fontSize: "11px",
+                                  fontWeight: 600,
+                                  padding: "2px 8px",
+                                  borderRadius: "4px",
+                                  background: (exp.payment_method || "Cash").toLowerCase().includes("cash")
+                                    ? "#ecfdf5"
+                                    : "#eff6ff",
+                                  color: (exp.payment_method || "Cash").toLowerCase().includes("cash")
+                                    ? "#047857"
+                                    : "#1d4ed8",
+                                }}
+                              >
+                                {(exp.payment_method || "Cash").toLowerCase().includes("cash") ? "💵 " : "🏦 "}
+                                {exp.payment_method || "Cash"}
+                              </span>
+                            </td>
+
+                            {/* Debit Amount */}
+                            <td
+                              style={{
+                                padding: "14px 18px",
+                                textAlign: "right",
+                                fontWeight: 800,
+                                color: "#b91c1c",
+                                fontSize: "14px",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              - ₹{formatMoney(exp.amount)}
+                            </td>
+
+                            {/* Running Balance */}
+                            <td
+                              style={{
+                                padding: "14px 18px",
+                                textAlign: "right",
+                                fontWeight: 800,
+                                color: "#4c1d95",
+                                fontSize: "14px",
+                                background: "rgba(124, 58, 237, 0.03)",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              ₹{formatMoney(exp.runningBalance)}
+                            </td>
+
+                            {/* Actions */}
+                            <td className="no-print" style={{ padding: "14px 18px", textAlign: "center", whiteSpace: "nowrap" }}>
+                              <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                                {!isOwner && (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => openClearSettlementModal(exp.vendor || "Direct", exp.amount)}
+                                      title="Clear or record settlement for this item"
+                                      style={{
+                                        padding: "4px 8px",
+                                        borderRadius: "4px",
+                                        background: "#ecfdf5",
+                                        color: "#047857",
+                                        border: "1px solid #a7f3d0",
+                                        fontSize: "11px",
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      🤝 Clear
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => openEditModal(exp)}
+                                      style={{
+                                        padding: "4px 8px",
+                                        borderRadius: "4px",
+                                        background: "#f0edf5",
+                                        color: "#24103f",
+                                        border: "none",
+                                        fontSize: "12px",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteExpense(exp.id, exp.title)}
+                                      style={{
+                                        padding: "4px 8px",
+                                        borderRadius: "4px",
+                                        background: "#fee2e2",
+                                        color: "#b91c1c",
+                                        border: "none",
+                                        fontSize: "12px",
+                                        fontWeight: 600,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      Delete
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+
+                      {/* ACCOUNTING AUDIT FOOTER */}
+                      <tfoot>
+                        <tr
+                          style={{
+                            background: "#fdfcfe",
+                            borderTop: "2px solid #ddd6fe",
+                            fontWeight: 800,
+                            color: "#1e0836",
+                          }}
+                        >
+                          <td colSpan={5} style={{ padding: "14px 18px", fontSize: "13px" }}>
+                            Audited Ledger Summary ({activeLedgerTotals.count} Entries) • Cash: ₹{formatMoney(activeLedgerTotals.cash)} • Digital: ₹{formatMoney(activeLedgerTotals.digital)}
+                          </td>
+                          <td style={{ padding: "14px 18px", textAlign: "right", fontSize: "12px", color: "#6b5b7e" }}>
+                            Total Debit:
+                          </td>
+                          <td style={{ padding: "14px 18px", textAlign: "right", fontSize: "15px", color: "#b91c1c" }}>
+                            - ₹{formatMoney(activeLedgerTotals.sum)}
+                          </td>
+                          <td
+                            style={{
+                              padding: "14px 18px",
+                              textAlign: "right",
+                              fontSize: "15px",
+                              color: "#6d28d9",
+                              background: "rgba(124, 58, 237, 0.08)",
+                            }}
+                          >
+                            ₹{formatMoney(activeLedgerTotals.sum)}
+                          </td>
+                          <td className="no-print" />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -1696,20 +1922,55 @@ export default function ExpensesPage() {
                       </div>
                     </div>
 
-                    <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "20px", flexWrap: "wrap" }}>
                       <div style={{ textAlign: "right" }}>
                         <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>
-                          Total Spent With Vendor
+                          Total Incurred
                         </span>
-                        <div style={{ fontSize: "24px", fontWeight: 800, color: "#b91c1c" }}>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#1e0836" }}>
                           ₹{formatMoney(selectedVendorData.totalAmount)}
                         </div>
-                        <span style={{ fontSize: "11px", color: "#7a6e8a" }}>
-                          Across {selectedVendorData.billCount} bills
+                      </div>
+
+                      <div style={{ textAlign: "right" }}>
+                        <span style={{ fontSize: "11px", color: "#047857", fontWeight: 700, textTransform: "uppercase" }}>
+                          Total Cleared
                         </span>
+                        <div style={{ fontSize: "20px", fontWeight: 800, color: "#047857" }}>
+                          ₹{formatMoney(selectedVendorData.totalCleared)}
+                        </div>
+                      </div>
+
+                      <div style={{ textAlign: "right" }}>
+                        <span style={{ fontSize: "11px", color: "#b91c1c", fontWeight: 700, textTransform: "uppercase" }}>
+                          Pending Due
+                        </span>
+                        <div style={{ fontSize: "24px", fontWeight: 800, color: selectedVendorData.pendingBalance > 0 ? "#b91c1c" : "#059669" }}>
+                          ₹{formatMoney(selectedVendorData.pendingBalance)}
+                        </div>
                       </div>
 
                       <div className="no-print" style={{ display: "flex", gap: "8px" }}>
+                        {!isOwner && (
+                          <button
+                            type="button"
+                            onClick={() => openClearSettlementModal(selectedVendorData.name, selectedVendorData.pendingBalance)}
+                            style={{
+                              padding: "8px 14px",
+                              borderRadius: "8px",
+                              border: "none",
+                              background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                              color: "#fff",
+                              fontWeight: 700,
+                              fontSize: "12px",
+                              cursor: "pointer",
+                              boxShadow: "0 2px 8px rgba(5, 150, 105, 0.3)",
+                            }}
+                          >
+                            🤝 Clear Balance
+                          </button>
+                        )}
+
                         <button
                           type="button"
                           onClick={handlePrintLedger}
@@ -1726,26 +1987,6 @@ export default function ExpensesPage() {
                         >
                           🖨️ Print Statement
                         </button>
-
-                        {!isOwner && (
-                          <button
-                            type="button"
-                            onClick={() => openAddModal()}
-                            style={{
-                              padding: "8px 16px",
-                              borderRadius: "8px",
-                              border: "none",
-                              background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
-                              color: "#fff",
-                              fontWeight: 700,
-                              fontSize: "12px",
-                              cursor: "pointer",
-                              boxShadow: "0 4px 14px rgba(124, 58, 237, 0.35)",
-                            }}
-                          >
-                            + Add Bill for {selectedVendorData.name}
-                          </button>
-                        )}
                       </div>
                     </div>
                   </div>
@@ -1820,17 +2061,17 @@ export default function ExpensesPage() {
                                   <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
                                     <button
                                       type="button"
+                                      onClick={() => openClearSettlementModal(selectedVendorData.name, entry.amount)}
+                                      style={{ padding: "4px 8px", borderRadius: "4px", background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                    >
+                                      Clear
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => openEditModal(entry)}
                                       style={{ padding: "4px 8px", borderRadius: "4px", background: "#f0edf5", color: "#24103f", border: "none", fontSize: "12px", cursor: "pointer" }}
                                     >
                                       Edit
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteExpense(entry.id, entry.title)}
-                                      style={{ padding: "4px 8px", borderRadius: "4px", background: "#fee2e2", color: "#b91c1c", border: "none", fontSize: "12px", cursor: "pointer" }}
-                                    >
-                                      Delete
                                     </button>
                                   </div>
                                 )}
@@ -1841,13 +2082,13 @@ export default function ExpensesPage() {
                         <tfoot>
                           <tr style={{ background: "#fdfcfe", borderTop: "2px solid #ddd6fe", fontWeight: 800, color: "#1e0836" }}>
                             <td colSpan={6} style={{ padding: "14px 18px" }}>
-                              Total Account Settlement • {selectedVendorData.billCount} Invoices
+                              Total Incurred: ₹{formatMoney(selectedVendorData.totalAmount)} • Cleared: ₹{formatMoney(selectedVendorData.totalCleared)}
                             </td>
                             <td style={{ padding: "14px 18px", textAlign: "right", color: "#b91c1c", fontSize: "15px" }}>
-                              - ₹{formatMoney(selectedVendorData.totalAmount)}
+                              Balance Due:
                             </td>
-                            <td style={{ padding: "14px 18px", textAlign: "right", color: "#6d28d9", fontSize: "15px", background: "rgba(124, 58, 237, 0.08)" }}>
-                              ₹{formatMoney(selectedVendorData.totalAmount)}
+                            <td style={{ padding: "14px 18px", textAlign: "right", color: selectedVendorData.pendingBalance > 0 ? "#b91c1c" : "#059669", fontSize: "15px", background: "rgba(124, 58, 237, 0.08)" }}>
+                              ₹{formatMoney(selectedVendorData.pendingBalance)}
                             </td>
                             <td className="no-print" />
                           </tr>
@@ -1869,6 +2110,7 @@ export default function ExpensesPage() {
                   >
                     {vendorLedgers.map((v) => {
                       const topCat = Object.entries(v.categories).sort((a, b) => b[1] - a[1])[0]?.[0] || "Miscellaneous";
+                      const isDue = v.pendingBalance > 0;
                       return (
                         <div
                           key={v.name}
@@ -1892,8 +2134,8 @@ export default function ExpensesPage() {
                                     width: "36px",
                                     height: "36px",
                                     borderRadius: "10px",
-                                    background: "#f3edf8",
-                                    color: "#6d28d9",
+                                    background: isDue ? "#fef2f2" : "#ecfdf5",
+                                    color: isDue ? "#dc2626" : "#059669",
                                     display: "flex",
                                     alignItems: "center",
                                     justifyContent: "center",
@@ -1912,12 +2154,32 @@ export default function ExpensesPage() {
                                   </span>
                                 </div>
                               </div>
+
+                              <span
+                                style={{
+                                  fontSize: "10px",
+                                  fontWeight: 700,
+                                  padding: "2px 8px",
+                                  borderRadius: "10px",
+                                  background: isDue ? "#fee2e2" : "#d1fae5",
+                                  color: isDue ? "#991b1b" : "#065f46",
+                                }}
+                              >
+                                {isDue ? `₹${formatMoney(v.pendingBalance)} Due` : "✓ Cleared"}
+                              </span>
                             </div>
 
                             <div style={{ marginTop: "12px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-                              <span style={{ fontSize: "12px", color: "#6d5b83" }}>Total Purchases:</span>
-                              <span style={{ fontSize: "18px", fontWeight: 800, color: "#b91c1c" }}>
+                              <span style={{ fontSize: "12px", color: "#6d5b83" }}>Total Incurred:</span>
+                              <span style={{ fontSize: "15px", fontWeight: 700, color: "#1e0836" }}>
                                 ₹{formatMoney(v.totalAmount)}
+                              </span>
+                            </div>
+
+                            <div style={{ marginTop: "4px", display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+                              <span style={{ fontSize: "12px", color: "#047857" }}>Total Cleared:</span>
+                              <span style={{ fontSize: "14px", fontWeight: 700, color: "#047857" }}>
+                                ₹{formatMoney(v.totalCleared)}
                               </span>
                             </div>
 
@@ -1931,27 +2193,53 @@ export default function ExpensesPage() {
                             </div>
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => setSelectedVendor(v.name)}
-                            style={{
-                              width: "100%",
-                              padding: "8px 12px",
-                              borderRadius: "8px",
-                              border: "1px solid #ddd6fe",
-                              background: "#fcfaff",
-                              color: "#6d28d9",
-                              fontWeight: 700,
-                              fontSize: "12px",
-                              cursor: "pointer",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              gap: "6px",
-                            }}
-                          >
-                            View Account Statement Ledger →
-                          </button>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            {!isOwner && isDue && (
+                              <button
+                                type="button"
+                                onClick={() => openClearSettlementModal(v.name, v.pendingBalance)}
+                                style={{
+                                  flex: 1,
+                                  padding: "8px 12px",
+                                  borderRadius: "8px",
+                                  border: "none",
+                                  background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                                  color: "#ffffff",
+                                  fontWeight: 700,
+                                  fontSize: "12px",
+                                  cursor: "pointer",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "4px",
+                                }}
+                              >
+                                🤝 Clear Due
+                              </button>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => setSelectedVendor(v.name)}
+                              style={{
+                                flex: 1,
+                                padding: "8px 12px",
+                                borderRadius: "8px",
+                                border: "1px solid #ddd6fe",
+                                background: "#fcfaff",
+                                color: "#6d28d9",
+                                fontWeight: 700,
+                                fontSize: "12px",
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                gap: "4px",
+                              }}
+                            >
+                              Statement →
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
@@ -1962,7 +2250,323 @@ export default function ExpensesPage() {
           )}
 
           {/* ======================================================== */}
-          {/* TAB 3: MONTHLY & CATEGORY AUDIT LEDGER */}
+          {/* TAB 3: THE DEDICATED SETTLEMENT SECTION */}
+          {/* ======================================================== */}
+          {activeTab === "settlement" && (
+            <div>
+              {/* Settlement Section Controls */}
+              <div
+                className="no-print"
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #ebe4f5",
+                  padding: "16px 20px",
+                  marginBottom: "20px",
+                  boxShadow: "0 2px 8px rgba(124, 58, 237, 0.03)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "12px",
+                }}
+              >
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                    <span style={{ fontSize: "11px", color: "#6d5b83", fontWeight: 700, textTransform: "uppercase" }}>
+                      Account Status:
+                    </span>
+                    <select
+                      value={settlementStatusFilter}
+                      onChange={(e) => setSettlementStatusFilter(e.target.value as any)}
+                      style={{
+                        height: "34px",
+                        padding: "0 10px",
+                        borderRadius: "8px",
+                        border: "1px solid #dcd7e5",
+                        background: "#fcfaff",
+                        fontSize: "12px",
+                        color: "#1e0836",
+                        fontWeight: 600,
+                      }}
+                    >
+                      <option value="all">All Vendor Accounts ({vendorLedgers.length})</option>
+                      <option value="due">Pending Clearance Only ({pendingVendorsCount})</option>
+                      <option value="settled">Fully Cleared Accounts ({vendorLedgers.length - pendingVendorsCount})</option>
+                    </select>
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="Search vendor / payee..."
+                    value={settlementSearch}
+                    onChange={(e) => setSettlementSearch(e.target.value)}
+                    style={{
+                      height: "34px",
+                      padding: "0 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #dcd7e5",
+                      fontSize: "12px",
+                      width: "200px",
+                    }}
+                  />
+                </div>
+
+                {!isOwner && (
+                  <button
+                    type="button"
+                    onClick={() => openClearSettlementModal()}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                      background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "9px 18px",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 14px rgba(5, 150, 105, 0.35)",
+                    }}
+                  >
+                    <span>⚡</span> Clear Ledger Amount / Settle Account
+                  </button>
+                )}
+              </div>
+
+              {/* Vendor Accounts Clearance Status Table */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #ebe4f5",
+                  overflow: "hidden",
+                  boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
+                  marginBottom: "30px",
+                }}
+              >
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid #ebe4f5", background: "#fcfaff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#1e0836" }}>
+                      Vendor Ledger Accounts & Balance Settlements
+                    </h3>
+                    <span style={{ fontSize: "12px", color: "#8a7b9b" }}>
+                      Clear outstanding balances and manage accounts payable
+                    </span>
+                  </div>
+                  <span style={{ fontSize: "12px", fontWeight: 700, color: "#047857", background: "#ecfdf5", padding: "4px 10px", borderRadius: "8px" }}>
+                    {filteredSettlementVendors.length} Accounts
+                  </span>
+                </div>
+
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", minWidth: "850px", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
+                    <thead>
+                      <tr style={{ background: "linear-gradient(180deg, #fbf9fe 0%, #f4effa 100%)", borderBottom: "2px solid #ece4f5", color: "#542b80", fontWeight: 700 }}>
+                        <th style={{ padding: "14px 18px" }}>Vendor / Supplier</th>
+                        <th style={{ padding: "14px 18px", textAlign: "right" }}>Total Incurred (₹)</th>
+                        <th style={{ padding: "14px 18px", textAlign: "right" }}>Total Cleared (₹)</th>
+                        <th style={{ padding: "14px 18px", textAlign: "right" }}>Pending Balance (₹)</th>
+                        <th style={{ padding: "14px 18px", textAlign: "center" }}>Status</th>
+                        <th style={{ padding: "14px 18px" }}>Last Activity</th>
+                        <th className="no-print" style={{ padding: "14px 18px", textAlign: "center" }}>Clear Option</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredSettlementVendors.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} style={{ padding: "32px", textAlign: "center", color: "#7a6e8a" }}>
+                            No vendor accounts match your filter criteria.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredSettlementVendors.map((v) => {
+                          const isDue = v.pendingBalance > 0;
+                          return (
+                            <tr key={v.name} style={{ borderBottom: "1px solid #f2eff7" }}>
+                              <td style={{ padding: "14px 18px" }}>
+                                <div style={{ fontWeight: 700, color: "#1e0836" }}>{v.name}</div>
+                                <div style={{ fontSize: "11px", color: "#7a6e8a" }}>{v.billCount} bills on record</div>
+                              </td>
+                              <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 700, color: "#1e0836" }}>
+                                ₹{formatMoney(v.totalAmount)}
+                              </td>
+                              <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 700, color: "#047857" }}>
+                                ₹{formatMoney(v.totalCleared)}
+                              </td>
+                              <td style={{ padding: "14px 18px", textAlign: "right", fontWeight: 800, fontSize: "14px", color: isDue ? "#b91c1c" : "#059669" }}>
+                                ₹{formatMoney(v.pendingBalance)}
+                              </td>
+                              <td style={{ padding: "14px 18px", textAlign: "center" }}>
+                                <span
+                                  style={{
+                                    display: "inline-block",
+                                    padding: "3px 10px",
+                                    borderRadius: "12px",
+                                    fontSize: "11px",
+                                    fontWeight: 700,
+                                    background: isDue ? "#fee2e2" : "#d1fae5",
+                                    color: isDue ? "#991b1b" : "#065f46",
+                                  }}
+                                >
+                                  {isDue ? "🔴 Pending Due" : "🟢 Fully Cleared"}
+                                </span>
+                              </td>
+                              <td style={{ padding: "14px 18px", color: "#6b5b7e" }}>
+                                {formatDate(v.lastDate)}
+                              </td>
+                              <td className="no-print" style={{ padding: "14px 18px", textAlign: "center" }}>
+                                <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                                  {!isOwner && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openClearSettlementModal(v.name, v.pendingBalance)}
+                                      style={{
+                                        padding: "6px 12px",
+                                        borderRadius: "6px",
+                                        border: "none",
+                                        background: isDue ? "linear-gradient(135deg, #059669 0%, #047857 100%)" : "#e5e7eb",
+                                        color: isDue ? "#fff" : "#374151",
+                                        fontSize: "12px",
+                                        fontWeight: 700,
+                                        cursor: "pointer",
+                                        boxShadow: isDue ? "0 2px 6px rgba(5, 150, 105, 0.3)" : "none",
+                                      }}
+                                    >
+                                      {isDue ? "Clear Balance 🤝" : "Clear Amount"}
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedVendor(v.name);
+                                      setActiveTab("vendors");
+                                    }}
+                                    style={{
+                                      padding: "6px 10px",
+                                      borderRadius: "6px",
+                                      border: "1px solid #dcd7e5",
+                                      background: "#fff",
+                                      color: "#5b21b6",
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Statement
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Settlement Clearance History Ledger */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #ebe4f5",
+                  overflow: "hidden",
+                  boxShadow: "0 2px 10px rgba(124, 58, 237, 0.03)",
+                }}
+              >
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid #ebe4f5", background: "#fcfaff", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#1e0836" }}>
+                      Settlement Clearance Audit Ledger ({settlements.length})
+                    </h3>
+                    <span style={{ fontSize: "12px", color: "#8a7b9b" }}>
+                      Historical record of all payments and ledger clearances made
+                    </span>
+                  </div>
+                  <span style={{ fontSize: "13px", fontWeight: 800, color: "#047857" }}>
+                    Total Cleared: ₹{formatMoney(metrics.totalSettled)}
+                  </span>
+                </div>
+
+                {settlements.length === 0 ? (
+                  <div style={{ padding: "40px", textAlign: "center", color: "#7a6e8a" }}>
+                    No settlement clearances recorded yet. Click <strong>"Clear Ledger Amount"</strong> to record a payment.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", minWidth: "850px", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
+                      <thead>
+                        <tr style={{ background: "#f8f5fc", borderBottom: "2px solid #ece4f5", color: "#542b80", fontWeight: 700 }}>
+                          <th style={{ padding: "12px 16px" }}>Clearance Date</th>
+                          <th style={{ padding: "12px 16px" }}>Voucher #</th>
+                          <th style={{ padding: "12px 16px" }}>Vendor / Payee</th>
+                          <th style={{ padding: "12px 16px" }}>Payment Mode</th>
+                          <th style={{ padding: "12px 16px" }}>Reference / Notes</th>
+                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Cleared Amount (₹)</th>
+                          <th className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {settlements.map((s) => (
+                          <tr key={s.id} style={{ borderBottom: "1px solid #f2eff7" }}>
+                            <td style={{ padding: "12px 16px", fontWeight: 600, color: "#1e0836" }}>
+                              {formatDate(s.settlement_date)}
+                            </td>
+                            <td style={{ padding: "12px 16px", fontFamily: "monospace", color: "#6d28d9", fontWeight: 700 }}>
+                              SETTLE-{String(s.id).padStart(4, "0")}
+                            </td>
+                            <td style={{ padding: "12px 16px", fontWeight: 700, color: "#1e0836" }}>
+                              {s.vendor}
+                            </td>
+                            <td style={{ padding: "12px 16px" }}>
+                              <span style={{ padding: "2px 8px", borderRadius: "4px", background: "#ecfdf5", color: "#047857", fontWeight: 600, fontSize: "11px" }}>
+                                {s.payment_mode}
+                              </span>
+                            </td>
+                            <td style={{ padding: "12px 16px", color: "#6b5b7e" }}>
+                              {s.reference_no && <span style={{ fontWeight: 600 }}>Ref: #{s.reference_no} • </span>}
+                              {s.note || "-"}
+                            </td>
+                            <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 800, color: "#047857", fontSize: "14px" }}>
+                              ✓ ₹{formatMoney(s.amount)}
+                            </td>
+                            <td className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>
+                              {!isOwner && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteSettlement(s.id, s.vendor, s.amount)}
+                                  title="Void this clearance and restore balance"
+                                  style={{
+                                    padding: "3px 8px",
+                                    borderRadius: "4px",
+                                    border: "none",
+                                    background: "#fee2e2",
+                                    color: "#b91c1c",
+                                    fontSize: "11px",
+                                    fontWeight: 700,
+                                    cursor: "pointer",
+                                  }}
+                                >
+                                  Void
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ======================================================== */}
+          {/* TAB 4: MONTHLY & CATEGORY AUDIT LEDGER */}
           {/* ======================================================== */}
           {activeTab === "audit" && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(440px, 1fr))", gap: "24px" }}>
@@ -2082,6 +2686,288 @@ export default function ExpensesPage() {
           )}
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* CLEAR LEDGER AMOUNT / SETTLEMENT MODAL */}
+      {/* ======================================================== */}
+      {settleModalOpen && (
+        <div
+          className="no-print"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(18, 8, 32, 0.65)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              background: "#fff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "540px",
+              boxShadow: "0 20px 50px rgba(0, 0, 0, 0.25)",
+              overflow: "hidden",
+            }}
+          >
+            {/* Modal Header */}
+            <div
+              style={{
+                padding: "20px 24px",
+                background: "linear-gradient(135deg, #064e3b 0%, #065f46 100%)",
+                color: "#fff",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700 }}>
+                  🤝 Clear Ledger Amount / Settlement
+                </h3>
+                <span style={{ fontSize: "12px", color: "#a7f3d0" }}>
+                  Record clearance payment to settle supplier accounts payable
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSettleModalOpen(false)}
+                style={{
+                  background: "rgba(255, 255, 255, 0.15)",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius: "50%",
+                  width: "28px",
+                  height: "28px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleSaveSettlement} style={{ padding: "24px" }}>
+              {/* Select Vendor */}
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                  Select Supplier / Vendor Account *
+                </label>
+                <select
+                  value={settleVendor}
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    setSettleVendor(v);
+                    const vendorObj = vendorLedgers.find((item) => item.name === v);
+                    if (vendorObj && vendorObj.pendingBalance > 0) {
+                      setSettleAmount(String(vendorObj.pendingBalance));
+                    }
+                  }}
+                  required
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #d8d3e2",
+                    fontSize: "13px",
+                    background: "#fff",
+                  }}
+                >
+                  <option value="">-- Select Vendor Account --</option>
+                  {vendorLedgers.map((v) => (
+                    <option key={v.name} value={v.name}>
+                      {v.name} — Pending Due: ₹{formatMoney(v.pendingBalance)} (Total Incurred: ₹{formatMoney(v.totalAmount)})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Amount to Clear & Quick Clear Button */}
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                  <label style={{ fontSize: "13px", fontWeight: 600, color: "#3c2e4e" }}>
+                    Clearance Amount (₹) *
+                  </label>
+                  {settleVendor && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const vendorObj = vendorLedgers.find((v) => v.name === settleVendor);
+                        if (vendorObj) setSettleAmount(String(vendorObj.pendingBalance));
+                      }}
+                      style={{
+                        border: "none",
+                        background: "#ecfdf5",
+                        color: "#047857",
+                        fontSize: "11px",
+                        fontWeight: 700,
+                        padding: "2px 8px",
+                        borderRadius: "4px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ⚡ Clear Full Pending Balance
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  placeholder="e.g. 15000"
+                  value={settleAmount}
+                  onChange={(e) => setSettleAmount(e.target.value)}
+                  required
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #d8d3e2",
+                    fontSize: "15px",
+                    fontWeight: 700,
+                    color: "#047857",
+                    background: "#fff",
+                  }}
+                />
+              </div>
+
+              {/* Settlement Date & Mode row */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "14px", marginBottom: "16px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                    Settlement Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={settleDate}
+                    onChange={(e) => setSettleDate(e.target.value)}
+                    required
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #d8d3e2",
+                      fontSize: "13px",
+                      background: "#fff",
+                    }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                    Payment Mode *
+                  </label>
+                  <select
+                    value={settleMode}
+                    onChange={(e) => setSettleMode(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "10px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #d8d3e2",
+                      fontSize: "13px",
+                      background: "#fff",
+                    }}
+                  >
+                    {PAYMENT_METHODS.map((pm) => (
+                      <option key={pm} value={pm}>
+                        {pm}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Reference Number */}
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                  Cheque / Transaction / Voucher # (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UTR-98234, CHQ-10492"
+                  value={settleReference}
+                  onChange={(e) => setSettleReference(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #d8d3e2",
+                    fontSize: "13px",
+                    background: "#fff",
+                  }}
+                />
+              </div>
+
+              {/* Notes */}
+              <div style={{ marginBottom: "24px" }}>
+                <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
+                  Remarks / Clearance Note
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Settled full grocery account up to October"
+                  value={settleNote}
+                  onChange={(e) => setSettleNote(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #d8d3e2",
+                    fontSize: "13px",
+                    background: "#fff",
+                  }}
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+                <button
+                  type="button"
+                  onClick={() => setSettleModalOpen(false)}
+                  disabled={settling}
+                  style={{
+                    padding: "10px 18px",
+                    borderRadius: "8px",
+                    border: "1px solid #dcd7e5",
+                    background: "#fff",
+                    color: "#5d4e70",
+                    fontWeight: 600,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  type="submit"
+                  disabled={settling}
+                  style={{
+                    padding: "10px 22px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                    color: "#ffffff",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: settling ? "not-allowed" : "pointer",
+                    boxShadow: "0 4px 14px rgba(5, 150, 105, 0.35)",
+                  }}
+                >
+                  {settling ? "Clearing..." : "✓ Confirm & Clear Amount"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* ADD / EDIT EXPENSE MODAL */}
