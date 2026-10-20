@@ -519,7 +519,7 @@ export default function KitchenPage() {
       {/* Main Content (standard margin-left: 250px so sidebar never cuts off) */}
       <div className="main-content">
         {/* Topbar */}
-        <header className="topbar">
+        <header className="topbar" style={{ minHeight: "74px", height: "auto", padding: "12px 24px", gap: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
             <MobileMenuButton />
             <h1 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#24103f" }}>
@@ -608,7 +608,7 @@ export default function KitchenPage() {
         </header>
 
         {/* Content Canvas (Clean White Background) */}
-        <div className="page-content" style={{ maxWidth: "1600px", padding: "24px 32px" }}>
+        <div className="page-content" style={{ maxWidth: "1600px", padding: "24px 28px 60px", minHeight: "calc(100vh - 74px)" }}>
           <OwnerBanner />
 
           {/* Global Feedback Banner */}
@@ -1619,15 +1619,19 @@ export default function KitchenPage() {
             <div
               style={{
                 width: "100%",
-                maxWidth: "460px",
+                maxWidth: "480px",
+                maxHeight: "90vh",
+                display: "flex",
+                flexDirection: "column",
                 background: "#ffffff",
                 borderRadius: "18px",
                 padding: "24px",
                 boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
                 border: "1px solid #e9e3f3",
+                overflow: "hidden",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
                   <span style={{ fontSize: "20px" }}>📝</span>
                   <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
@@ -1643,7 +1647,7 @@ export default function KitchenPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleSubmitWageForm} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+              <form onSubmit={handleSubmitWageForm} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px", overflowY: "auto", flex: 1, paddingRight: "4px" }}>
                 {/* Date */}
                 <div>
                   <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
@@ -1843,7 +1847,7 @@ export default function KitchenPage() {
                   />
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9", position: "sticky", bottom: 0, background: "#ffffff", marginTop: "auto" }}>
                   <button
                     type="button"
                     onClick={() => setShowWageFormModal(false)}
@@ -1902,15 +1906,19 @@ export default function KitchenPage() {
             <div
               style={{
                 width: "100%",
-                maxWidth: "460px",
+                maxWidth: "480px",
+                maxHeight: "90vh",
+                display: "flex",
+                flexDirection: "column",
                 background: "#ffffff",
                 borderRadius: "18px",
                 padding: "24px",
                 boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
                 border: "1px solid #e9e3f3",
+                overflow: "hidden",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 }}>
                 <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
                   {editingStaff ? "Edit Kitchen Staff" : "Add Kitchen Staff"}
                 </h3>
@@ -1923,7 +1931,7 @@ export default function KitchenPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleSaveStaff} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+              <form onSubmit={handleSaveStaff} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px", overflowY: "auto", flex: 1, paddingRight: "4px" }}>
                 <div>
                   <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                     Staff Name *
@@ -2089,7 +2097,7 @@ export default function KitchenPage() {
                   />
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9", position: "sticky", bottom: 0, background: "#ffffff", marginTop: "auto" }}>
                   <button
                     type="button"
                     onClick={() => setShowAddStaffModal(false)}
@@ -2148,15 +2156,19 @@ export default function KitchenPage() {
             <div
               style={{
                 width: "100%",
-                maxWidth: "460px",
+                maxWidth: "480px",
+                maxHeight: "90vh",
+                display: "flex",
+                flexDirection: "column",
                 background: "#ffffff",
                 borderRadius: "18px",
                 padding: "24px",
                 boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
                 border: "1px solid #e9e3f3",
+                overflow: "hidden",
               }}
             >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9", flexShrink: 0 }}>
                 <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836", display: "flex", alignItems: "center", gap: "6px" }}>
                   <span>💵</span>
                   <span>Record Staff Payment / Advance</span>
@@ -2170,7 +2182,7 @@ export default function KitchenPage() {
                 </button>
               </div>
 
-              <form onSubmit={handleSavePayment} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+              <form onSubmit={handleSavePayment} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px", overflowY: "auto", flex: 1, paddingRight: "4px" }}>
                 <div>
                   <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
                     Select Staff Member *
@@ -2303,7 +2315,7 @@ export default function KitchenPage() {
                   />
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9" }}>
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9", position: "sticky", bottom: 0, background: "#ffffff", marginTop: "auto" }}>
                   <button
                     type="button"
                     onClick={() => setShowPaymentModal(false)}

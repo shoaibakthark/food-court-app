@@ -793,8 +793,8 @@ export default function ExpensesPage() {
       {/* Main Content */}
       <div className="main-content">
         {/* Topbar */}
-        <header className="topbar no-print">
-          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
+        <header className="topbar no-print" style={{ minHeight: "74px", height: "auto", padding: "12px 24px", gap: "12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, flex: "1 1 260px" }}>
             <MobileMenuButton />
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
@@ -822,7 +822,7 @@ export default function ExpensesPage() {
             </div>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap", justifyContent: "flex-end", flex: "1 1 auto" }}>
             {/* Quick search input */}
             <div className="search-box">
               <span style={{ color: "#8a7b9b", fontSize: "14px" }}>🔍</span>
@@ -965,7 +965,7 @@ export default function ExpensesPage() {
         </div>
 
         {/* Content Body */}
-        <div className="page-content" style={{ background: "#faf8fd", minHeight: "100vh", padding: "24px" }}>
+        <div className="page-content" style={{ background: "#faf8fd", minHeight: "calc(100vh - 74px)", padding: "24px 28px 60px" }}>
           <OwnerBanner />
 
           {/* Notifications */}
@@ -1210,7 +1210,10 @@ export default function ExpensesPage() {
 
             <button
               type="button"
-              onClick={() => setActiveTab("vendors")}
+              onClick={() => {
+                setActiveTab("vendors");
+                setSelectedVendor(null);
+              }}
               style={{
                 background: "transparent",
                 border: "none",
@@ -2711,6 +2714,9 @@ export default function ExpensesPage() {
               borderRadius: "16px",
               width: "100%",
               maxWidth: "540px",
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column",
               boxShadow: "0 20px 50px rgba(0, 0, 0, 0.25)",
               overflow: "hidden",
             }}
@@ -2724,6 +2730,7 @@ export default function ExpensesPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                flexShrink: 0,
               }}
             >
               <div>
@@ -2753,7 +2760,7 @@ export default function ExpensesPage() {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveSettlement} style={{ padding: "24px" }}>
+            <form onSubmit={handleSaveSettlement} style={{ padding: "24px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
               {/* Select Vendor */}
               <div style={{ marginBottom: "16px" }}>
                 <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
@@ -2927,7 +2934,7 @@ export default function ExpensesPage() {
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", position: "sticky", bottom: 0, background: "#fff", paddingTop: "14px", borderTop: "1px solid #f1f5f9", marginTop: "auto" }}>
                 <button
                   type="button"
                   onClick={() => setSettleModalOpen(false)}
@@ -2993,6 +3000,9 @@ export default function ExpensesPage() {
               borderRadius: "16px",
               width: "100%",
               maxWidth: "560px",
+              maxHeight: "90vh",
+              display: "flex",
+              flexDirection: "column",
               boxShadow: "0 20px 50px rgba(0, 0, 0, 0.25)",
               overflow: "hidden",
             }}
@@ -3006,6 +3016,7 @@ export default function ExpensesPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
+                flexShrink: 0,
               }}
             >
               <div>
@@ -3035,7 +3046,7 @@ export default function ExpensesPage() {
             </div>
 
             {/* Modal Form */}
-            <form onSubmit={handleSaveExpense} style={{ padding: "24px" }}>
+            <form onSubmit={handleSaveExpense} style={{ padding: "24px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
               {/* Title / Description */}
               <div style={{ marginBottom: "16px" }}>
                 <label style={{ display: "block", fontSize: "13px", fontWeight: 600, color: "#3c2e4e", marginBottom: "6px" }}>
@@ -3255,7 +3266,7 @@ export default function ExpensesPage() {
               </div>
 
               {/* Action Buttons */}
-              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px" }}>
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "12px", position: "sticky", bottom: 0, background: "#fff", paddingTop: "14px", borderTop: "1px solid #f1f5f9", marginTop: "auto" }}>
                 <button
                   type="button"
                   onClick={() => setModalOpen(false)}
