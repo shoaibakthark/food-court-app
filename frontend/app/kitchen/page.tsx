@@ -77,22 +77,6 @@ export type KitchenSummary = {
   today_duty_wages: number;
 };
 
-// Local row state for daily wage entry
-type DailyEntryRow = {
-  staff_id: number;
-  staff_name: string;
-  kitchen_role: string;
-  wage_type: string;
-  default_rate: number;
-  current_balance: number;
-  status: "present" | "half" | "absent";
-  today_wage: number;
-  paid_today: boolean;
-  payment_mode: "Cash" | "UPI" | "Bank Transfer";
-  note: string;
-  existing_duty_id?: number | null;
-};
-
 const KITCHEN_ROLES = [
   "Head Chef",
   "Cook / Curry Master",
@@ -110,13 +94,8 @@ export default function KitchenPage() {
   const router = useRouter();
   const { user, isOwner } = useAuth();
 
-  // Active view tab: 'daily' | 'monthly' | 'staff' | 'payments'
-  const [activeTab, setActiveTab] = useState<"daily" | "monthly" | "staff" | "payments">("daily");
-
-  // Selected date for daily wages (defaults to today)
-  const [selectedDate, setSelectedDate] = useState<string>(() => {
-    return new Date().toISOString().split("T")[0];
-  });
+  // Selected Staff for Details View ("Click and go to kitchen staff details page")
+  const [selectedStaffId, setSelectedStaffId] = useState<number | null>(null);
 
   // Data states
   const [staffList, setStaffList] = useState<KitchenStaff[]>([]);
@@ -124,18 +103,30 @@ export default function KitchenPage() {
   const [paymentsList, setPaymentsList] = useState<KitchenPayment[]>([]);
   const [summary, setSummary] = useState<KitchenSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [savingDaily, setSavingDaily] = useState(false);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  // Daily editable rows
-  const [dailyRows, setDailyRows] = useState<Record<number, DailyEntryRow>>({});
+  // Search & Filter
+  const [searchStaff, setSearchStaff] = useState("");
+  const [staffFilter, setStaffFilter] = useState<"all" | "daily" | "monthly">("all");
 
   // Modals
   const [showAddStaffModal, setShowAddStaffModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState<KitchenStaff | null>(null);
   const [showPaymentModal, setShowPaymentModal] = useState(false);
   const [paymentTargetStaff, setPaymentTargetStaff] = useState<KitchenStaff | null>(null);
+
+  // Quick Daily Wage Entry Form ("Form" from Blueprint)
+  const [showWageFormModal, setShowWageFormModal] = useState(false);
+  const [wageForm, setWageForm] = useState({
+    staff_id: "",
+    duty_date: new Date().toISOString().split("T")[0],
+    duty_status: "present", // 'present' | 'half' | 'absent'
+    today_wage: "800",
+    paid_today: false,
+    payment_mode: "Cash",
+    note: "",
+  });
 
   // Add / Edit Staff form
   const [staffForm, setStaffForm] = useState({
@@ -159,16 +150,6 @@ export default function KitchenPage() {
     note: "",
   });
 
-  // Selected month for Monthly Staff tab (YYYY-MM)
-  const [selectedMonth, setSelectedMonth] = useState<string>(() => {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  });
-
-  // Filter for Staff Directory
-  const [staffFilter, setStaffFilter] = useState<"all" | "daily" | "monthly">("all");
-  const [searchStaff, setSearchStaff] = useState("");
-
   // ==========================================
   // FETCH ALL DATA
   // ==========================================
@@ -180,269 +161,177 @@ export default function KitchenPage() {
       const [staffRes, summaryRes, dutiesRes, paymentsRes] = await Promise.all([
         fetchWithAuth(`${API_URL}/kitchen/staff`),
         fetchWithAuth(`${API_URL}/kitchen/summary`),
-        fetchWithAuth(`${API_URL}/kitchen/duties?duty_date=${selectedDate}`),
+        fetchWithAuth(`${API_URL}/kitchen/duties`),
         fetchWithAuth(`${API_URL}/kitchen/payments`),
       ]);
 
-      let staffData: KitchenStaff[] = [];
-      let dutiesData: KitchenDuty[] = [];
-
       if (staffRes.ok) {
-        staffData = await staffRes.json();
-        setStaffList(staffData);
+        setStaffList(await staffRes.json());
       }
       if (summaryRes.ok) {
         setSummary(await summaryRes.json());
       }
       if (dutiesRes.ok) {
-        dutiesData = await dutiesRes.json();
-        setDutiesList(dutiesData);
+        setDutiesList(await dutiesRes.json());
       }
       if (paymentsRes.ok) {
         setPaymentsList(await paymentsRes.json());
       }
-
-      // Initialize daily rows for every active staff member
-      const rows: Record<number, DailyEntryRow> = {};
-      const activeStaff = staffData.filter((s) => s.status === "active");
-
-      activeStaff.forEach((s) => {
-        const existingDuty = dutiesData.find((d) => d.staff_id === s.id);
-
-        if (existingDuty) {
-          let st: "present" | "half" | "absent" = "present";
-          const dStatus = (existingDuty.duty_status || "").toLowerCase();
-          if (dStatus === "absent" || dStatus === "off") {
-            st = "absent";
-          } else if (dStatus === "half" || dStatus === "half day") {
-            st = "half";
-          } else {
-            st = "present";
-          }
-
-          rows[s.id] = {
-            staff_id: s.id,
-            staff_name: s.name,
-            kitchen_role: s.kitchen_role,
-            wage_type: s.wage_type,
-            default_rate: Number(s.wage_rate) || 0,
-            current_balance: Number(s.balance) || 0,
-            status: st,
-            today_wage: Number(existingDuty.total_wage) || 0,
-            paid_today: Boolean(existingDuty.paid_today),
-            payment_mode: (existingDuty.payment_mode as "Cash" | "UPI" | "Bank Transfer") || "Cash",
-            note: existingDuty.note || "",
-            existing_duty_id: existingDuty.id,
-          };
-        } else {
-          const isMonthly = s.wage_type === "monthly";
-          const defaultDailyWage = isMonthly ? 0 : Number(s.wage_rate) || 0;
-
-          rows[s.id] = {
-            staff_id: s.id,
-            staff_name: s.name,
-            kitchen_role: s.kitchen_role,
-            wage_type: s.wage_type,
-            default_rate: Number(s.wage_rate) || 0,
-            current_balance: Number(s.balance) || 0,
-            status: "present",
-            today_wage: defaultDailyWage,
-            paid_today: false,
-            payment_mode: "Cash",
-            note: "",
-            existing_duty_id: null,
-          };
-        }
-      });
-
-      setDailyRows(rows);
     } catch (err: any) {
       console.error("Error loading kitchen data:", err);
       setErrorMsg(err.message || "Failed to load kitchen staff data");
     } finally {
       setLoading(false);
     }
-  }, [selectedDate]);
+  }, []);
 
   useEffect(() => {
     loadAllData();
   }, [loadAllData]);
 
-  // Quick Date Navigation
-  const changeDateBy = (days: number) => {
-    const cur = new Date(selectedDate);
-    cur.setDate(cur.getDate() + days);
-    setSelectedDate(cur.toISOString().split("T")[0]);
-  };
+  // Selected Staff Details
+  const selectedStaff = useMemo(() => {
+    if (!selectedStaffId) return null;
+    return staffList.find((s) => s.id === selectedStaffId) || null;
+  }, [selectedStaffId, staffList]);
 
-  const setDateToday = () => {
-    setSelectedDate(new Date().toISOString().split("T")[0]);
-  };
+  // Selected Staff Duties / Work Days ("Show their work: Date, Wage, Payment")
+  const selectedStaffDuties = useMemo(() => {
+    if (!selectedStaffId) return [];
+    return dutiesList
+      .filter((d) => d.staff_id === selectedStaffId)
+      .sort((a, b) => new Date(b.duty_date).getTime() - new Date(a.duty_date).getTime());
+  }, [selectedStaffId, dutiesList]);
 
-  const formattedDateTitle = useMemo(() => {
-    try {
-      const d = new Date(selectedDate);
-      return d.toLocaleDateString("en-IN", {
-        weekday: "short",
-        day: "numeric",
-        month: "short",
-        year: "numeric",
-      });
-    } catch {
-      return selectedDate;
-    }
-  }, [selectedDate]);
+  // Selected Staff Payments
+  const selectedStaffPayments = useMemo(() => {
+    if (!selectedStaffId) return [];
+    return paymentsList
+      .filter((p) => p.staff_id === selectedStaffId)
+      .sort((a, b) => new Date(b.payment_date).getTime() - new Date(a.payment_date).getTime());
+  }, [selectedStaffId, paymentsList]);
 
-  // Separate staff by wage type
-  const dailyStaff = useMemo(() => {
-    return staffList.filter((s) => s.wage_type === "daily" && s.status === "active");
+  // Metrics from blueprint
+  const totalStaffCount = staffList.length;
+  const totalStaffWages = summary?.total_wages || 0;
+  const totalStaffPending = summary?.total_pending_balance || 0;
+  const monthlySalaryTotal = useMemo(() => {
+    return staffList
+      .filter((s) => s.wage_type === "monthly" && s.status === "active")
+      .reduce((sum, s) => sum + (Number(s.wage_rate) || 0), 0);
   }, [staffList]);
 
-  const monthlyStaff = useMemo(() => {
-    return staffList.filter((s) => s.wage_type === "monthly" && s.status === "active");
-  }, [staffList]);
-
-  // Live totals for daily entry sheet
-  const dailySheetTotals = useMemo(() => {
-    let presentCount = 0;
-    let absentCount = 0;
-    let totalWagesToday = 0;
-    let totalPaidToday = 0;
-
-    dailyStaff.forEach((s) => {
-      const row = dailyRows[s.id];
-      if (row) {
-        if (row.status !== "absent") {
-          presentCount++;
-          totalWagesToday += Number(row.today_wage) || 0;
-          if (row.paid_today) {
-            totalPaidToday += Number(row.today_wage) || 0;
-          }
-        } else {
-          absentCount++;
-        }
+  // Filtered Staff List for Table
+  const filteredStaffList = useMemo(() => {
+    return staffList.filter((s) => {
+      if (staffFilter === "daily" && s.wage_type !== "daily") return false;
+      if (staffFilter === "monthly" && s.wage_type !== "monthly") return false;
+      if (searchStaff.trim()) {
+        const q = searchStaff.toLowerCase();
+        const matchName = s.name.toLowerCase().includes(q);
+        const matchRole = s.kitchen_role.toLowerCase().includes(q);
+        const matchMobile = (s.mobile || "").includes(q);
+        return matchName || matchRole || matchMobile;
       }
+      return true;
     });
+  }, [staffList, staffFilter, searchStaff]);
 
-    return {
-      presentCount,
-      absentCount,
-      totalWagesToday,
-      totalPaidToday,
-      pendingToday: Math.max(0, totalWagesToday - totalPaidToday),
-    };
-  }, [dailyStaff, dailyRows]);
+  // Open the "Form" from blueprint
+  const openWageForm = (preselectedStaffId?: number) => {
+    const defaultStaff = preselectedStaffId
+      ? staffList.find((s) => s.id === preselectedStaffId)
+      : staffList[0];
 
-  // Update a single field in daily row
-  const updateDailyRow = (staffId: number, patch: Partial<DailyEntryRow>) => {
-    setDailyRows((prev) => {
-      const cur = prev[staffId];
-      if (!cur) return prev;
-      return {
-        ...prev,
-        [staffId]: { ...cur, ...patch },
-      };
+    const staffId = defaultStaff ? String(defaultStaff.id) : "";
+    const defaultRate = defaultStaff
+      ? defaultStaff.wage_type === "monthly"
+        ? "0"
+        : String(defaultStaff.wage_rate)
+      : "800";
+
+    setWageForm({
+      staff_id: staffId,
+      duty_date: new Date().toISOString().split("T")[0],
+      duty_status: "present",
+      today_wage: defaultRate,
+      paid_today: false,
+      payment_mode: "Cash",
+      note: "",
     });
+    setShowWageFormModal(true);
   };
 
-  // Quick attendance toggle for Daily Staff
-  const handleDailyStatusChange = (staffId: number, newStatus: "present" | "half" | "absent") => {
-    setDailyRows((prev) => {
-      const row = prev[staffId];
-      if (!row) return prev;
-
-      let newWage = row.today_wage;
-      if (newStatus === "absent") {
-        newWage = 0;
-      } else if (newStatus === "half") {
-        newWage = Math.round(row.default_rate * 0.5);
-      } else if (newStatus === "present") {
-        if (newWage === 0) {
-          newWage = row.default_rate;
-        }
-      }
-
-      return {
-        ...prev,
-        [staffId]: {
-          ...row,
-          status: newStatus,
-          today_wage: newWage,
-          paid_today: newStatus === "absent" ? false : row.paid_today,
-        },
-      };
-    });
-  };
-
-  // Bulk actions for Daily Staff
-  const setAllDailyStatus = (status: "present" | "absent") => {
-    setDailyRows((prev) => {
-      const next = { ...prev };
-      dailyStaff.forEach((s) => {
-        const row = next[s.id];
-        if (row) {
-          const wage = status === "absent" ? 0 : row.default_rate;
-          next[s.id] = {
-            ...row,
-            status,
-            today_wage: wage,
-            paid_today: status === "absent" ? false : row.paid_today,
-          };
-        }
-      });
-      return next;
-    });
-  };
-
-  // SAVE TODAY'S DAILY WAGES
-  const handleSaveDailyWages = async () => {
+  // Submit Daily Wage Entry Form ("Form" from Blueprint)
+  const handleSubmitWageForm = async (e: FormEvent) => {
+    e.preventDefault();
     if (isOwner) {
       alert("Owner accounts have view-only access.");
       return;
     }
 
     try {
-      setSavingDaily(true);
       setErrorMsg(null);
-      setSaveSuccessMsg(null);
+      if (!wageForm.staff_id) {
+        alert("Please select a staff member");
+        return;
+      }
 
-      const dutiesPayload = Object.values(dailyRows).map((row) => ({
-        staff_id: row.staff_id,
-        shift: "Full Day",
-        duty_status: row.status,
-        duty_units: row.status === "absent" ? 0 : row.status === "half" ? 0.5 : 1.0,
-        daily_rate: row.status === "absent" ? 0 : row.today_wage,
-        today_wage: row.status === "absent" ? 0 : row.today_wage,
-        bonus: 0,
-        deduction: 0,
-        paid_today: row.paid_today,
-        paid_amount: row.paid_today ? row.today_wage : 0,
-        payment_mode: row.payment_mode,
-        note: row.note || null,
-      }));
+      const wageNum = parseFloat(wageForm.today_wage) || 0;
 
-      const res = await fetchWithAuth(`${API_URL}/kitchen/duties/batch`, {
+      const res = await fetchWithAuth(`${API_URL}/kitchen/duties`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          duty_date: selectedDate,
-          duties: dutiesPayload,
+          staff_id: parseInt(wageForm.staff_id),
+          duty_date: wageForm.duty_date,
+          shift: "Full Day",
+          duty_status: wageForm.duty_status,
+          duty_units: wageForm.duty_status === "absent" ? 0 : wageForm.duty_status === "half" ? 0.5 : 1.0,
+          daily_rate: wageForm.duty_status === "absent" ? 0 : wageNum,
+          today_wage: wageForm.duty_status === "absent" ? 0 : wageNum,
+          paid_today: wageForm.paid_today,
+          paid_amount: wageForm.paid_today ? wageNum : 0,
+          payment_mode: wageForm.payment_mode,
+          note: wageForm.note.trim() || null,
         }),
       });
 
       if (!res.ok) {
         const err = await res.json();
-        throw new Error(err.detail || "Failed to save daily wages");
+        throw new Error(err.detail || "Failed to record wage entry");
       }
 
-      setSaveSuccessMsg(`✓ Daily wages for ${formattedDateTitle} saved successfully!`);
-      setTimeout(() => setSaveSuccessMsg(null), 4000);
+      setShowWageFormModal(false);
+      setSaveSuccessMsg("✓ Wage entry recorded successfully!");
+      setTimeout(() => setSaveSuccessMsg(null), 3500);
       await loadAllData();
     } catch (err: any) {
-      console.error("Save daily wages error:", err);
-      setErrorMsg(err.message || "Failed to save daily wages");
-    } finally {
-      setSavingDaily(false);
+      setErrorMsg(err.message || "Failed to record wage entry");
+    }
+  };
+
+  // Delete a Duty Entry from staff details history
+  const handleDeleteDuty = async (dutyId: number) => {
+    if (isOwner) {
+      alert("Owner accounts have view-only access.");
+      return;
+    }
+    if (!confirm("Are you sure you want to remove this day's work record?")) {
+      return;
+    }
+
+    try {
+      const res = await fetchWithAuth(`${API_URL}/kitchen/duties/${dutyId}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.detail || "Failed to delete duty record");
+      }
+      await loadAllData();
+    } catch (err: any) {
+      alert(err.message || "Failed to delete duty record");
     }
   };
 
@@ -511,7 +400,7 @@ export default function KitchenPage() {
       alert("Owner accounts have view-only access.");
       return;
     }
-    if (!confirm(`Are you sure you want to remove ${name}? This will delete their past duties and records.`)) {
+    if (!confirm(`Are you sure you want to remove ${name}? This will delete all their wage and payment history.`)) {
       return;
     }
 
@@ -523,30 +412,33 @@ export default function KitchenPage() {
         const err = await res.json();
         throw new Error(err.detail || "Failed to delete staff");
       }
+      if (selectedStaffId === staffId) {
+        setSelectedStaffId(null);
+      }
       await loadAllData();
     } catch (err: any) {
       alert(err.message || "Failed to delete staff");
     }
   };
 
-  // Open Quick Pay Modal
+  // Open Payment Modal
   const openPaymentModal = (staff?: KitchenStaff) => {
     if (staff) {
       setPaymentTargetStaff(staff);
       setPaymentForm({
         staff_id: String(staff.id),
         amount: String(staff.balance > 0 ? staff.balance : staff.wage_rate),
-        payment_date: selectedDate,
+        payment_date: new Date().toISOString().split("T")[0],
         payment_mode: "Cash",
         reference_no: "",
-        note: staff.wage_type === "monthly" ? `Monthly Salary Advance (${selectedMonth})` : `Daily wage settlement`,
+        note: staff.wage_type === "monthly" ? "Monthly salary payment" : "Daily wage settlement",
       });
     } else {
       setPaymentTargetStaff(null);
       setPaymentForm({
         staff_id: staffList[0] ? String(staffList[0].id) : "",
         amount: "",
-        payment_date: selectedDate,
+        payment_date: new Date().toISOString().split("T")[0],
         payment_mode: "Cash",
         reference_no: "",
         note: "",
@@ -601,7 +493,7 @@ export default function KitchenPage() {
       alert("Owner accounts have view-only access.");
       return;
     }
-    if (!confirm("Are you sure you want to delete this payment record? The amount will be added back to staff balance.")) {
+    if (!confirm("Are you sure you want to delete this payment record?")) {
       return;
     }
 
@@ -619,60 +511,14 @@ export default function KitchenPage() {
     }
   };
 
-  // Monthly Staff stats for selected month
-  const monthlyStaffMetrics = useMemo(() => {
-    return monthlyStaff.map((s) => {
-      const monthPayments = paymentsList.filter((p) => {
-        return p.staff_id === s.id && (p.payment_date || "").startsWith(selectedMonth);
-      });
-      const totalPaidThisMonth = monthPayments.reduce((acc, p) => acc + Number(p.amount), 0);
-
-      const monthDuties = dutiesList.filter((d) => {
-        return (
-          d.staff_id === s.id &&
-          (d.duty_date || "").startsWith(selectedMonth) &&
-          d.duty_status !== "absent"
-        );
-      });
-
-      const monthlySalary = Number(s.wage_rate) || 0;
-      const balanceDue = Math.max(0, monthlySalary - totalPaidThisMonth);
-
-      return {
-        staff: s,
-        salary: monthlySalary,
-        daysPresent: monthDuties.length,
-        paidThisMonth: totalPaidThisMonth,
-        balanceDue,
-        payments: monthPayments,
-      };
-    });
-  }, [monthlyStaff, paymentsList, dutiesList, selectedMonth]);
-
-  // Filtered staff list for Directory tab
-  const filteredStaffList = useMemo(() => {
-    return staffList.filter((s) => {
-      if (staffFilter === "daily" && s.wage_type !== "daily") return false;
-      if (staffFilter === "monthly" && s.wage_type !== "monthly") return false;
-      if (searchStaff.trim()) {
-        const q = searchStaff.toLowerCase();
-        const matchName = s.name.toLowerCase().includes(q);
-        const matchRole = s.kitchen_role.toLowerCase().includes(q);
-        const matchMobile = (s.mobile || "").includes(q);
-        return matchName || matchRole || matchMobile;
-      }
-      return true;
-    });
-  }, [staffList, staffFilter, searchStaff]);
-
   return (
     <main className="dashboard">
       {/* App Fixed Sidebar */}
       <AppSidebar activeRoute="/kitchen" />
 
-      {/* Main Content with standard margin-left: 250px so sidebar never cuts off */}
+      {/* Main Content (standard margin-left: 250px so sidebar never cuts off) */}
       <div className="main-content">
-        {/* Topbar matching app standard light theme */}
+        {/* Topbar */}
         <header className="topbar">
           <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
             <MobileMenuButton />
@@ -689,17 +535,21 @@ export default function KitchenPage() {
                 fontWeight: 600,
               }}
             >
-              {dailyStaff.length} Daily • {monthlyStaff.length} Monthly
+              {totalStaffCount} Kitchen Staff
             </span>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
             {!isOwner && (
               <>
+                {/* Button that opens the Blueprint's "Form" */}
                 <button
                   type="button"
-                  onClick={() => openPaymentModal()}
+                  onClick={() => openWageForm(selectedStaffId || undefined)}
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
                     background: "#ecfdf5",
                     color: "#047857",
                     border: "1px solid #a7f3d0",
@@ -710,11 +560,12 @@ export default function KitchenPage() {
                     cursor: "pointer",
                     transition: "all 0.15s ease",
                   }}
-                  title="Record Cash or UPI payment"
+                  title="Open wage entry form"
                 >
-                  💵 Record Payment
+                  <span>📝</span> Add Wage Entry
                 </button>
 
+                {/* Button that adds a new staff */}
                 <button
                   type="button"
                   onClick={() => {
@@ -756,7 +607,7 @@ export default function KitchenPage() {
           </div>
         </header>
 
-        {/* Page Content with Clean White / Light Theme */}
+        {/* Content Canvas (Clean White Background) */}
         <div className="page-content" style={{ maxWidth: "1600px", padding: "24px 32px" }}>
           <OwnerBanner />
 
@@ -815,16 +666,22 @@ export default function KitchenPage() {
             </div>
           )}
 
-          {/* Top Summary Metric Cards (Clean White Theme) */}
+          {/* ========================================================= */}
+          {/* TOP 4 METRIC CARDS (EXACTLY FROM USER'S BLUEPRINT)         */}
+          {/* Box 1: Total staff                                       */}
+          {/* Box 2: Total staff wages                                 */}
+          {/* Box 3: Total staff pending                               */}
+          {/* Box 4: Monthly salary                                    */}
+          {/* ========================================================= */}
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
               gap: "16px",
-              marginBottom: "24px",
+              marginBottom: "28px",
             }}
           >
-            {/* Card 1: Today's Working Staff */}
+            {/* Box 1: Total staff */}
             <div
               style={{
                 background: "#ffffff",
@@ -839,23 +696,83 @@ export default function KitchenPage() {
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 600 }}>Working Today</span>
-                <span style={{ fontSize: "14px" }}>🟢</span>
+                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 700, textTransform: "uppercase" }}>
+                  Total Staff
+                </span>
+                <span style={{ fontSize: "16px" }}>👥</span>
               </div>
               <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
-                <span style={{ fontSize: "28px", fontWeight: 800, color: "#24103f", letterSpacing: "-0.5px" }}>
-                  {dailySheetTotals.presentCount}
+                <span style={{ fontSize: "30px", fontWeight: 800, color: "#24103f", letterSpacing: "-0.5px" }}>
+                  {totalStaffCount}
                 </span>
-                <span style={{ fontSize: "12px", color: "#8a7b9b", fontWeight: 600 }}>
-                  / {dailyStaff.length} Daily Staff
+                <span style={{ fontSize: "12px", color: "#8a7b9b", fontWeight: 600 }}>Active Members</span>
+              </div>
+              <div style={{ fontSize: "11px", color: "#8a7b9b" }}>
+                {staffList.filter((s) => s.wage_type === "daily").length} Daily • {staffList.filter((s) => s.wage_type === "monthly").length} Monthly
+              </div>
+            </div>
+
+            {/* Box 2: Total staff wages */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e9e3f3",
+                borderRadius: "16px",
+                padding: "18px 20px",
+                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                height: "115px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 700, textTransform: "uppercase" }}>
+                  Total Staff Wages
+                </span>
+                <span style={{ fontSize: "16px" }}>💰</span>
+              </div>
+              <div>
+                <span style={{ fontSize: "30px", fontWeight: 800, color: "#b45309", letterSpacing: "-0.5px" }}>
+                  ₹{Number(totalStaffWages).toLocaleString("en-IN")}
+                </span>
+              </div>
+              <div style={{ fontSize: "11px", color: "#6b5b7e" }}>
+                Total earnings accrued across all duties
+              </div>
+            </div>
+
+            {/* Box 3: Total staff pending */}
+            <div
+              style={{
+                background: "#ffffff",
+                border: "1px solid #e9e3f3",
+                borderRadius: "16px",
+                padding: "18px 20px",
+                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                display: "flex",
+                flexDirection: "column",
+                justifyContent: "space-between",
+                height: "115px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 700, textTransform: "uppercase" }}>
+                  Total Staff Pending
+                </span>
+                <span style={{ fontSize: "16px" }}>⏳</span>
+              </div>
+              <div>
+                <span style={{ fontSize: "30px", fontWeight: 800, color: "#be123c", letterSpacing: "-0.5px" }}>
+                  ₹{Number(totalStaffPending).toLocaleString("en-IN")}
                 </span>
               </div>
               <div style={{ fontSize: "11px", color: "#8a7b9b" }}>
-                {dailySheetTotals.absentCount > 0 ? `${dailySheetTotals.absentCount} marked absent today` : "Full attendance today"}
+                Pending balance due to be paid out
               </div>
             </div>
 
-            {/* Card 2: Today's Total Wages */}
+            {/* Box 4: Monthly salary */}
             <div
               style={{
                 background: "#ffffff",
@@ -870,212 +787,31 @@ export default function KitchenPage() {
               }}
             >
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 600 }}>Today's Wages Total</span>
-                <span style={{ fontSize: "14px" }}>💰</span>
+                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 700, textTransform: "uppercase" }}>
+                  Monthly Salary
+                </span>
+                <span style={{ fontSize: "16px" }}>💼</span>
               </div>
               <div>
-                <span style={{ fontSize: "28px", fontWeight: 800, color: "#b45309", letterSpacing: "-0.5px" }}>
-                  ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
-                </span>
-              </div>
-              <div style={{ fontSize: "11px", color: "#6b5b7e", display: "flex", justifyContent: "space-between" }}>
-                <span>Paid: ₹{dailySheetTotals.totalPaidToday.toLocaleString("en-IN")}</span>
-                <span style={{ fontWeight: 700, color: "#b45309" }}>Due: ₹{dailySheetTotals.pendingToday.toLocaleString("en-IN")}</span>
-              </div>
-            </div>
-
-            {/* Card 3: Monthly Staff */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e9e3f3",
-                borderRadius: "16px",
-                padding: "18px 20px",
-                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                height: "115px",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 600 }}>Monthly Salaried</span>
-                <span style={{ fontSize: "14px" }}>💼</span>
-              </div>
-              <div style={{ display: "flex", alignItems: "baseline", gap: "8px" }}>
-                <span style={{ fontSize: "28px", fontWeight: 800, color: "#4338ca", letterSpacing: "-0.5px" }}>
-                  {monthlyStaff.length}
-                </span>
-                <span style={{ fontSize: "12px", color: "#8a7b9b", fontWeight: 600 }}>Active</span>
-              </div>
-              <div style={{ fontSize: "11px", color: "#8a7b9b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {monthlyStaff.length > 0 ? monthlyStaff.map((m) => m.name).join(", ") : "No monthly staff"}
-              </div>
-            </div>
-
-            {/* Card 4: Total Pending Balances */}
-            <div
-              style={{
-                background: "#ffffff",
-                border: "1px solid #e9e3f3",
-                borderRadius: "16px",
-                padding: "18px 20px",
-                boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
-                display: "flex",
-                flexDirection: "column",
-                justifyContent: "space-between",
-                height: "115px",
-              }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <span style={{ fontSize: "12px", color: "#6b5b7e", fontWeight: 600 }}>Total Balance Due</span>
-                <span style={{ fontSize: "14px" }}>⏳</span>
-              </div>
-              <div>
-                <span style={{ fontSize: "28px", fontWeight: 800, color: "#be123c", letterSpacing: "-0.5px" }}>
-                  ₹{(summary?.total_pending_balance || 0).toLocaleString("en-IN")}
+                <span style={{ fontSize: "30px", fontWeight: 800, color: "#4338ca", letterSpacing: "-0.5px" }}>
+                  ₹{Number(monthlySalaryTotal).toLocaleString("en-IN")}
                 </span>
               </div>
               <div style={{ fontSize: "11px", color: "#8a7b9b" }}>
-                Accrued wage balance across all staff
+                Monthly payroll commitment for fixed staff
               </div>
             </div>
           </div>
 
-          {/* View Switcher Tabs (White Pill Style) */}
-          <div style={{ marginBottom: "20px" }}>
-            <div
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "6px",
-                background: "#ffffff",
-                padding: "4px",
-                borderRadius: "12px",
-                border: "1px solid #e9e3f3",
-                boxShadow: "0 1px 4px rgba(30, 8, 54, 0.04)",
-              }}
-            >
-              <button
-                type="button"
-                onClick={() => setActiveTab("daily")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 16px",
-                  borderRadius: "10px",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  border: "none",
-                  transition: "all 0.15s ease",
-                  background: activeTab === "daily" ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" : "transparent",
-                  color: activeTab === "daily" ? "#ffffff" : "#6b5b7e",
-                  boxShadow: activeTab === "daily" ? "0 2px 8px rgba(124, 58, 237, 0.25)" : "none",
-                }}
-              >
-                <span>📅</span>
-                <span>Daily Wages Entry</span>
-                <span
-                  style={{
-                    padding: "2px 6px",
-                    borderRadius: "10px",
-                    fontSize: "10px",
-                    background: activeTab === "daily" ? "rgba(255,255,255,0.25)" : "#ede9fe",
-                    color: activeTab === "daily" ? "#ffffff" : "#6d28d9",
-                  }}
-                >
-                  {dailyStaff.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("monthly")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 16px",
-                  borderRadius: "10px",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  border: "none",
-                  transition: "all 0.15s ease",
-                  background: activeTab === "monthly" ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" : "transparent",
-                  color: activeTab === "monthly" ? "#ffffff" : "#6b5b7e",
-                  boxShadow: activeTab === "monthly" ? "0 2px 8px rgba(124, 58, 237, 0.25)" : "none",
-                }}
-              >
-                <span>💼</span>
-                <span>Monthly Staff</span>
-                <span
-                  style={{
-                    padding: "2px 6px",
-                    borderRadius: "10px",
-                    fontSize: "10px",
-                    background: activeTab === "monthly" ? "rgba(255,255,255,0.25)" : "#ede9fe",
-                    color: activeTab === "monthly" ? "#ffffff" : "#6d28d9",
-                  }}
-                >
-                  {monthlyStaff.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("staff")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 16px",
-                  borderRadius: "10px",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  border: "none",
-                  transition: "all 0.15s ease",
-                  background: activeTab === "staff" ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" : "transparent",
-                  color: activeTab === "staff" ? "#ffffff" : "#6b5b7e",
-                  boxShadow: activeTab === "staff" ? "0 2px 8px rgba(124, 58, 237, 0.25)" : "none",
-                }}
-              >
-                <span>👥</span>
-                <span>Staff & Balances</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveTab("payments")}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  padding: "8px 16px",
-                  borderRadius: "10px",
-                  fontSize: "13px",
-                  fontWeight: 700,
-                  cursor: "pointer",
-                  border: "none",
-                  transition: "all 0.15s ease",
-                  background: activeTab === "payments" ? "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)" : "transparent",
-                  color: activeTab === "payments" ? "#ffffff" : "#6b5b7e",
-                  boxShadow: activeTab === "payments" ? "0 2px 8px rgba(124, 58, 237, 0.25)" : "none",
-                }}
-              >
-                <span>🧾</span>
-                <span>Payment History</span>
-              </button>
-            </div>
-          </div>
-
-          {/* TAB 1: DAILY WAGES ENTRY (HERO WORKSPACE ON WHITE BG) */}
-          {activeTab === "daily" && (
+          {/* ========================================================= */}
+          {/* VIEW SWITCH: MASTER STAFF DATA vs STAFF DETAILS PAGE       */}
+          {/* ========================================================= */}
+          {!selectedStaff ? (
+            /* ------------------------------------------------------- */
+            /* SCREEN 1: MASTER STAFF DATA TABLE                       */
+            /* ------------------------------------------------------- */
             <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              {/* Date Navigator Banner (Crisp White Card) */}
+              {/* Header Bar above Table with Search, Filter & Quick Add Buttons */}
               <div
                 style={{
                   background: "#ffffff",
@@ -1090,1154 +826,17 @@ export default function KitchenPage() {
                   gap: "14px",
                 }}
               >
-                {/* Left side: Date navigation */}
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "4px",
-                      background: "#f5f3ff",
-                      padding: "4px",
-                      borderRadius: "10px",
-                      border: "1px solid #e9e3f3",
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => changeDateBy(-1)}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: "8px",
-                        border: "none",
-                        background: "#ffffff",
-                        color: "#6d28d9",
-                        fontWeight: 700,
-                        fontSize: "12px",
-                        cursor: "pointer",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                      }}
-                      title="Previous Day"
-                    >
-                      ◀ Prev
-                    </button>
-                    <button
-                      type="button"
-                      onClick={setDateToday}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: "8px",
-                        border: "none",
-                        background: "#ede9fe",
-                        color: "#5b21b6",
-                        fontWeight: 800,
-                        fontSize: "12px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      Today
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => changeDateBy(1)}
-                      style={{
-                        padding: "6px 12px",
-                        borderRadius: "8px",
-                        border: "none",
-                        background: "#ffffff",
-                        color: "#6d28d9",
-                        fontWeight: 700,
-                        fontSize: "12px",
-                        cursor: "pointer",
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                      }}
-                      title="Next Day"
-                    >
-                      Next ▶
-                    </button>
-                  </div>
-
-                  <input
-                    type="date"
-                    value={selectedDate}
-                    onChange={(e) => setSelectedDate(e.target.value)}
-                    style={{
-                      height: "36px",
-                      padding: "0 12px",
-                      borderRadius: "10px",
-                      border: "1px solid #d8b4fe",
-                      background: "#ffffff",
-                      color: "#24103f",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      outline: "none",
-                    }}
-                  />
-
-                  <span
-                    style={{
-                      background: "#f5f3ff",
-                      color: "#6d28d9",
-                      padding: "6px 12px",
-                      borderRadius: "10px",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      border: "1px solid #ede9fe",
-                    }}
-                  >
-                    {formattedDateTitle}
-                  </span>
-                </div>
-
-                {/* Right side: Quick Roster Actions & Save Button */}
-                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-                  <button
-                    type="button"
-                    onClick={() => setAllDailyStatus("present")}
-                    style={{
-                      height: "36px",
-                      padding: "0 14px",
-                      borderRadius: "10px",
-                      border: "1px solid #a7f3d0",
-                      background: "#ecfdf5",
-                      color: "#047857",
-                      fontWeight: 700,
-                      fontSize: "12px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    ✓ All Present
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setAllDailyStatus("absent")}
-                    style={{
-                      height: "36px",
-                      padding: "0 14px",
-                      borderRadius: "10px",
-                      border: "1px solid #fecaca",
-                      background: "#fef2f2",
-                      color: "#b91c1c",
-                      fontWeight: 700,
-                      fontSize: "12px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    ✗ All Absent
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleSaveDailyWages}
-                    disabled={savingDaily}
-                    style={{
-                      height: "36px",
-                      padding: "0 18px",
-                      borderRadius: "10px",
-                      border: "none",
-                      background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
-                      color: "#ffffff",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      cursor: "pointer",
-                      boxShadow: "0 4px 12px rgba(5, 150, 105, 0.25)",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "6px",
-                    }}
-                  >
-                    <span>💾</span>
-                    <span>{savingDaily ? "Saving..." : "Save Today's Wages"}</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Instruction Tip */}
-              <div style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "12px", color: "#6b5b7e" }}>
-                <span style={{ color: "#d97706", fontWeight: 700 }}>💡 Tip:</span>
-                <span>
-                  Wages change every day. Simply type today's exact rupee amount for each worker, or check "Paid Cash" if handed out.
-                </span>
-              </div>
-
-              {/* Section 1: Daily Working Staff Table (White Theme with Crisp Grid) */}
-              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "0 4px" }}>
-                  <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#24103f" }}>
-                    🔪 Daily Working Staff ({dailyStaff.length})
-                  </h2>
-                  <span style={{ fontSize: "13px", color: "#6b5b7e" }}>
-                    Total Day Wage:{" "}
-                    <strong style={{ color: "#b45309", fontWeight: 800 }}>
-                      ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
-                    </strong>
-                  </span>
-                </div>
-
-                {dailyStaff.length === 0 ? (
-                  <div
-                    style={{
-                      background: "#ffffff",
-                      borderRadius: "16px",
-                      border: "1px solid #e9e3f3",
-                      padding: "40px",
-                      textAlign: "center",
-                    }}
-                  >
-                    <p style={{ color: "#8a7b9b", fontSize: "14px", margin: 0 }}>No daily wage staff found.</p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingStaff(null);
-                        setStaffForm({
-                          name: "",
-                          mobile: "",
-                          kitchen_role: "Kitchen Helper",
-                          wage_type: "daily",
-                          wage_rate: "800",
-                          status: "active",
-                          address: "",
-                          notes: "",
-                        });
-                        setShowAddStaffModal(true);
-                      }}
-                      style={{
-                        marginTop: "12px",
-                        padding: "8px 16px",
-                        background: "#7c3aed",
-                        color: "#fff",
-                        borderRadius: "8px",
-                        border: "none",
-                        fontWeight: 700,
-                        fontSize: "12px",
-                        cursor: "pointer",
-                      }}
-                    >
-                      + Add Daily Staff
-                    </button>
-                  </div>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                    {/* Header Row on Desktop */}
-                    <div
-                      className="hidden md:grid"
-                      style={{
-                        gridTemplateColumns: "3fr 3fr 2fr 2fr 2fr",
-                        gap: "14px",
-                        padding: "0 18px",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        color: "#8a7b9b",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.5px",
-                      }}
-                    >
-                      <div>Staff Member</div>
-                      <div style={{ textAlign: "center" }}>Attendance</div>
-                      <div style={{ textAlign: "center" }}>Today's Wage (₹)</div>
-                      <div style={{ textAlign: "center" }}>Payment Status</div>
-                      <div>Note / Shift</div>
-                    </div>
-
-                    {dailyStaff.map((staff) => {
-                      const row = dailyRows[staff.id] || {
-                        staff_id: staff.id,
-                        staff_name: staff.name,
-                        kitchen_role: staff.kitchen_role,
-                        wage_type: "daily",
-                        default_rate: Number(staff.wage_rate) || 0,
-                        current_balance: Number(staff.balance) || 0,
-                        status: "present",
-                        today_wage: Number(staff.wage_rate) || 0,
-                        paid_today: false,
-                        payment_mode: "Cash",
-                        note: "",
-                        existing_duty_id: null,
-                      };
-
-                      const isAbsent = row.status === "absent";
-                      const isHalf = row.status === "half";
-                      const isPresent = row.status === "present";
-
-                      return (
-                        <div
-                          key={staff.id}
-                          style={{
-                            background: isAbsent ? "#f8fafc" : "#ffffff",
-                            border: isAbsent
-                              ? "1px solid #e2e8f0"
-                              : isHalf
-                              ? "1px solid #fde68a"
-                              : "1px solid #e9e3f3",
-                            borderRadius: "16px",
-                            padding: "16px 18px",
-                            boxShadow: "0 1px 4px rgba(30, 8, 54, 0.03)",
-                            opacity: isAbsent ? 0.65 : 1,
-                            transition: "all 0.15s ease",
-                          }}
-                        >
-                          {/* Desktop Grid (md+) */}
-                          <div
-                            className="hidden md:grid"
-                            style={{
-                              gridTemplateColumns: "3fr 3fr 2fr 2fr 2fr",
-                              gap: "14px",
-                              alignItems: "center",
-                            }}
-                          >
-                            {/* Col 1: Staff Info */}
-                            <div style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0 }}>
-                              <div
-                                style={{
-                                  width: "40px",
-                                  height: "40px",
-                                  borderRadius: "10px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "center",
-                                  fontWeight: 800,
-                                  fontSize: "14px",
-                                  flexShrink: 0,
-                                  background: isAbsent ? "#f1f5f9" : isHalf ? "#fef3c7" : "#ede9fe",
-                                  color: isAbsent ? "#64748b" : isHalf ? "#b45309" : "#6d28d9",
-                                  border: isAbsent ? "1px solid #cbd5e1" : isHalf ? "1px solid #fcd34d" : "1px solid #ddd6fe",
-                                }}
-                              >
-                                {staff.name.slice(0, 2).toUpperCase()}
-                              </div>
-
-                              <div style={{ minWidth: 0, flex: 1 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
-                                  <span style={{ fontWeight: 800, fontSize: "14px", color: "#1e0836" }}>
-                                    {staff.name}
-                                  </span>
-                                  <span
-                                    style={{
-                                      fontSize: "10px",
-                                      fontWeight: 600,
-                                      padding: "2px 6px",
-                                      borderRadius: "6px",
-                                      background: "#f5f3ff",
-                                      color: "#6d28d9",
-                                      border: "1px solid #ede9fe",
-                                    }}
-                                  >
-                                    {staff.kitchen_role}
-                                  </span>
-                                </div>
-                                <div style={{ fontSize: "12px", color: "#6b5b7e", marginTop: "2px", display: "flex", gap: "6px" }}>
-                                  <span>Base: ₹{Number(staff.wage_rate).toLocaleString("en-IN")}</span>
-                                  <span>•</span>
-                                  <button
-                                    type="button"
-                                    onClick={() => openPaymentModal(staff)}
-                                    style={{
-                                      border: "none",
-                                      background: "transparent",
-                                      padding: 0,
-                                      cursor: "pointer",
-                                      fontWeight: 700,
-                                      color: staff.balance > 0 ? "#b45309" : "#059669",
-                                      textDecoration: "underline",
-                                      fontSize: "12px",
-                                    }}
-                                    title="Click to settle balance"
-                                  >
-                                    Due: ₹{Number(staff.balance).toLocaleString("en-IN")}
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* Col 2: Attendance Toggle */}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
-                              <button
-                                type="button"
-                                onClick={() => handleDailyStatusChange(staff.id, "present")}
-                                style={{
-                                  height: "36px",
-                                  padding: "0 12px",
-                                  borderRadius: "10px",
-                                  fontSize: "12px",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                  transition: "all 0.15s ease",
-                                  border: isPresent ? "none" : "1px solid #e2e8f0",
-                                  background: isPresent ? "#059669" : "#ffffff",
-                                  color: isPresent ? "#ffffff" : "#475569",
-                                  boxShadow: isPresent ? "0 2px 6px rgba(5, 150, 105, 0.25)" : "none",
-                                }}
-                              >
-                                <span>🟢 Present</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDailyStatusChange(staff.id, "half")}
-                                style={{
-                                  height: "36px",
-                                  padding: "0 10px",
-                                  borderRadius: "10px",
-                                  fontSize: "12px",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                  transition: "all 0.15s ease",
-                                  border: isHalf ? "none" : "1px solid #e2e8f0",
-                                  background: isHalf ? "#f59e0b" : "#ffffff",
-                                  color: isHalf ? "#ffffff" : "#475569",
-                                  boxShadow: isHalf ? "0 2px 6px rgba(245, 158, 11, 0.25)" : "none",
-                                }}
-                              >
-                                <span>🟡 Half</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDailyStatusChange(staff.id, "absent")}
-                                style={{
-                                  height: "36px",
-                                  padding: "0 10px",
-                                  borderRadius: "10px",
-                                  fontSize: "12px",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                  transition: "all 0.15s ease",
-                                  border: isAbsent ? "none" : "1px solid #e2e8f0",
-                                  background: isAbsent ? "#e11d48" : "#ffffff",
-                                  color: isAbsent ? "#ffffff" : "#475569",
-                                  boxShadow: isAbsent ? "0 2px 6px rgba(225, 29, 72, 0.25)" : "none",
-                                }}
-                              >
-                                <span>🔴 Absent</span>
-                              </button>
-                            </div>
-
-                            {/* Col 3: Today's Wage Input */}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              <div style={{ position: "relative", width: "130px" }}>
-                                <span
-                                  style={{
-                                    position: "absolute",
-                                    left: "10px",
-                                    top: "9px",
-                                    fontSize: "13px",
-                                    fontWeight: 700,
-                                    color: "#8a7b9b",
-                                    pointerEvents: "none",
-                                  }}
-                                >
-                                  ₹
-                                </span>
-                                <input
-                                  type="number"
-                                  disabled={isAbsent}
-                                  value={row.today_wage}
-                                  onChange={(e) => {
-                                    const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                    updateDailyRow(staff.id, { today_wage: val });
-                                  }}
-                                  style={{
-                                    width: "100%",
-                                    height: "36px",
-                                    paddingLeft: "26px",
-                                    paddingRight: "10px",
-                                    borderRadius: "10px",
-                                    border: isAbsent ? "1px solid #e2e8f0" : "1px solid #d8b4fe",
-                                    background: isAbsent ? "#f1f5f9" : "#ffffff",
-                                    color: isAbsent ? "#94a3b8" : "#1e0836",
-                                    fontWeight: 800,
-                                    fontSize: "14px",
-                                    textAlign: "right",
-                                    outline: "none",
-                                  }}
-                                  placeholder="0"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Col 4: Payment Status Checkbox */}
-                            <div style={{ display: "flex", alignItems: "center", justifyContent: "center" }}>
-                              <label
-                                style={{
-                                  height: "36px",
-                                  padding: "0 12px",
-                                  borderRadius: "10px",
-                                  border: row.paid_today ? "1px solid #a7f3d0" : "1px solid #e2e8f0",
-                                  background: row.paid_today ? "#ecfdf5" : "#ffffff",
-                                  color: row.paid_today ? "#047857" : "#64748b",
-                                  fontWeight: 700,
-                                  fontSize: "12px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "8px",
-                                  cursor: isAbsent ? "not-allowed" : "pointer",
-                                  userSelect: "none",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  disabled={isAbsent}
-                                  checked={row.paid_today}
-                                  onChange={(e) => {
-                                    updateDailyRow(staff.id, { paid_today: e.target.checked });
-                                  }}
-                                  style={{ accentColor: "#059669", cursor: "pointer" }}
-                                />
-                                <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
-                              </label>
-                            </div>
-
-                            {/* Col 5: Note Input */}
-                            <div>
-                              <input
-                                type="text"
-                                value={row.note}
-                                onChange={(e) => updateDailyRow(staff.id, { note: e.target.value })}
-                                placeholder="Note (e.g. bonus)"
-                                style={{
-                                  width: "100%",
-                                  height: "36px",
-                                  padding: "0 12px",
-                                  borderRadius: "10px",
-                                  border: "1px solid #e2e8f0",
-                                  background: "#ffffff",
-                                  color: "#24103f",
-                                  fontSize: "12px",
-                                  outline: "none",
-                                }}
-                              />
-                            </div>
-                          </div>
-
-                          {/* Mobile View (< md) */}
-                          <div className="md:hidden" style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                                <div
-                                  style={{
-                                    width: "36px",
-                                    height: "36px",
-                                    borderRadius: "8px",
-                                    display: "flex",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                    fontWeight: 800,
-                                    fontSize: "12px",
-                                    background: isAbsent ? "#f1f5f9" : "#ede9fe",
-                                    color: isAbsent ? "#64748b" : "#6d28d9",
-                                  }}
-                                >
-                                  {staff.name.slice(0, 2).toUpperCase()}
-                                </div>
-                                <div>
-                                  <div style={{ fontWeight: 800, fontSize: "14px", color: "#1e0836" }}>{staff.name}</div>
-                                  <div style={{ fontSize: "11px", color: "#6b5b7e" }}>{staff.kitchen_role}</div>
-                                </div>
-                              </div>
-
-                              <button
-                                type="button"
-                                onClick={() => openPaymentModal(staff)}
-                                style={{
-                                  border: "none",
-                                  background: staff.balance > 0 ? "#fef3c7" : "#ecfdf5",
-                                  color: staff.balance > 0 ? "#b45309" : "#047857",
-                                  padding: "4px 8px",
-                                  borderRadius: "6px",
-                                  fontSize: "11px",
-                                  fontWeight: 700,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Due: ₹{Number(staff.balance).toLocaleString("en-IN")}
-                              </button>
-                            </div>
-
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "6px" }}>
-                              <button
-                                type="button"
-                                onClick={() => handleDailyStatusChange(staff.id, "present")}
-                                style={{
-                                  height: "32px",
-                                  borderRadius: "8px",
-                                  border: "none",
-                                  fontSize: "11px",
-                                  fontWeight: 700,
-                                  background: isPresent ? "#059669" : "#f1f5f9",
-                                  color: isPresent ? "#fff" : "#475569",
-                                }}
-                              >
-                                🟢 Present
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDailyStatusChange(staff.id, "half")}
-                                style={{
-                                  height: "32px",
-                                  borderRadius: "8px",
-                                  border: "none",
-                                  fontSize: "11px",
-                                  fontWeight: 700,
-                                  background: isHalf ? "#f59e0b" : "#f1f5f9",
-                                  color: isHalf ? "#fff" : "#475569",
-                                }}
-                              >
-                                🟡 Half
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDailyStatusChange(staff.id, "absent")}
-                                style={{
-                                  height: "32px",
-                                  borderRadius: "8px",
-                                  border: "none",
-                                  fontSize: "11px",
-                                  fontWeight: 700,
-                                  background: isAbsent ? "#e11d48" : "#f1f5f9",
-                                  color: isAbsent ? "#fff" : "#475569",
-                                }}
-                              >
-                                🔴 Absent
-                              </button>
-                            </div>
-
-                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", alignItems: "center" }}>
-                              <div style={{ position: "relative" }}>
-                                <span style={{ position: "absolute", left: "8px", top: "7px", fontSize: "12px", color: "#8a7b9b" }}>₹</span>
-                                <input
-                                  type="number"
-                                  disabled={isAbsent}
-                                  value={row.today_wage}
-                                  onChange={(e) => updateDailyRow(staff.id, { today_wage: parseFloat(e.target.value) || 0 })}
-                                  style={{
-                                    width: "100%",
-                                    height: "32px",
-                                    paddingLeft: "20px",
-                                    paddingRight: "8px",
-                                    borderRadius: "8px",
-                                    border: "1px solid #d8b4fe",
-                                    fontWeight: 800,
-                                    fontSize: "13px",
-                                    textAlign: "right",
-                                  }}
-                                />
-                              </div>
-
-                              <label
-                                style={{
-                                  height: "32px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  gap: "6px",
-                                  borderRadius: "8px",
-                                  padding: "0 10px",
-                                  background: row.paid_today ? "#ecfdf5" : "#f8fafc",
-                                  border: row.paid_today ? "1px solid #a7f3d0" : "1px solid #e2e8f0",
-                                  fontSize: "11px",
-                                  fontWeight: 700,
-                                  color: row.paid_today ? "#047857" : "#475569",
-                                }}
-                              >
-                                <input
-                                  type="checkbox"
-                                  disabled={isAbsent}
-                                  checked={row.paid_today}
-                                  onChange={(e) => updateDailyRow(staff.id, { paid_today: e.target.checked })}
-                                />
-                                <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
-                              </label>
-                            </div>
-
-                            <input
-                              type="text"
-                              value={row.note}
-                              onChange={(e) => updateDailyRow(staff.id, { note: e.target.value })}
-                              placeholder="Note (optional)"
-                              style={{
-                                height: "30px",
-                                padding: "0 8px",
-                                borderRadius: "6px",
-                                border: "1px solid #e2e8f0",
-                                fontSize: "11px",
-                              }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {/* Section 2: Monthly Staff Attendance (Separated Card on White BG) */}
-              {monthlyStaff.length > 0 && (
-                <div
-                  style={{
-                    background: "#ffffff",
-                    border: "1px solid #e9e3f3",
-                    borderRadius: "16px",
-                    padding: "18px 20px",
-                    boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
-                  }}
-                >
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-                    <div>
-                      <h3 style={{ margin: 0, fontSize: "15px", fontWeight: 700, color: "#24103f" }}>
-                        💼 Monthly Staff Attendance Today ({monthlyStaff.length})
-                      </h3>
-                      <p style={{ margin: "2px 0 0 0", fontSize: "11px", color: "#6b5b7e" }}>
-                        Fixed monthly salary staff — mark daily presence here. Daily wages are not deducted from salary.
-                      </p>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab("monthly")}
-                      style={{
-                        border: "none",
-                        background: "transparent",
-                        color: "#6d28d9",
-                        fontWeight: 700,
-                        fontSize: "12px",
-                        cursor: "pointer",
-                        textDecoration: "underline",
-                      }}
-                    >
-                      Manage Monthly Salaries →
-                    </button>
-                  </div>
-
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "12px" }}>
-                    {monthlyStaff.map((staff) => {
-                      const row = dailyRows[staff.id] || {
-                        staff_id: staff.id,
-                        staff_name: staff.name,
-                        kitchen_role: staff.kitchen_role,
-                        wage_type: "monthly",
-                        default_rate: Number(staff.wage_rate) || 0,
-                        current_balance: Number(staff.balance) || 0,
-                        status: "present",
-                        today_wage: 0,
-                        paid_today: false,
-                        payment_mode: "Cash",
-                        note: "",
-                        existing_duty_id: null,
-                      };
-
-                      const isPresent = row.status !== "absent";
-
-                      return (
-                        <div
-                          key={staff.id}
-                          style={{
-                            background: "#fdfcff",
-                            border: "1px solid #ede9fe",
-                            borderRadius: "14px",
-                            padding: "14px 16px",
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                            gap: "12px",
-                          }}
-                        >
-                          <div>
-                            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                              <span style={{ fontWeight: 800, fontSize: "14px", color: "#1e0836" }}>{staff.name}</span>
-                              <span
-                                style={{
-                                  fontSize: "10px",
-                                  fontWeight: 600,
-                                  padding: "2px 6px",
-                                  borderRadius: "6px",
-                                  background: "#e0e7ff",
-                                  color: "#3730a3",
-                                }}
-                              >
-                                {staff.kitchen_role}
-                              </span>
-                            </div>
-                            <div style={{ fontSize: "12px", color: "#6b5b7e", marginTop: "2px" }}>
-                              Salary: <strong style={{ color: "#4338ca", fontWeight: 700 }}>₹{Number(staff.wage_rate).toLocaleString("en-IN")}/mo</strong>
-                            </div>
-                          </div>
-
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const newSt = isPresent ? "absent" : "present";
-                                updateDailyRow(staff.id, { status: newSt, today_wage: 0 });
-                              }}
-                              style={{
-                                height: "32px",
-                                padding: "0 10px",
-                                borderRadius: "8px",
-                                border: isPresent ? "1px solid #a7f3d0" : "1px solid #fecaca",
-                                background: isPresent ? "#ecfdf5" : "#fef2f2",
-                                color: isPresent ? "#047857" : "#b91c1c",
-                                fontWeight: 700,
-                                fontSize: "11px",
-                                cursor: "pointer",
-                              }}
-                            >
-                              {isPresent ? "🟢 Present" : "🔴 On Leave"}
-                            </button>
-
-                            <button
-                              type="button"
-                              onClick={() => openPaymentModal(staff)}
-                              style={{
-                                height: "32px",
-                                padding: "0 10px",
-                                borderRadius: "8px",
-                                border: "1px solid #ddd6fe",
-                                background: "#f5f3ff",
-                                color: "#6d28d9",
-                                fontWeight: 700,
-                                fontSize: "11px",
-                                cursor: "pointer",
-                              }}
-                              title="Pay Advance"
-                            >
-                              Advance 💵
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Sticky Save Bar at Bottom */}
-              <div
-                style={{
-                  position: "sticky",
-                  bottom: "16px",
-                  zIndex: 20,
-                  background: "rgba(255, 255, 255, 0.95)",
-                  backdropFilter: "blur(10px)",
-                  border: "1px solid #d8b4fe",
-                  borderRadius: "16px",
-                  padding: "14px 20px",
-                  boxShadow: "0 8px 24px rgba(30, 8, 54, 0.12)",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                }}
-              >
-                <div style={{ fontSize: "14px", color: "#475569" }}>
-                  <span>Today's Total Day Wages: </span>
-                  <strong style={{ fontSize: "17px", color: "#1e0836", fontWeight: 800 }}>
-                    ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
-                  </strong>
-                  <span style={{ fontSize: "12px", color: "#8a7b9b", marginLeft: "8px" }}>
-                    ({dailySheetTotals.presentCount} present, {dailySheetTotals.absentCount} absent)
-                  </span>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSaveDailyWages}
-                  disabled={savingDaily}
-                  style={{
-                    height: "40px",
-                    padding: "0 22px",
-                    borderRadius: "10px",
-                    border: "none",
-                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
-                    color: "#ffffff",
-                    fontWeight: 700,
-                    fontSize: "13px",
-                    cursor: "pointer",
-                    boxShadow: "0 4px 14px rgba(5, 150, 105, 0.3)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "8px",
-                  }}
-                >
-                  <span>💾</span>
-                  <span>{savingDaily ? "Saving..." : "Save Daily Wages"}</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 2: MONTHLY STAFF MANAGEMENT (WHITE THEME) */}
-          {activeTab === "monthly" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              {/* Header / Month Filter */}
-              <div
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #e9e3f3",
-                  borderRadius: "16px",
-                  padding: "16px 20px",
-                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                }}
-              >
-                <div>
-                  <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#24103f" }}>
-                    💼 Monthly Fixed Salary Staff
-                  </h2>
-                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#6b5b7e" }}>
-                    Manage monthly salaried staff, attendance days, and salary advances.
-                  </p>
-                </div>
-
-                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#6b5b7e" }}>Month:</label>
-                  <input
-                    type="month"
-                    value={selectedMonth}
-                    onChange={(e) => setSelectedMonth(e.target.value)}
-                    style={{
-                      height: "36px",
-                      padding: "0 12px",
-                      borderRadius: "10px",
-                      border: "1px solid #d8b4fe",
-                      background: "#ffffff",
-                      color: "#24103f",
-                      fontWeight: 700,
-                      fontSize: "13px",
-                      outline: "none",
-                    }}
-                  />
-                </div>
-              </div>
-
-              {monthlyStaff.length === 0 ? (
-                <div
-                  style={{
-                    background: "#ffffff",
-                    borderRadius: "16px",
-                    border: "1px solid #e9e3f3",
-                    padding: "40px",
-                    textAlign: "center",
-                  }}
-                >
-                  <p style={{ color: "#8a7b9b", fontSize: "14px", margin: 0 }}>No monthly salary staff configured.</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingStaff(null);
-                      setStaffForm({
-                        name: "",
-                        mobile: "",
-                        kitchen_role: "Head Chef",
-                        wage_type: "monthly",
-                        wage_rate: "20000",
-                        status: "active",
-                        address: "",
-                        notes: "",
-                      });
-                      setShowAddStaffModal(true);
-                    }}
-                    style={{
-                      marginTop: "12px",
-                      padding: "8px 16px",
-                      background: "#7c3aed",
-                      color: "#fff",
-                      borderRadius: "8px",
-                      border: "none",
-                      fontWeight: 700,
-                      fontSize: "12px",
-                      cursor: "pointer",
-                    }}
-                  >
-                    + Add Monthly Staff
-                  </button>
-                </div>
-              ) : (
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "16px" }}>
-                  {monthlyStaffMetrics.map(({ staff, salary, daysPresent, paidThisMonth, balanceDue, payments }) => (
-                    <div
-                      key={staff.id}
-                      style={{
-                        background: "#ffffff",
-                        border: "1px solid #e9e3f3",
-                        borderRadius: "16px",
-                        padding: "20px",
-                        boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: "16px",
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px" }}>
-                        <div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                            <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>{staff.name}</h3>
-                            <span
-                              style={{
-                                fontSize: "11px",
-                                fontWeight: 700,
-                                padding: "2px 8px",
-                                borderRadius: "6px",
-                                background: "#e0e7ff",
-                                color: "#3730a3",
-                              }}
-                            >
-                              {staff.kitchen_role}
-                            </span>
-                          </div>
-                          {staff.mobile && (
-                            <p style={{ margin: "3px 0 0 0", fontSize: "12px", color: "#6b5b7e" }}>📞 {staff.mobile}</p>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => openPaymentModal(staff)}
-                          style={{
-                            padding: "6px 14px",
-                            borderRadius: "8px",
-                            border: "1px solid #a7f3d0",
-                            background: "#ecfdf5",
-                            color: "#047857",
-                            fontWeight: 700,
-                            fontSize: "12px",
-                            cursor: "pointer",
-                          }}
-                        >
-                          💵 Pay Advance
-                        </button>
-                      </div>
-
-                      {/* 3 Metric Grid */}
-                      <div
-                        style={{
-                          display: "grid",
-                          gridTemplateColumns: "1fr 1fr 1fr",
-                          gap: "10px",
-                          background: "#f8fafc",
-                          padding: "12px",
-                          borderRadius: "12px",
-                          border: "1px solid #f1f5f9",
-                          textAlign: "center",
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Fixed Salary</div>
-                          <div style={{ fontSize: "15px", fontWeight: 800, color: "#1e0836", marginTop: "2px" }}>
-                            ₹{salary.toLocaleString("en-IN")}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Paid in {selectedMonth}</div>
-                          <div style={{ fontSize: "15px", fontWeight: 800, color: "#059669", marginTop: "2px" }}>
-                            ₹{paidThisMonth.toLocaleString("en-IN")}
-                          </div>
-                        </div>
-
-                        <div>
-                          <div style={{ fontSize: "10px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Salary Due</div>
-                          <div style={{ fontSize: "15px", fontWeight: 800, color: "#b45309", marginTop: "2px" }}>
-                            ₹{balanceDue.toLocaleString("en-IN")}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: "12px" }}>
-                        <span style={{ color: "#6b5b7e" }}>
-                          Attendance: <strong style={{ color: "#1e0836" }}>{daysPresent} days present</strong>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setEditingStaff(staff);
-                            setStaffForm({
-                              name: staff.name,
-                              mobile: staff.mobile || "",
-                              kitchen_role: staff.kitchen_role,
-                              wage_type: staff.wage_type,
-                              wage_rate: String(staff.wage_rate),
-                              status: staff.status,
-                              address: staff.address || "",
-                              notes: staff.notes || "",
-                            });
-                            setShowAddStaffModal(true);
-                          }}
-                          style={{
-                            border: "none",
-                            background: "transparent",
-                            color: "#7c3aed",
-                            fontWeight: 700,
-                            cursor: "pointer",
-                            textDecoration: "underline",
-                            fontSize: "11px",
-                          }}
-                        >
-                          Edit Staff Info
-                        </button>
-                      </div>
-
-                      {payments.length > 0 && (
-                        <div style={{ borderTop: "1px solid #f1f5f9", paddingTop: "10px", display: "flex", flexDirection: "column", gap: "6px" }}>
-                          <span style={{ fontSize: "10px", fontWeight: 700, color: "#8a7b9b", textTransform: "uppercase" }}>
-                            Recent payments this month
-                          </span>
-                          {payments.slice(0, 3).map((p) => (
-                            <div
-                              key={p.id}
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                fontSize: "12px",
-                                background: "#f8fafc",
-                                padding: "6px 10px",
-                                borderRadius: "8px",
-                              }}
-                            >
-                              <span style={{ color: "#64748b" }}>{p.payment_date} ({p.payment_mode})</span>
-                              <strong style={{ color: "#059669" }}>₹{Number(p.amount).toLocaleString("en-IN")}</strong>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* TAB 3: ALL STAFF & BALANCES (DIRECTORY ON WHITE BG) */}
-          {activeTab === "staff" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              {/* Search and Filters */}
-              <div
-                style={{
-                  background: "#ffffff",
-                  border: "1px solid #e9e3f3",
-                  borderRadius: "16px",
-                  padding: "16px 20px",
-                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
-                  display: "flex",
-                  flexWrap: "wrap",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  gap: "12px",
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, maxWidth: "400px" }}>
+                {/* Search */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: "260px" }}>
                   <span style={{ color: "#8a7b9b" }}>🔍</span>
                   <input
                     type="text"
-                    placeholder="Search staff by name or role..."
+                    placeholder="Search staff by name, role, phone..."
                     value={searchStaff}
                     onChange={(e) => setSearchStaff(e.target.value)}
                     style={{
                       width: "100%",
-                      height: "36px",
+                      height: "38px",
                       padding: "0 12px",
                       borderRadius: "10px",
                       border: "1px solid #e2e8f0",
@@ -2248,6 +847,7 @@ export default function KitchenPage() {
                   />
                 </div>
 
+                {/* Filters */}
                 <div
                   style={{
                     display: "flex",
@@ -2262,54 +862,83 @@ export default function KitchenPage() {
                     type="button"
                     onClick={() => setStaffFilter("all")}
                     style={{
-                      padding: "6px 12px",
+                      padding: "6px 14px",
                       borderRadius: "8px",
                       border: "none",
                       fontSize: "12px",
                       fontWeight: 700,
                       cursor: "pointer",
                       background: staffFilter === "all" ? "#7c3aed" : "transparent",
-                      color: staffFilter === "all" ? "#fff" : "#475569",
+                      color: staffFilter === "all" ? "#ffffff" : "#475569",
+                      transition: "all 0.15s ease",
                     }}
                   >
                     All ({staffList.length})
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setStaffFilter("daily")}
                     style={{
-                      padding: "6px 12px",
+                      padding: "6px 14px",
                       borderRadius: "8px",
                       border: "none",
                       fontSize: "12px",
                       fontWeight: 700,
                       cursor: "pointer",
                       background: staffFilter === "daily" ? "#7c3aed" : "transparent",
-                      color: staffFilter === "daily" ? "#fff" : "#475569",
+                      color: staffFilter === "daily" ? "#ffffff" : "#475569",
+                      transition: "all 0.15s ease",
                     }}
                   >
-                    Daily Staff ({dailyStaff.length})
+                    Daily Staff ({staffList.filter((s) => s.wage_type === "daily").length})
                   </button>
+
                   <button
                     type="button"
                     onClick={() => setStaffFilter("monthly")}
                     style={{
-                      padding: "6px 12px",
+                      padding: "6px 14px",
                       borderRadius: "8px",
                       border: "none",
                       fontSize: "12px",
                       fontWeight: 700,
                       cursor: "pointer",
                       background: staffFilter === "monthly" ? "#7c3aed" : "transparent",
-                      color: staffFilter === "monthly" ? "#fff" : "#475569",
+                      color: staffFilter === "monthly" ? "#ffffff" : "#475569",
+                      transition: "all 0.15s ease",
                     }}
                   >
-                    Monthly Staff ({monthlyStaff.length})
+                    Monthly Staff ({staffList.filter((s) => s.wage_type === "monthly").length})
                   </button>
                 </div>
+
+                {/* Quick Add Action from Blueprint */}
+                <button
+                  type="button"
+                  onClick={() => openWageForm()}
+                  style={{
+                    height: "38px",
+                    padding: "0 16px",
+                    borderRadius: "10px",
+                    border: "1px solid #a7f3d0",
+                    background: "#ecfdf5",
+                    color: "#047857",
+                    fontWeight: 700,
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    boxShadow: "0 1px 4px rgba(4, 120, 87, 0.1)",
+                  }}
+                >
+                  <span>📝</span>
+                  <span>+ Add Wage Entry</span>
+                </button>
               </div>
 
-              {/* Staff Table */}
+              {/* Staff Data Table ("Staff data" from Blueprint) */}
               <div
                 style={{
                   background: "#ffffff",
@@ -2319,43 +948,89 @@ export default function KitchenPage() {
                   overflowX: "auto",
                 }}
               >
+                <div style={{ padding: "16px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
+                      Staff Data
+                    </h2>
+                    <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#8a7b9b" }}>
+                      Click on any staff member to view their complete work history, dates, and wages.
+                    </p>
+                  </div>
+                  <span style={{ fontSize: "12px", color: "#6d28d9", fontWeight: 700 }}>
+                    Showing {filteredStaffList.length} staff
+                  </span>
+                </div>
+
                 <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
                   <thead style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                     <tr>
-                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Staff Member</th>
-                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Role</th>
-                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Type</th>
-                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Rate / Salary</th>
-                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Total Accrued</th>
-                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Total Paid</th>
-                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Pending Due</th>
-                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Actions</th>
+                      <th style={{ padding: "14px 20px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Staff Member</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Role</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Type</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Base Rate / Salary</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Total Accrued</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Total Paid</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Pending Due</th>
+                      <th style={{ padding: "14px 20px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredStaffList.length === 0 ? (
                       <tr>
-                        <td colSpan={8} style={{ padding: "30px", textAlign: "center", color: "#8a7b9b" }}>
-                          No staff members found matching criteria.
+                        <td colSpan={8} style={{ padding: "40px", textAlign: "center", color: "#8a7b9b" }}>
+                          No staff found matching criteria.
                         </td>
                       </tr>
                     ) : (
                       filteredStaffList.map((s) => (
-                        <tr key={s.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "14px 18px" }}>
-                            <div style={{ fontWeight: 800, color: "#1e0836" }}>{s.name}</div>
-                            {s.mobile && (
-                              <div style={{ fontSize: "11px", color: "#8a7b9b" }}>{s.mobile}</div>
-                            )}
+                        <tr
+                          key={s.id}
+                          onClick={() => setSelectedStaffId(s.id)}
+                          style={{
+                            borderBottom: "1px solid #f1f5f9",
+                            cursor: "pointer",
+                            transition: "background 0.15s ease",
+                          }}
+                          className="hover:bg-purple-50/50"
+                        >
+                          <td style={{ padding: "16px 20px" }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                              <div
+                                style={{
+                                  width: "38px",
+                                  height: "38px",
+                                  borderRadius: "10px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontWeight: 800,
+                                  fontSize: "13px",
+                                  background: s.wage_type === "monthly" ? "#e0e7ff" : "#ede9fe",
+                                  color: s.wage_type === "monthly" ? "#3730a3" : "#6d28d9",
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {s.name.slice(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: 800, color: "#1e0836", fontSize: "14px" }}>{s.name}</div>
+                                {s.mobile && (
+                                  <div style={{ fontSize: "11px", color: "#8a7b9b" }}>📞 {s.mobile}</div>
+                                )}
+                              </div>
+                            </div>
                           </td>
-                          <td style={{ padding: "14px 14px", color: "#475569" }}>{s.kitchen_role}</td>
-                          <td style={{ padding: "14px 14px" }}>
+
+                          <td style={{ padding: "16px 16px", color: "#475569", fontWeight: 600 }}>{s.kitchen_role}</td>
+
+                          <td style={{ padding: "16px 16px" }}>
                             <span
                               style={{
-                                fontSize: "10px",
+                                fontSize: "11px",
                                 fontWeight: 700,
                                 textTransform: "uppercase",
-                                padding: "2px 8px",
+                                padding: "3px 8px",
                                 borderRadius: "6px",
                                 background: s.wage_type === "monthly" ? "#e0e7ff" : "#fef3c7",
                                 color: s.wage_type === "monthly" ? "#3730a3" : "#b45309",
@@ -2364,49 +1039,74 @@ export default function KitchenPage() {
                               {s.wage_type}
                             </span>
                           </td>
-                          <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 700, color: "#1e0836" }}>
+
+                          <td style={{ padding: "16px 16px", textAlign: "right", fontWeight: 700, color: "#1e0836" }}>
                             ₹{Number(s.wage_rate).toLocaleString("en-IN")}
                             <span style={{ fontSize: "10px", color: "#8a7b9b", display: "block", fontWeight: 500 }}>
                               {s.wage_type === "monthly" ? "/month" : "/day"}
                             </span>
                           </td>
-                          <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 700, color: "#1e0836" }}>
+
+                          <td style={{ padding: "16px 16px", textAlign: "right", fontWeight: 800, color: "#1e0836" }}>
                             ₹{Number(s.total_wages).toLocaleString("en-IN")}
                           </td>
-                          <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 700, color: "#059669" }}>
+
+                          <td style={{ padding: "16px 16px", textAlign: "right", fontWeight: 800, color: "#059669" }}>
                             ₹{Number(s.total_paid).toLocaleString("en-IN")}
                           </td>
-                          <td style={{ padding: "14px 14px", textAlign: "right" }}>
+
+                          <td style={{ padding: "16px 16px", textAlign: "right" }}>
                             <span
                               style={{
                                 fontWeight: 800,
-                                padding: "3px 8px",
-                                borderRadius: "6px",
+                                padding: "4px 10px",
+                                borderRadius: "8px",
                                 background: s.balance > 0 ? "#fef3c7" : "#ecfdf5",
                                 color: s.balance > 0 ? "#b45309" : "#047857",
+                                display: "inline-block",
                               }}
                             >
                               ₹{Number(s.balance).toLocaleString("en-IN")}
                             </span>
                           </td>
-                          <td style={{ padding: "14px 18px", textAlign: "center" }}>
-                            <div style={{ display: "inline-flex", gap: "6px" }}>
+
+                          <td style={{ padding: "16px 20px", textAlign: "center" }} onClick={(e) => e.stopPropagation()}>
+                            <div style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedStaffId(s.id)}
+                                style={{
+                                  padding: "6px 12px",
+                                  borderRadius: "8px",
+                                  border: "1px solid #ddd6fe",
+                                  background: "#f5f3ff",
+                                  color: "#6d28d9",
+                                  fontWeight: 700,
+                                  fontSize: "12px",
+                                  cursor: "pointer",
+                                }}
+                              >
+                                View Details →
+                              </button>
+
                               <button
                                 type="button"
                                 onClick={() => openPaymentModal(s)}
                                 style={{
-                                  padding: "4px 10px",
-                                  borderRadius: "6px",
+                                  padding: "6px 10px",
+                                  borderRadius: "8px",
                                   border: "1px solid #a7f3d0",
                                   background: "#ecfdf5",
                                   color: "#047857",
                                   fontWeight: 700,
-                                  fontSize: "11px",
+                                  fontSize: "12px",
                                   cursor: "pointer",
                                 }}
+                                title="Pay Balance"
                               >
                                 Pay 💵
                               </button>
+
                               <button
                                 type="button"
                                 onClick={() => {
@@ -2424,28 +1124,31 @@ export default function KitchenPage() {
                                   setShowAddStaffModal(true);
                                 }}
                                 style={{
-                                  padding: "4px 8px",
-                                  borderRadius: "6px",
+                                  padding: "6px 8px",
+                                  borderRadius: "8px",
                                   border: "1px solid #e2e8f0",
                                   background: "#ffffff",
                                   cursor: "pointer",
-                                  fontSize: "11px",
+                                  fontSize: "12px",
                                 }}
+                                title="Edit"
                               >
                                 ✏️
                               </button>
+
                               <button
                                 type="button"
                                 onClick={() => handleDeleteStaff(s.id, s.name)}
                                 style={{
-                                  padding: "4px 8px",
-                                  borderRadius: "6px",
+                                  padding: "6px 8px",
+                                  borderRadius: "8px",
                                   border: "1px solid #fecaca",
                                   background: "#fef2f2",
                                   color: "#b91c1c",
                                   cursor: "pointer",
-                                  fontSize: "11px",
+                                  fontSize: "12px",
                                 }}
+                                title="Delete"
                               >
                                 🗑️
                               </button>
@@ -2458,108 +1161,430 @@ export default function KitchenPage() {
                 </table>
               </div>
             </div>
-          )}
-
-          {/* TAB 4: PAYMENT HISTORY (WHITE THEME) */}
-          {activeTab === "payments" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#24103f" }}>
-                    🧾 Kitchen Staff Payment Ledger ({paymentsList.length})
-                  </h2>
-                  <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#6b5b7e" }}>
-                    Record of all cash payouts, UPI transfers, and advances handed to kitchen staff.
-                  </p>
-                </div>
-
+          ) : (
+            /* ------------------------------------------------------- */
+            /* SCREEN 2: KITCHEN STAFF DETAILS PAGE                    */
+            /* ("Show their work: Date, Wage, Payment, List days")     */
+            /* ------------------------------------------------------- */
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              {/* Back Navigation Bar */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "12px" }}>
                 <button
                   type="button"
-                  onClick={() => openPaymentModal()}
+                  onClick={() => setSelectedStaffId(null)}
                   style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "8px",
                     padding: "8px 16px",
-                    borderRadius: "8px",
-                    border: "none",
-                    background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
-                    color: "#ffffff",
+                    borderRadius: "10px",
+                    border: "1px solid #e2e8f0",
+                    background: "#ffffff",
+                    color: "#24103f",
                     fontWeight: 700,
-                    fontSize: "12px",
+                    fontSize: "13px",
                     cursor: "pointer",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
                   }}
                 >
-                  + Record Payment
+                  <span>←</span> Back to Staff List
                 </button>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                  <button
+                    type="button"
+                    onClick={() => openWageForm(selectedStaff.id)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "10px",
+                      border: "1px solid #a7f3d0",
+                      background: "#ecfdf5",
+                      color: "#047857",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    📝 + Add Wage for {selectedStaff.name}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => openPaymentModal(selectedStaff)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "10px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 12px rgba(5, 150, 105, 0.25)",
+                    }}
+                  >
+                    💵 Pay Balance (₹{Number(selectedStaff.balance).toLocaleString("en-IN")})
+                  </button>
+                </div>
               </div>
 
+              {/* Staff Profile Overview Card */}
               <div
                 style={{
                   background: "#ffffff",
-                  borderRadius: "16px",
                   border: "1px solid #e9e3f3",
+                  borderRadius: "18px",
+                  padding: "24px",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: "20px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+                    <div
+                      style={{
+                        width: "56px",
+                        height: "56px",
+                        borderRadius: "14px",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontWeight: 800,
+                        fontSize: "20px",
+                        background: selectedStaff.wage_type === "monthly" ? "#e0e7ff" : "#ede9fe",
+                        color: selectedStaff.wage_type === "monthly" ? "#3730a3" : "#6d28d9",
+                        flexShrink: 0,
+                      }}
+                    >
+                      {selectedStaff.name.slice(0, 2).toUpperCase()}
+                    </div>
+
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                        <h2 style={{ margin: 0, fontSize: "20px", fontWeight: 800, color: "#1e0836" }}>
+                          {selectedStaff.name}
+                        </h2>
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            padding: "3px 8px",
+                            borderRadius: "6px",
+                            background: "#f5f3ff",
+                            color: "#6d28d9",
+                            border: "1px solid #ede9fe",
+                          }}
+                        >
+                          {selectedStaff.kitchen_role}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: "11px",
+                            fontWeight: 700,
+                            textTransform: "uppercase",
+                            padding: "3px 8px",
+                            borderRadius: "6px",
+                            background: selectedStaff.wage_type === "monthly" ? "#e0e7ff" : "#fef3c7",
+                            color: selectedStaff.wage_type === "monthly" ? "#3730a3" : "#b45309",
+                          }}
+                        >
+                          {selectedStaff.wage_type}
+                        </span>
+                      </div>
+
+                      <div style={{ display: "flex", alignItems: "center", gap: "16px", marginTop: "6px", fontSize: "13px", color: "#6b5b7e" }}>
+                        {selectedStaff.mobile && <span>📞 {selectedStaff.mobile}</span>}
+                        {selectedStaff.notes && <span>💬 {selectedStaff.notes}</span>}
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingStaff(selectedStaff);
+                      setStaffForm({
+                        name: selectedStaff.name,
+                        mobile: selectedStaff.mobile || "",
+                        kitchen_role: selectedStaff.kitchen_role,
+                        wage_type: selectedStaff.wage_type,
+                        wage_rate: String(selectedStaff.wage_rate),
+                        status: selectedStaff.status,
+                        address: selectedStaff.address || "",
+                        notes: selectedStaff.notes || "",
+                      });
+                      setShowAddStaffModal(true);
+                    }}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                      background: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      color: "#6b5b7e",
+                      cursor: "pointer",
+                    }}
+                  >
+                    ✏️ Edit Staff
+                  </button>
+                </div>
+
+                {/* 4 Financial Stat Cards */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
+                  <div style={{ background: "#f8fafc", padding: "14px 16px", borderRadius: "12px", border: "1px solid #f1f5f9" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Base Rate / Salary</div>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: "#1e0836", marginTop: "4px" }}>
+                      ₹{Number(selectedStaff.wage_rate).toLocaleString("en-IN")}
+                      <small style={{ fontSize: "11px", color: "#8a7b9b", fontWeight: 500, marginLeft: "4px" }}>
+                        {selectedStaff.wage_type === "monthly" ? "/mo" : "/day"}
+                      </small>
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#f8fafc", padding: "14px 16px", borderRadius: "12px", border: "1px solid #f1f5f9" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Total Worked Days</div>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: "#1e0836", marginTop: "4px" }}>
+                      {selectedStaffDuties.filter((d) => d.duty_status !== "absent").length} Days
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#f8fafc", padding: "14px 16px", borderRadius: "12px", border: "1px solid #f1f5f9" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Total Accrued Wages</div>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: "#b45309", marginTop: "4px" }}>
+                      ₹{Number(selectedStaff.total_wages).toLocaleString("en-IN")}
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#f8fafc", padding: "14px 16px", borderRadius: "12px", border: "1px solid #f1f5f9" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Total Paid</div>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: "#059669", marginTop: "4px" }}>
+                      ₹{Number(selectedStaff.total_paid).toLocaleString("en-IN")}
+                    </div>
+                  </div>
+
+                  <div style={{ background: selectedStaff.balance > 0 ? "#fef3c7" : "#ecfdf5", padding: "14px 16px", borderRadius: "12px", border: selectedStaff.balance > 0 ? "1px solid #fde68a" : "1px solid #a7f3d0" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 800, color: selectedStaff.balance > 0 ? "#b45309" : "#047857", textTransform: "uppercase" }}>
+                      Balance Due
+                    </div>
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: selectedStaff.balance > 0 ? "#b45309" : "#047857", marginTop: "4px" }}>
+                      ₹{Number(selectedStaff.balance).toLocaleString("en-IN")}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Work & Daily Wage History Table ("* Show their work, * Date, * Wage, * Payment, * List them worked days") */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e9e3f3",
+                  borderRadius: "18px",
                   boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
                   overflowX: "auto",
                 }}
               >
+                <div style={{ padding: "18px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
+                      🗓️ Work & Daily Wage History ({selectedStaffDuties.length} days recorded)
+                    </h3>
+                    <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#8a7b9b" }}>
+                      List of all work dates, attendance, variable daily wages, and payout status.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openWageForm(selectedStaff.id)}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "8px",
+                      border: "1px solid #a7f3d0",
+                      background: "#ecfdf5",
+                      color: "#047857",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    + Log Work Day
+                  </button>
+                </div>
+
                 <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
                   <thead style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
                     <tr>
-                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Date</th>
-                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Staff Member</th>
-                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Amount (₹)</th>
-                      <th style={{ padding: "14px 14px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Mode</th>
-                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Note / Reference</th>
-                      <th style={{ padding: "14px 18px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Actions</th>
+                      <th style={{ padding: "14px 20px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Date</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Work / Attendance</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Daily Wage (₹)</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Payment Status</th>
+                      <th style={{ padding: "14px 20px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Note / Shift</th>
+                      <th style={{ padding: "14px 20px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Action</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {paymentsList.length === 0 ? (
+                    {selectedStaffDuties.length === 0 ? (
                       <tr>
-                        <td colSpan={6} style={{ padding: "30px", textAlign: "center", color: "#8a7b9b" }}>
-                          No payments recorded yet.
+                        <td colSpan={6} style={{ padding: "36px", textAlign: "center", color: "#8a7b9b" }}>
+                          No work days recorded yet. Click <strong>"+ Log Work Day"</strong> above to record their first wage entry.
                         </td>
                       </tr>
                     ) : (
-                      paymentsList.map((p) => (
+                      selectedStaffDuties.map((d) => (
+                        <tr key={d.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "14px 20px", fontWeight: 700, color: "#1e0836" }}>
+                            {d.duty_date}
+                          </td>
+
+                          <td style={{ padding: "14px 16px" }}>
+                            {d.duty_status === "present" || d.duty_status === "full" ? (
+                              <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#ecfdf5", color: "#047857", fontWeight: 700, fontSize: "11px" }}>
+                                🟢 Present
+                              </span>
+                            ) : d.duty_status === "half" ? (
+                              <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#fef3c7", color: "#b45309", fontWeight: 700, fontSize: "11px" }}>
+                                🟡 Half Day
+                              </span>
+                            ) : (
+                              <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#fef2f2", color: "#b91c1c", fontWeight: 700, fontSize: "11px" }}>
+                                🔴 Absent
+                              </span>
+                            )}
+                          </td>
+
+                          <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#b45309" }}>
+                            ₹{Number(d.total_wage).toLocaleString("en-IN")}
+                          </td>
+
+                          <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                            {d.paid_today ? (
+                              <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#ecfdf5", color: "#047857", fontWeight: 700, fontSize: "11px" }}>
+                                💵 Paid Cash
+                              </span>
+                            ) : (
+                              <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#f8fafc", color: "#64748b", fontWeight: 600, fontSize: "11px", border: "1px solid #e2e8f0" }}>
+                                ⏳ Pending
+                              </span>
+                            )}
+                          </td>
+
+                          <td style={{ padding: "14px 20px", color: "#64748b" }}>
+                            {d.note || "-"}
+                          </td>
+
+                          <td style={{ padding: "14px 20px", textAlign: "center" }}>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteDuty(d.id)}
+                              style={{
+                                border: "1px solid #fecaca",
+                                background: "#fef2f2",
+                                color: "#b91c1c",
+                                borderRadius: "6px",
+                                padding: "4px 8px",
+                                fontSize: "11px",
+                                cursor: "pointer",
+                              }}
+                              title="Delete work record"
+                            >
+                              🗑️
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Payments & Advances History Table */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #e9e3f3",
+                  borderRadius: "18px",
+                  boxShadow: "0 2px 8px rgba(30, 8, 54, 0.04)",
+                  overflowX: "auto",
+                }}
+              >
+                <div style={{ padding: "18px 20px", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
+                      🧾 Cash Payments & Advances ({selectedStaffPayments.length})
+                    </h3>
+                    <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#8a7b9b" }}>
+                      Payment ledger and advance vouchers handed to {selectedStaff.name}.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => openPaymentModal(selectedStaff)}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                      color: "#ffffff",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    + Pay Cash / Advance
+                  </button>
+                </div>
+
+                <table style={{ width: "100%", borderCollapse: "collapse", textAlign: "left", fontSize: "13px" }}>
+                  <thead style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                    <tr>
+                      <th style={{ padding: "14px 20px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Payment Date</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "right" }}>Amount (₹)</th>
+                      <th style={{ padding: "14px 16px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Mode</th>
+                      <th style={{ padding: "14px 20px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase" }}>Note / Description</th>
+                      <th style={{ padding: "14px 20px", fontWeight: 700, color: "#64748b", fontSize: "11px", textTransform: "uppercase", textAlign: "center" }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedStaffPayments.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} style={{ padding: "30px", textAlign: "center", color: "#8a7b9b" }}>
+                          No payments recorded yet for this staff member.
+                        </td>
+                      </tr>
+                    ) : (
+                      selectedStaffPayments.map((p) => (
                         <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "14px 18px", color: "#1e0836", fontWeight: 600 }}>{p.payment_date}</td>
-                          <td style={{ padding: "14px 18px", fontWeight: 800, color: "#1e0836" }}>{p.staff_name || `Staff #${p.staff_id}`}</td>
-                          <td style={{ padding: "14px 14px", textAlign: "right", fontWeight: 800, color: "#059669" }}>
+                          <td style={{ padding: "14px 20px", color: "#1e0836", fontWeight: 700 }}>{p.payment_date}</td>
+                          <td style={{ padding: "14px 16px", textAlign: "right", fontWeight: 800, color: "#059669" }}>
                             ₹{Number(p.amount).toLocaleString("en-IN")}
                           </td>
-                          <td style={{ padding: "14px 14px", textAlign: "center" }}>
-                            <span
-                              style={{
-                                fontSize: "10px",
-                                fontWeight: 700,
-                                padding: "2px 8px",
-                                borderRadius: "6px",
-                                background: "#f1f5f9",
-                                color: "#475569",
-                              }}
-                            >
+                          <td style={{ padding: "14px 16px", textAlign: "center" }}>
+                            <span style={{ padding: "2px 8px", borderRadius: "6px", background: "#f1f5f9", color: "#475569", fontSize: "11px", fontWeight: 700 }}>
                               {p.payment_mode}
                             </span>
                           </td>
-                          <td style={{ padding: "14px 18px", color: "#64748b" }}>
+                          <td style={{ padding: "14px 20px", color: "#64748b" }}>
                             {p.note || "-"}
-                            {p.reference_no && (
-                              <span style={{ fontSize: "10px", color: "#8a7b9b", display: "block" }}>Ref: {p.reference_no}</span>
-                            )}
+                            {p.reference_no && <span style={{ fontSize: "10px", color: "#8a7b9b", display: "block" }}>Ref: {p.reference_no}</span>}
                           </td>
-                          <td style={{ padding: "14px 18px", textAlign: "center" }}>
+                          <td style={{ padding: "14px 20px", textAlign: "center" }}>
                             <button
                               type="button"
                               onClick={() => handleDeletePayment(p.id)}
                               style={{
-                                padding: "4px 8px",
-                                borderRadius: "6px",
                                 border: "1px solid #fecaca",
                                 background: "#fef2f2",
                                 color: "#b91c1c",
-                                cursor: "pointer",
+                                borderRadius: "6px",
+                                padding: "4px 8px",
                                 fontSize: "11px",
+                                cursor: "pointer",
                               }}
-                              title="Delete Payment"
+                              title="Delete payment"
                             >
                               🗑️
                             </button>
@@ -2574,7 +1599,292 @@ export default function KitchenPage() {
           )}
         </div>
 
-        {/* MODAL: Add / Edit Staff (White Dialog) */}
+        {/* ========================================================= */}
+        {/* MODAL 1: QUICK DAILY WAGE ENTRY ("Form" from Blueprint)   */}
+        {/* ========================================================= */}
+        {showWageFormModal && (
+          <div
+            style={{
+              position: "fixed",
+              inset: 0,
+              zIndex: 100,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: "16px",
+              background: "rgba(15, 6, 28, 0.6)",
+              backdropFilter: "blur(4px)",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                maxWidth: "460px",
+                background: "#ffffff",
+                borderRadius: "18px",
+                padding: "24px",
+                boxShadow: "0 20px 40px rgba(0,0,0,0.2)",
+                border: "1px solid #e9e3f3",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: "12px", borderBottom: "1px solid #f1f5f9" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ fontSize: "20px" }}>📝</span>
+                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#1e0836" }}>
+                    Record Daily Work & Wage
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowWageFormModal(false)}
+                  style={{ border: "none", background: "transparent", color: "#64748b", cursor: "pointer", fontSize: "14px" }}
+                >
+                  ✕
+                </button>
+              </div>
+
+              <form onSubmit={handleSubmitWageForm} style={{ marginTop: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+                {/* Date */}
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    required
+                    value={wageForm.duty_date}
+                    onChange={(e) => setWageForm({ ...wageForm, duty_date: e.target.value })}
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #d8b4fe",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      outline: "none",
+                    }}
+                  />
+                </div>
+
+                {/* Assign / Select Staff */}
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
+                    Select Staff *
+                  </label>
+                  <select
+                    required
+                    value={wageForm.staff_id}
+                    onChange={(e) => {
+                      const sid = e.target.value;
+                      const s = staffList.find((item) => item.id === parseInt(sid));
+                      const rate = s ? (s.wage_type === "monthly" ? "0" : String(s.wage_rate)) : "800";
+                      setWageForm({
+                        ...wageForm,
+                        staff_id: sid,
+                        today_wage: rate,
+                      });
+                    }}
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      padding: "0 10px",
+                      borderRadius: "10px",
+                      border: "1px solid #d8b4fe",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      background: "#fff",
+                      outline: "none",
+                    }}
+                  >
+                    <option value="">-- Choose Staff Member --</option>
+                    {staffList.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.kitchen_role}) - {s.wage_type === "monthly" ? `₹${Number(s.wage_rate).toLocaleString("en-IN")}/mo` : `Base: ₹${Number(s.wage_rate).toLocaleString("en-IN")}/day`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Attendance Status */}
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "6px" }}>
+                    Attendance Status
+                  </label>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const s = staffList.find((item) => item.id === parseInt(wageForm.staff_id));
+                        const rate = s ? (s.wage_type === "monthly" ? "0" : String(s.wage_rate)) : "800";
+                        setWageForm({ ...wageForm, duty_status: "present", today_wage: rate });
+                      }}
+                      style={{
+                        height: "36px",
+                        borderRadius: "8px",
+                        border: wageForm.duty_status === "present" ? "2px solid #059669" : "1px solid #e2e8f0",
+                        background: wageForm.duty_status === "present" ? "#ecfdf5" : "#ffffff",
+                        color: wageForm.duty_status === "present" ? "#047857" : "#475569",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🟢 Present
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const s = staffList.find((item) => item.id === parseInt(wageForm.staff_id));
+                        const halfRate = s ? Math.round(Number(s.wage_rate) * 0.5) : 400;
+                        setWageForm({ ...wageForm, duty_status: "half", today_wage: String(halfRate) });
+                      }}
+                      style={{
+                        height: "36px",
+                        borderRadius: "8px",
+                        border: wageForm.duty_status === "half" ? "2px solid #f59e0b" : "1px solid #e2e8f0",
+                        background: wageForm.duty_status === "half" ? "#fef3c7" : "#ffffff",
+                        color: wageForm.duty_status === "half" ? "#b45309" : "#475569",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🟡 Half Day
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setWageForm({ ...wageForm, duty_status: "absent", today_wage: "0" })}
+                      style={{
+                        height: "36px",
+                        borderRadius: "8px",
+                        border: wageForm.duty_status === "absent" ? "2px solid #e11d48" : "1px solid #e2e8f0",
+                        background: wageForm.duty_status === "absent" ? "#fef2f2" : "#ffffff",
+                        color: wageForm.duty_status === "absent" ? "#b91c1c" : "#475569",
+                        fontWeight: 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      🔴 Absent
+                    </button>
+                  </div>
+                </div>
+
+                {/* Today's Wage (THE HERO INPUT) */}
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
+                    Today's Wage (₹) *
+                  </label>
+                  <div style={{ position: "relative" }}>
+                    <span style={{ position: "absolute", left: "12px", top: "9px", fontSize: "14px", fontWeight: 800, color: "#8a7b9b" }}>
+                      ₹
+                    </span>
+                    <input
+                      type="number"
+                      required
+                      min="0"
+                      value={wageForm.today_wage}
+                      onChange={(e) => setWageForm({ ...wageForm, today_wage: e.target.value })}
+                      style={{
+                        width: "100%",
+                        height: "40px",
+                        paddingLeft: "30px",
+                        paddingRight: "14px",
+                        borderRadius: "10px",
+                        border: "2px solid #7c3aed",
+                        fontSize: "16px",
+                        fontWeight: 800,
+                        color: "#1e0836",
+                        outline: "none",
+                      }}
+                      placeholder="e.g. 800"
+                    />
+                  </div>
+                  <span style={{ fontSize: "11px", color: "#8a7b9b", marginTop: "3px", display: "block" }}>
+                    Change freely. Wages vary all days based on shifts, hours, or catering.
+                  </span>
+                </div>
+
+                {/* Paid in Cash Today Toggle */}
+                <div style={{ background: "#f8fafc", padding: "10px 14px", borderRadius: "10px", border: "1px solid #f1f5f9" }}>
+                  <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer", fontSize: "13px", fontWeight: 700, color: "#1e0836" }}>
+                    <input
+                      type="checkbox"
+                      checked={wageForm.paid_today}
+                      onChange={(e) => setWageForm({ ...wageForm, paid_today: e.target.checked })}
+                      style={{ width: "16px", height: "16px", accentColor: "#059669" }}
+                    />
+                    <span>💵 Paid in Cash Today (Settles balance to ₹0)</span>
+                  </label>
+                </div>
+
+                {/* Note */}
+                <div>
+                  <label style={{ fontSize: "12px", fontWeight: 700, color: "#1e0836", display: "block", marginBottom: "4px" }}>
+                    Note / Description (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={wageForm.note}
+                    onChange={(e) => setWageForm({ ...wageForm, note: e.target.value })}
+                    style={{
+                      width: "100%",
+                      height: "38px",
+                      padding: "0 12px",
+                      borderRadius: "10px",
+                      border: "1px solid #e2e8f0",
+                      fontSize: "13px",
+                      outline: "none",
+                    }}
+                    placeholder="e.g. Overtime catering, Evening shift"
+                  />
+                </div>
+
+                <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", paddingTop: "12px", borderTop: "1px solid #f1f5f9" }}>
+                  <button
+                    type="button"
+                    onClick={() => setShowWageFormModal(false)}
+                    style={{
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      border: "1px solid #e2e8f0",
+                      background: "#fff",
+                      color: "#64748b",
+                      fontWeight: 700,
+                      fontSize: "12px",
+                      cursor: "pointer",
+                    }}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    style={{
+                      padding: "8px 22px",
+                      borderRadius: "8px",
+                      border: "none",
+                      background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                      color: "#ffffff",
+                      fontWeight: 800,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      boxShadow: "0 4px 14px rgba(5, 150, 105, 0.25)",
+                    }}
+                  >
+                    Submit Wage Entry ✓
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* MODAL 2: ADD / EDIT KITCHEN STAFF                         */}
+        {/* ========================================================= */}
         {showAddStaffModal && (
           <div
             style={{
@@ -2818,7 +2128,9 @@ export default function KitchenPage() {
           </div>
         )}
 
-        {/* MODAL: Record Payment / Advance (White Dialog) */}
+        {/* ========================================================= */}
+        {/* MODAL 3: RECORD PAYMENT / ADVANCE                         */}
+        {/* ========================================================= */}
         {showPaymentModal && (
           <div
             style={{
@@ -2987,7 +2299,7 @@ export default function KitchenPage() {
                       fontSize: "13px",
                       outline: "none",
                     }}
-                    placeholder="e.g. Daily cash wage settlement / Advance"
+                    placeholder="e.g. Daily cash settlement / Advance"
                   />
                 </div>
 
