@@ -163,13 +163,20 @@ function BillingContent() {
   const [activeEvent, setActiveEvent] = useState<BillingEvent | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [autoPrintTriggered, setAutoPrintTriggered] = useState(false);
+  const [copyStatus, setCopyStatus] = useState(false);
 
   // Load Company Profile from settings
   useEffect(() => {
     try {
       const saved = localStorage.getItem("fc_settings");
       if (saved) {
-        setProfile({ ...DEFAULT_PROFILE, ...JSON.parse(saved) });
+        const parsed = JSON.parse(saved);
+        setProfile((prev) => ({
+          ...prev,
+          ...parsed,
+          contactPhone: parsed.phone || parsed.contactPhone || prev.contactPhone,
+          contactEmail: parsed.email || parsed.contactEmail || prev.contactEmail,
+        }));
       }
     } catch {
       // ignore
@@ -237,6 +244,91 @@ function BillingContent() {
     if (!activeEvent) return [];
     return payments.filter((p) => p.event_id === activeEvent.id);
   }, [activeEvent, payments]);
+
+  // Dynamic Line Items with SAC Codes for Corporate Tax Invoice
+  const invoiceItems = useMemo(() => {
+    if (!activeEvent) return [];
+    const total = activeEvent.quote ?? activeEvent.total_estimate ?? 0;
+    const guests = activeEvent.guest_count || 1;
+    const food = activeEvent.food_amt ?? 0;
+    const decor = activeEvent.decor_amt ?? 0;
+    const ops = Math.max(0, total - food - decor);
+
+    if (food > 0 || decor > 0) {
+      const items: Array<{
+        id: string;
+        title: string;
+        desc: string;
+        sac: string;
+        qty: string;
+        rate: number;
+        amount: number;
+      }> = [];
+
+      if (food > 0) {
+        items.push({
+          id: "food",
+          title: "Outdoor Catering & Banquet Culinary Services",
+          desc: `Specialized multi-course banquet menu, live counter stations & dining hospitality arranged for ${guests} guests`,
+          sac: "996331",
+          qty: `${guests} Pax`,
+          rate: Math.round(food / guests),
+          amount: food,
+        });
+      }
+
+      if (decor > 0) {
+        items.push({
+          id: "decor",
+          title: "Stage Styling, Lighting & Theme Decoration",
+          desc: "Designer stage backdrop, ambient lighting fixtures, floral accents, entrance pathway & table settings",
+          sac: "998599",
+          qty: "1 Package",
+          rate: decor,
+          amount: decor,
+        });
+      }
+
+      if (ops > 0) {
+        items.push({
+          id: "ops",
+          title: "Event Operations, Hospitality Logistics & Steward Crew",
+          desc: "On-site banquet coordination, steward team, logistics fleet, equipment handling, setup & dismantle",
+          sac: "998553",
+          qty: "1 Event Crew",
+          rate: ops,
+          amount: ops,
+        });
+      }
+
+      return items;
+    }
+
+    return [
+      {
+        id: "pkg",
+        title: "Turnkey Event Management, Culinary Catering & Decor Package",
+        desc: `Full-service event production including bespoke banquet catering tailored for ${guests} guests, stage decoration, theme lighting & operations at ${activeEvent.place || "specified venue"}`,
+        sac: "996331 / 998599",
+        qty: `1 Contract (${guests} Pax)`,
+        rate: total,
+        amount: total,
+      },
+    ];
+  }, [activeEvent]);
+
+  const handleCopyInvoiceLink = () => {
+    if (!activeEvent) return;
+    try {
+      const url = `${window.location.origin}/billing?eventId=${activeEvent.id}&print=1`;
+      navigator.clipboard.writeText(url).then(() => {
+        setCopyStatus(true);
+        setTimeout(() => setCopyStatus(false), 2200);
+      });
+    } catch {
+      // fallback
+    }
+  };
 
   // Metrics Calculation
   const metrics = useMemo(() => {
@@ -427,7 +519,6 @@ function BillingContent() {
 
         {/* Content Body */}
         <div className={`page-content ${modalOpen ? "no-print" : ""}`}>
-          <OwnerBanner />
           <OwnerBanner />
 
           {error && (
