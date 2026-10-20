@@ -237,8 +237,6 @@ export default function KitchenPage() {
           };
         } else {
           // No record yet for this date
-          // For daily staff: default to Present with their base daily rate
-          // For monthly staff: default to Present with ₹0 daily wage (handled monthly)
           const isMonthly = s.wage_type === "monthly";
           const defaultDailyWage = isMonthly ? 0 : Number(s.wage_rate) || 0;
 
@@ -361,7 +359,6 @@ export default function KitchenPage() {
       } else if (newStatus === "half") {
         newWage = Math.round(row.default_rate * 0.5);
       } else if (newStatus === "present") {
-        // If it was 0, restore default rate
         if (newWage === 0) {
           newWage = row.default_rate;
         }
@@ -411,7 +408,6 @@ export default function KitchenPage() {
       setErrorMsg(null);
       setSaveSuccessMsg(null);
 
-      // Build payload for all active staff (both daily and monthly)
       const dutiesPayload = Object.values(dailyRows).map((row) => ({
         staff_id: row.staff_id,
         shift: "Full Day",
@@ -628,13 +624,11 @@ export default function KitchenPage() {
   // Monthly Staff stats for selected month
   const monthlyStaffMetrics = useMemo(() => {
     return monthlyStaff.map((s) => {
-      // Find payments in selected month
       const monthPayments = paymentsList.filter((p) => {
         return p.staff_id === s.id && (p.payment_date || "").startsWith(selectedMonth);
       });
       const totalPaidThisMonth = monthPayments.reduce((acc, p) => acc + Number(p.amount), 0);
 
-      // Total duties / days present this month
       const monthDuties = dutiesList.filter((d) => {
         return (
           d.staff_id === s.id &&
@@ -688,13 +682,13 @@ export default function KitchenPage() {
             <MobileMenuButton onClick={() => setSidebarOpen(true)} />
             <div>
               <div className="flex items-center gap-2">
-                <span className="text-2xl">👨‍🍳</span>
+                <span className="text-2xl leading-none">👨‍🍳</span>
                 <h1 className="text-xl sm:text-2xl font-bold tracking-tight bg-gradient-to-r from-purple-200 via-pink-200 to-amber-200 bg-clip-text text-transparent">
                   Kitchen Staff & Wages
                 </h1>
               </div>
-              <p className="text-xs text-purple-300/70 hidden sm:block">
-                Easy variable daily wages & fixed monthly staff management
+              <p className="text-xs text-purple-300/70 hidden sm:block mt-0.5">
+                Fast daily variable wage tracking & monthly staff accounts
               </p>
             </div>
           </div>
@@ -765,58 +759,58 @@ export default function KitchenPage() {
           </div>
         )}
 
-        {/* Top Summary Metric Cards */}
+        {/* Top Summary Metric Cards - Aligned Symmetrically */}
         <div className="px-4 sm:px-8 pt-5 pb-3">
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3.5">
             {/* Card 1: Today's Working Staff */}
-            <div className="p-3.5 rounded-xl bg-[#200a36]/70 border border-purple-800/30 shadow-sm flex flex-col justify-between">
+            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 shadow-sm flex flex-col justify-between h-28">
               <div className="flex items-center justify-between text-xs text-purple-300/80 font-medium">
                 <span>Working Today</span>
-                <span className="text-emerald-400 text-base">🟢</span>
+                <span className="text-emerald-400 text-sm">🟢</span>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-white tracking-tight">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
                   {dailySheetTotals.presentCount}
                 </span>
-                <span className="text-xs text-purple-300/60">
+                <span className="text-xs text-purple-300/60 font-medium">
                   / {dailyStaff.length} Daily Staff
                 </span>
               </div>
-              <div className="text-[11px] text-purple-300/60 mt-1">
-                {dailySheetTotals.absentCount > 0 ? `${dailySheetTotals.absentCount} absent today` : "Full attendance"}
+              <div className="text-[11px] text-purple-300/70 truncate">
+                {dailySheetTotals.absentCount > 0 ? `${dailySheetTotals.absentCount} marked absent today` : "Full roster present"}
               </div>
             </div>
 
             {/* Card 2: Today's Total Wages */}
-            <div className="p-3.5 rounded-xl bg-[#200a36]/70 border border-purple-800/30 shadow-sm flex flex-col justify-between">
+            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 shadow-sm flex flex-col justify-between h-28">
               <div className="flex items-center justify-between text-xs text-purple-300/80 font-medium">
                 <span>Today's Wages Total</span>
-                <span className="text-amber-400 text-base">💰</span>
+                <span className="text-amber-400 text-sm">💰</span>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-bold text-amber-300 tracking-tight">
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl sm:text-3xl font-extrabold text-amber-300 tracking-tight">
                   ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
                 </span>
               </div>
-              <div className="text-[11px] text-purple-300/60 mt-1 flex items-center justify-between">
+              <div className="text-[11px] text-purple-300/70 flex items-center justify-between gap-1">
                 <span>Paid: ₹{dailySheetTotals.totalPaidToday.toLocaleString("en-IN")}</span>
-                <span className="text-amber-400/90 font-medium">Due: ₹{dailySheetTotals.pendingToday.toLocaleString("en-IN")}</span>
+                <span className="text-amber-400/90 font-semibold">Due: ₹{dailySheetTotals.pendingToday.toLocaleString("en-IN")}</span>
               </div>
             </div>
 
             {/* Card 3: Monthly Staff */}
-            <div className="p-3.5 rounded-xl bg-[#200a36]/70 border border-purple-800/30 shadow-sm flex flex-col justify-between">
+            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 shadow-sm flex flex-col justify-between h-28">
               <div className="flex items-center justify-between text-xs text-purple-300/80 font-medium">
                 <span>Monthly Staff</span>
-                <span className="text-indigo-400 text-base">💼</span>
+                <span className="text-indigo-400 text-sm">💼</span>
               </div>
-              <div className="mt-2 flex items-baseline gap-2">
-                <span className="text-2xl font-bold text-indigo-300 tracking-tight">
+              <div className="flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-extrabold text-indigo-300 tracking-tight">
                   {monthlyStaff.length}
                 </span>
-                <span className="text-xs text-purple-300/60">Staff</span>
+                <span className="text-xs text-purple-300/60 font-medium">Active</span>
               </div>
-              <div className="text-[11px] text-purple-300/60 mt-1 truncate">
+              <div className="text-[11px] text-purple-300/70 truncate">
                 {monthlyStaff.length > 0
                   ? monthlyStaff.map((m) => m.name).join(", ")
                   : "No monthly staff"}
@@ -824,26 +818,26 @@ export default function KitchenPage() {
             </div>
 
             {/* Card 4: Total Pending Balances */}
-            <div className="p-3.5 rounded-xl bg-[#200a36]/70 border border-purple-800/30 shadow-sm flex flex-col justify-between">
+            <div className="p-4 rounded-2xl bg-[#200a36]/80 border border-purple-800/40 shadow-sm flex flex-col justify-between h-28">
               <div className="flex items-center justify-between text-xs text-purple-300/80 font-medium">
                 <span>Total Balance Due</span>
-                <span className="text-rose-400 text-base">⏳</span>
+                <span className="text-rose-400 text-sm">⏳</span>
               </div>
-              <div className="mt-2">
-                <span className="text-2xl font-bold text-rose-300 tracking-tight">
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl sm:text-3xl font-extrabold text-rose-300 tracking-tight">
                   ₹{(summary?.total_pending_balance || 0).toLocaleString("en-IN")}
                 </span>
               </div>
-              <div className="text-[11px] text-purple-300/60 mt-1">
-                Accrued wage balance across all kitchen staff
+              <div className="text-[11px] text-purple-300/70 truncate">
+                Accrued wage balance across all staff
               </div>
             </div>
           </div>
         </div>
 
-        {/* View Switcher Tabs */}
-        <div className="px-4 sm:px-8 pt-2">
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#200a36]/60 border border-purple-900/30 w-full sm:w-fit overflow-x-auto">
+        {/* View Switcher Tabs - Symmetrically Aligned */}
+        <div className="px-4 sm:px-8 pt-1">
+          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#200a36]/70 border border-purple-900/40 w-full sm:w-fit overflow-x-auto">
             <button
               onClick={() => setActiveTab("daily")}
               className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold whitespace-nowrap transition-all ${
@@ -854,7 +848,7 @@ export default function KitchenPage() {
             >
               <span>📅</span>
               <span>Daily Wages Entry</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-purple-900/60 text-[10px] text-purple-200">
+              <span className="px-1.5 py-0.5 rounded-full bg-purple-900/60 text-[10px] text-purple-200">
                 {dailyStaff.length}
               </span>
             </button>
@@ -869,7 +863,7 @@ export default function KitchenPage() {
             >
               <span>💼</span>
               <span>Monthly Staff</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-purple-900/60 text-[10px] text-purple-200">
+              <span className="px-1.5 py-0.5 rounded-full bg-purple-900/60 text-[10px] text-purple-200">
                 {monthlyStaff.length}
               </span>
             </button>
@@ -903,26 +897,27 @@ export default function KitchenPage() {
         {/* Tab 1: DAILY WAGES ENTRY (THE MAIN HERO WORKSPACE) */}
         {activeTab === "daily" && (
           <div className="px-4 sm:px-8 py-4 space-y-4">
-            {/* Date Navigator Banner */}
-            <div className="p-4 rounded-2xl bg-gradient-to-r from-[#260c40] via-[#200a36] to-[#1d0733] border border-purple-800/40 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div className="flex items-center gap-2 flex-wrap">
-                <div className="flex items-center gap-1.5 bg-[#150624]/80 p-1 rounded-xl border border-purple-900/50">
+            {/* Date Navigator Banner - Perfectly Aligned */}
+            <div className="p-3.5 sm:p-4 rounded-2xl bg-gradient-to-r from-[#260c40] via-[#200a36] to-[#1d0733] border border-purple-800/40 shadow-md flex flex-col md:flex-row md:items-center justify-between gap-3">
+              {/* Left Side: Date Switcher */}
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <div className="flex items-center gap-1 bg-[#150624]/90 p-1 rounded-xl border border-purple-900/50">
                   <button
                     onClick={() => changeDateBy(-1)}
-                    className="px-2.5 py-1 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-medium transition"
+                    className="px-2.5 py-1 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-semibold transition"
                     title="Previous Day"
                   >
                     ◀ Prev
                   </button>
                   <button
                     onClick={setDateToday}
-                    className="px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-semibold transition"
+                    className="px-2.5 py-1 rounded-lg bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-bold transition"
                   >
                     Today
                   </button>
                   <button
                     onClick={() => changeDateBy(1)}
-                    className="px-2.5 py-1 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-medium transition"
+                    className="px-2.5 py-1 rounded-lg bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-semibold transition"
                     title="Next Day"
                   >
                     Next ▶
@@ -934,35 +929,37 @@ export default function KitchenPage() {
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    className="px-3 py-1.5 rounded-xl bg-[#150624] border border-purple-800/50 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-purple-400"
+                    className="h-9 px-3 rounded-xl bg-[#150624] border border-purple-800/50 text-white text-xs sm:text-sm font-semibold focus:outline-none focus:border-purple-400"
                   />
-                  <span className="text-xs sm:text-sm font-semibold text-purple-200">
+                  <span className="text-xs sm:text-sm font-bold text-purple-200 hidden sm:inline">
                     {formattedDateTitle}
                   </span>
                 </div>
               </div>
 
-              {/* Quick Roster Actions & Save Button */}
-              <div className="flex items-center gap-2">
+              {/* Right Side: Quick Roster Actions & Save Button */}
+              <div className="flex items-center gap-2 flex-wrap">
                 <button
                   type="button"
                   onClick={() => setAllDailyStatus("present")}
-                  className="px-2.5 py-1.5 rounded-lg bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300 border border-emerald-800/40 text-xs font-medium transition"
+                  className="h-9 px-3 rounded-xl bg-emerald-950/50 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-800/50 text-xs font-bold transition flex items-center gap-1.5"
                 >
-                  ✓ All Present
+                  <span>✓</span>
+                  <span>All Present</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setAllDailyStatus("absent")}
-                  className="px-2.5 py-1.5 rounded-lg bg-rose-950/40 hover:bg-rose-900/50 text-rose-300 border border-rose-800/40 text-xs font-medium transition"
+                  className="h-9 px-3 rounded-xl bg-rose-950/50 hover:bg-rose-900/60 text-rose-300 border border-rose-800/50 text-xs font-bold transition flex items-center gap-1.5"
                 >
-                  ✗ All Absent
+                  <span>✗</span>
+                  <span>All Absent</span>
                 </button>
 
                 <button
                   onClick={handleSaveDailyWages}
                   disabled={savingDaily}
-                  className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-950/50 transition-all disabled:opacity-50"
+                  className="h-9 px-4 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-950/50 transition-all disabled:opacity-50 flex items-center gap-1.5"
                 >
                   <span>💾</span>
                   <span>{savingDaily ? "Saving..." : "Save Today's Wages"}</span>
@@ -974,7 +971,7 @@ export default function KitchenPage() {
             <div className="flex items-center gap-2 text-xs text-purple-300/80 px-1">
               <span className="text-amber-400 font-bold">💡 Tip:</span>
               <span>
-                Wages change day-to-day. Simply type today's exact rupee amount for each staff member, or check "Paid Today" if handed cash.
+                Wages change day-to-day. Simply type today's exact wage amount for each worker, or tick "Paid Cash" if handed out.
               </span>
             </div>
 
@@ -1014,7 +1011,16 @@ export default function KitchenPage() {
                   </button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 gap-2.5">
+                <div className="space-y-2.5">
+                  {/* Table Header Row on Desktop (md+) for Perfect Alignment */}
+                  <div className="hidden md:grid md:grid-cols-12 gap-3 px-4 py-2 text-[11px] font-bold text-purple-300/60 uppercase tracking-wider">
+                    <div className="md:col-span-3">Staff Member</div>
+                    <div className="md:col-span-3 text-center">Attendance</div>
+                    <div className="md:col-span-2 text-center">Today's Wage (₹)</div>
+                    <div className="md:col-span-2 text-center">Payment Status</div>
+                    <div className="md:col-span-2">Note / Shift</div>
+                  </div>
+
                   {dailyStaff.map((staff) => {
                     const row = dailyRows[staff.id] || {
                       staff_id: staff.id,
@@ -1046,11 +1052,12 @@ export default function KitchenPage() {
                             : "bg-[#200a36]/90 border-purple-800/40 shadow-sm hover:border-purple-700/60"
                         }`}
                       >
-                        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                          {/* Staff Info */}
-                          <div className="flex items-center gap-3 min-w-[200px]">
+                        {/* Desktop & Tablet Grid Row (md+) */}
+                        <div className="hidden md:grid md:grid-cols-12 gap-3 items-center">
+                          {/* Col 1: Staff Info (3 cols) */}
+                          <div className="md:col-span-3 flex items-center gap-3 min-w-0">
                             <div
-                              className={`w-10 h-10 rounded-xl flex items-center justify-between justify-center font-bold text-sm ${
+                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-sm shrink-0 ${
                                 isAbsent
                                   ? "bg-rose-950/50 text-rose-300 border border-rose-800/40"
                                   : isHalf
@@ -1061,38 +1068,38 @@ export default function KitchenPage() {
                               {staff.name.slice(0, 2).toUpperCase()}
                             </div>
 
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-bold text-white text-sm sm:text-base tracking-tight">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-bold text-white text-sm tracking-tight truncate">
                                   {staff.name}
                                 </span>
-                                <span className="px-2 py-0.5 rounded-md bg-purple-950/80 border border-purple-800/40 text-[10px] text-purple-300 font-medium">
+                                <span className="px-1.5 py-0.5 rounded bg-purple-950/80 border border-purple-800/40 text-[10px] text-purple-300 font-medium whitespace-nowrap">
                                   {staff.kitchen_role}
                                 </span>
                               </div>
-                              <div className="flex items-center gap-2 text-xs text-purple-300/70 mt-0.5">
-                                <span>Default: ₹{Number(staff.wage_rate).toLocaleString("en-IN")}/day</span>
+                              <div className="flex items-center gap-1.5 text-xs text-purple-300/70 mt-0.5">
+                                <span className="whitespace-nowrap">Base: ₹{Number(staff.wage_rate).toLocaleString("en-IN")}</span>
                                 <span>•</span>
                                 <button
                                   type="button"
                                   onClick={() => openPaymentModal(staff)}
-                                  className={`font-semibold hover:underline ${
+                                  className={`font-semibold hover:underline truncate ${
                                     staff.balance > 0 ? "text-amber-300" : "text-emerald-400"
                                   }`}
                                   title="Click to settle balance"
                                 >
-                                  Balance: ₹{Number(staff.balance).toLocaleString("en-IN")}
+                                  Due: ₹{Number(staff.balance).toLocaleString("en-IN")}
                                 </button>
                               </div>
                             </div>
                           </div>
 
-                          {/* Attendance Status Buttons */}
-                          <div className="flex items-center gap-1.5 self-start lg:self-center">
+                          {/* Col 2: Attendance Buttons (3 cols) */}
+                          <div className="md:col-span-3 flex items-center justify-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => handleDailyStatusChange(staff.id, "present")}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                              className={`h-9 px-3 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                                 isPresent
                                   ? "bg-emerald-600 text-white shadow-md shadow-emerald-950/50 scale-105"
                                   : "bg-[#150624] text-purple-300 hover:text-white border border-purple-900/60"
@@ -1105,20 +1112,20 @@ export default function KitchenPage() {
                             <button
                               type="button"
                               onClick={() => handleDailyStatusChange(staff.id, "half")}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                                 isHalf
                                   ? "bg-amber-600 text-white shadow-md shadow-amber-950/50 scale-105"
                                   : "bg-[#150624] text-purple-300 hover:text-white border border-purple-900/60"
                               }`}
                             >
                               <span>🟡</span>
-                              <span>Half Day</span>
+                              <span>Half</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => handleDailyStatusChange(staff.id, "absent")}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
+                              className={`h-9 px-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                                 isAbsent
                                   ? "bg-rose-600 text-white shadow-md shadow-rose-950/50 scale-105"
                                   : "bg-[#150624] text-purple-300 hover:text-white border border-purple-900/60"
@@ -1129,70 +1136,176 @@ export default function KitchenPage() {
                             </button>
                           </div>
 
-                          {/* Today's Wage Input (THE HERO FIELD) */}
-                          <div className="flex items-center gap-2 self-start lg:self-center">
-                            <div className="flex flex-col">
-                              <label className="text-[10px] text-purple-300/70 font-semibold mb-0.5">
-                                Today's Wage (₹)
-                              </label>
-                              <div className="relative flex items-center">
-                                <span className="absolute left-2.5 text-xs text-purple-300/80 font-bold">
-                                  ₹
-                                </span>
-                                <input
-                                  type="number"
-                                  disabled={isAbsent}
-                                  value={row.today_wage}
-                                  onChange={(e) => {
-                                    const val = Math.max(0, parseFloat(e.target.value) || 0);
-                                    updateDailyRow(staff.id, { today_wage: val });
-                                  }}
-                                  className={`w-28 pl-6 pr-2.5 py-1.5 rounded-xl text-sm font-bold text-right transition-all focus:outline-none ${
-                                    isAbsent
-                                      ? "bg-[#150624]/40 border border-purple-950 text-purple-500/50 cursor-not-allowed"
-                                      : "bg-[#150624] border border-purple-600/70 text-amber-300 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
-                                  }`}
-                                  placeholder="0"
-                                />
-                              </div>
-                            </div>
-
-                            {/* Paid in Cash Today Toggle */}
-                            <div className="flex flex-col ml-2">
-                              <label className="text-[10px] text-purple-300/70 font-semibold mb-0.5">
-                                Paid Today?
-                              </label>
-                              <label
-                                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border cursor-pointer text-xs font-semibold transition-all select-none ${
-                                  row.paid_today
-                                    ? "bg-emerald-950/60 border-emerald-500/70 text-emerald-300 shadow-sm"
-                                    : "bg-[#150624]/60 border-purple-900/50 text-purple-300/70 hover:border-purple-700"
+                          {/* Col 3: Today's Wage Input (2 cols) */}
+                          <div className="md:col-span-2 flex items-center justify-center">
+                            <div className="relative flex items-center w-32">
+                              <span className="absolute left-3 text-xs text-purple-300/80 font-bold pointer-events-none">
+                                ₹
+                              </span>
+                              <input
+                                type="number"
+                                disabled={isAbsent}
+                                value={row.today_wage}
+                                onChange={(e) => {
+                                  const val = Math.max(0, parseFloat(e.target.value) || 0);
+                                  updateDailyRow(staff.id, { today_wage: val });
+                                }}
+                                className={`w-full h-9 pl-7 pr-3 rounded-xl text-sm font-bold text-right transition-all focus:outline-none ${
+                                  isAbsent
+                                    ? "bg-[#150624]/40 border border-purple-950 text-purple-500/50 cursor-not-allowed"
+                                    : "bg-[#150624] border border-purple-600/70 text-amber-300 focus:border-amber-400 focus:ring-1 focus:ring-amber-400"
                                 }`}
-                              >
-                                <input
-                                  type="checkbox"
-                                  disabled={isAbsent}
-                                  checked={row.paid_today}
-                                  onChange={(e) => {
-                                    updateDailyRow(staff.id, { paid_today: e.target.checked });
-                                  }}
-                                  className="rounded text-emerald-500 focus:ring-emerald-400"
-                                />
-                                <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
-                              </label>
+                                placeholder="0"
+                              />
                             </div>
                           </div>
 
-                          {/* Quick Note Input */}
-                          <div className="w-full lg:w-44 self-start lg:self-center">
+                          {/* Col 4: Payment Status (2 cols) */}
+                          <div className="md:col-span-2 flex items-center justify-center">
+                            <label
+                              className={`h-9 px-3 rounded-xl border cursor-pointer text-xs font-semibold transition-all select-none flex items-center gap-2 ${
+                                row.paid_today
+                                  ? "bg-emerald-950/60 border-emerald-500/70 text-emerald-300 shadow-sm"
+                                  : "bg-[#150624]/60 border-purple-900/50 text-purple-300/70 hover:border-purple-700"
+                              } ${isAbsent ? "opacity-50 cursor-not-allowed" : ""}`}
+                            >
+                              <input
+                                type="checkbox"
+                                disabled={isAbsent}
+                                checked={row.paid_today}
+                                onChange={(e) => {
+                                  updateDailyRow(staff.id, { paid_today: e.target.checked });
+                                }}
+                                className="rounded text-emerald-500 focus:ring-emerald-400"
+                              />
+                              <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
+                            </label>
+                          </div>
+
+                          {/* Col 5: Note Input (2 cols) */}
+                          <div className="md:col-span-2">
                             <input
                               type="text"
                               value={row.note}
                               onChange={(e) => updateDailyRow(staff.id, { note: e.target.value })}
-                              placeholder="Note (e.g. catering bonus)"
-                              className="w-full px-2.5 py-1.5 rounded-xl bg-[#150624]/80 border border-purple-900/50 text-xs text-purple-200 placeholder-purple-400/40 focus:outline-none focus:border-purple-500"
+                              placeholder="Note (e.g. bonus)"
+                              className="w-full h-9 px-3 rounded-xl bg-[#150624]/80 border border-purple-900/50 text-xs text-purple-200 placeholder-purple-400/40 focus:outline-none focus:border-purple-500"
                             />
                           </div>
+                        </div>
+
+                        {/* Mobile Card Layout (< md) */}
+                        <div className="md:hidden space-y-3">
+                          {/* Row 1: Avatar, Name, Role, Balance */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <div
+                                className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                                  isAbsent
+                                    ? "bg-rose-950/50 text-rose-300 border border-rose-800/40"
+                                    : isHalf
+                                    ? "bg-amber-950/50 text-amber-300 border border-amber-800/40"
+                                    : "bg-purple-900/50 text-purple-200 border border-purple-700/50"
+                                }`}
+                              >
+                                {staff.name.slice(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-bold text-white text-sm">{staff.name}</div>
+                                <div className="text-[11px] text-purple-300/70">{staff.kitchen_role}</div>
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => openPaymentModal(staff)}
+                              className={`text-xs font-semibold px-2 py-1 rounded-lg ${
+                                staff.balance > 0 ? "bg-amber-950/70 text-amber-300" : "bg-emerald-950/60 text-emerald-400"
+                              }`}
+                            >
+                              Due: ₹{Number(staff.balance).toLocaleString("en-IN")}
+                            </button>
+                          </div>
+
+                          {/* Row 2: Attendance Toggle (Full width segmented control) */}
+                          <div className="grid grid-cols-3 gap-1.5 p-1 rounded-xl bg-[#150624]">
+                            <button
+                              type="button"
+                              onClick={() => handleDailyStatusChange(staff.id, "present")}
+                              className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                isPresent ? "bg-emerald-600 text-white shadow-sm" : "text-purple-300"
+                              }`}
+                            >
+                              <span>🟢</span>
+                              <span>Present</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDailyStatusChange(staff.id, "half")}
+                              className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                isHalf ? "bg-amber-600 text-white shadow-sm" : "text-purple-300"
+                              }`}
+                            >
+                              <span>🟡</span>
+                              <span>Half</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDailyStatusChange(staff.id, "absent")}
+                              className={`py-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 ${
+                                isAbsent ? "bg-rose-600 text-white shadow-sm" : "text-purple-300"
+                              }`}
+                            >
+                              <span>🔴</span>
+                              <span>Absent</span>
+                            </button>
+                          </div>
+
+                          {/* Row 3: Today's Wage & Paid Checkbox */}
+                          <div className="grid grid-cols-2 gap-2 items-center">
+                            <div className="relative flex items-center">
+                              <span className="absolute left-2.5 text-xs text-purple-300/80 font-bold pointer-events-none">
+                                ₹
+                              </span>
+                              <input
+                                type="number"
+                                disabled={isAbsent}
+                                value={row.today_wage}
+                                onChange={(e) => {
+                                  const val = Math.max(0, parseFloat(e.target.value) || 0);
+                                  updateDailyRow(staff.id, { today_wage: val });
+                                }}
+                                className="w-full h-9 pl-6 pr-2.5 rounded-xl bg-[#150624] border border-purple-700 text-sm font-bold text-amber-300 text-right focus:outline-none"
+                                placeholder="0"
+                              />
+                            </div>
+
+                            <label
+                              className={`h-9 px-3 rounded-xl border cursor-pointer text-xs font-semibold flex items-center justify-center gap-1.5 ${
+                                row.paid_today
+                                  ? "bg-emerald-950/60 border-emerald-500/70 text-emerald-300"
+                                  : "bg-[#150624] border-purple-900 text-purple-300"
+                              }`}
+                            >
+                              <input
+                                type="checkbox"
+                                disabled={isAbsent}
+                                checked={row.paid_today}
+                                onChange={(e) => updateDailyRow(staff.id, { paid_today: e.target.checked })}
+                                className="rounded text-emerald-500"
+                              />
+                              <span>💵 {row.paid_today ? "Paid Cash" : "Pending"}</span>
+                            </label>
+                          </div>
+
+                          {/* Row 4: Note Input */}
+                          <input
+                            type="text"
+                            value={row.note}
+                            onChange={(e) => updateDailyRow(staff.id, { note: e.target.value })}
+                            placeholder="Note (optional)"
+                            className="w-full h-8 px-2.5 rounded-xl bg-[#150624]/80 border border-purple-900/50 text-xs text-purple-200 placeholder-purple-400/40"
+                          />
                         </div>
                       </div>
                     );
@@ -1201,10 +1314,10 @@ export default function KitchenPage() {
               )}
             </div>
 
-            {/* Section 2: Monthly Staff Attendance (Separated & Clean) */}
+            {/* Section 2: Monthly Staff Attendance (Separated & Symmetrical) */}
             {monthlyStaff.length > 0 && (
               <div className="mt-6 pt-4 border-t border-purple-900/40">
-                <div className="flex items-center justify-between mb-2 px-1">
+                <div className="flex items-center justify-between mb-3 px-1">
                   <div>
                     <h3 className="text-sm font-bold text-white flex items-center gap-2">
                       <span>💼</span>
@@ -1222,7 +1335,7 @@ export default function KitchenPage() {
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {monthlyStaff.map((staff) => {
                     const row = dailyRows[staff.id] || {
                       staff_id: staff.id,
@@ -1244,17 +1357,17 @@ export default function KitchenPage() {
                     return (
                       <div
                         key={staff.id}
-                        className="p-3 rounded-2xl bg-[#200a36]/60 border border-purple-800/30 flex items-center justify-between gap-3"
+                        className="p-3.5 rounded-2xl bg-[#200a36]/70 border border-purple-800/40 flex items-center justify-between gap-3"
                       >
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="font-bold text-white text-sm">{staff.name}</span>
-                            <span className="px-2 py-0.2 rounded bg-indigo-950/80 border border-indigo-700/50 text-[10px] text-indigo-300 font-medium">
+                            <span className="px-2 py-0.5 rounded bg-indigo-950/80 border border-indigo-700/50 text-[10px] text-indigo-300 font-semibold">
                               {staff.kitchen_role}
                             </span>
                           </div>
-                          <div className="text-xs text-purple-300/70 mt-0.5">
-                            Salary: <strong className="text-indigo-300 font-semibold">₹{Number(staff.wage_rate).toLocaleString("en-IN")}/mo</strong>
+                          <div className="text-xs text-purple-300/70 mt-1">
+                            Salary: <strong className="text-indigo-300 font-bold">₹{Number(staff.wage_rate).toLocaleString("en-IN")}/mo</strong>
                           </div>
                         </div>
 
@@ -1265,7 +1378,7 @@ export default function KitchenPage() {
                               const newSt = isPresent ? "absent" : "present";
                               updateDailyRow(staff.id, { status: newSt, today_wage: 0 });
                             }}
-                            className={`px-3 py-1 rounded-xl text-xs font-bold transition-all ${
+                            className={`h-8 px-3 rounded-xl text-xs font-bold transition-all ${
                               isPresent
                                 ? "bg-emerald-600/30 text-emerald-300 border border-emerald-500/50"
                                 : "bg-rose-600/30 text-rose-300 border border-rose-500/50"
@@ -1277,7 +1390,7 @@ export default function KitchenPage() {
                           <button
                             type="button"
                             onClick={() => openPaymentModal(staff)}
-                            className="px-2.5 py-1 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-medium border border-purple-700/40"
+                            className="h-8 px-2.5 rounded-xl bg-purple-900/40 hover:bg-purple-800/60 text-purple-200 text-xs font-semibold border border-purple-700/40"
                             title="Pay Advance"
                           >
                             Advance 💵
@@ -1297,15 +1410,15 @@ export default function KitchenPage() {
                 <strong className="text-amber-300 font-bold text-sm sm:text-base">
                   ₹{dailySheetTotals.totalWagesToday.toLocaleString("en-IN")}
                 </strong>
-                <span className="text-purple-400/60 ml-2">
-                  ({dailySheetTotals.presentCount} present)
+                <span className="text-purple-400/60 ml-2 hidden sm:inline">
+                  ({dailySheetTotals.presentCount} present, {dailySheetTotals.absentCount} absent)
                 </span>
               </div>
 
               <button
                 onClick={handleSaveDailyWages}
                 disabled={savingDaily}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-950/60 transition-all disabled:opacity-50 flex items-center gap-2"
+                className="h-10 px-5 rounded-xl bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs sm:text-sm font-bold shadow-lg shadow-emerald-950/60 transition-all disabled:opacity-50 flex items-center gap-2"
               >
                 <span>💾</span>
                 <span>{savingDaily ? "Saving..." : "Save Daily Wages"}</span>
@@ -1324,18 +1437,18 @@ export default function KitchenPage() {
                   <span>💼</span>
                   <span>Monthly Fixed Salary Staff</span>
                 </h2>
-                <p className="text-xs text-purple-300/70">
-                  Manage minimal monthly salaried kitchen staff, attendance days, and salary advances.
+                <p className="text-xs text-purple-300/70 mt-0.5">
+                  Manage minimal monthly salaried staff, attendance days, and salary advances.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
-                <label className="text-xs text-purple-300 font-medium">Month:</label>
+                <label className="text-xs text-purple-300 font-semibold">Month:</label>
                 <input
                   type="month"
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="px-3 py-1.5 rounded-xl bg-[#150624] border border-purple-800 text-white text-xs sm:text-sm font-semibold focus:outline-none"
+                  className="h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-xs sm:text-sm font-semibold focus:outline-none"
                 />
               </div>
             </div>
@@ -1370,7 +1483,7 @@ export default function KitchenPage() {
                     key={staff.id}
                     className="p-5 rounded-2xl bg-[#200a36]/90 border border-purple-800/40 shadow-md space-y-4"
                   >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
                         <div className="flex items-center gap-2">
                           <h3 className="text-lg font-bold text-white tracking-tight">{staff.name}</h3>
@@ -1385,9 +1498,9 @@ export default function KitchenPage() {
 
                       <button
                         onClick={() => openPaymentModal(staff)}
-                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/50 text-xs font-semibold transition"
+                        className="px-3.5 py-1.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/40 text-emerald-300 border border-emerald-500/50 text-xs font-semibold transition shrink-0"
                       >
-                        💵 Pay Advance / Salary
+                        💵 Pay Advance
                       </button>
                     </div>
 
@@ -1475,7 +1588,7 @@ export default function KitchenPage() {
                   placeholder="Search staff by name or role..."
                   value={searchStaff}
                   onChange={(e) => setSearchStaff(e.target.value)}
-                  className="w-full px-3 py-1.5 rounded-xl bg-[#150624] border border-purple-800 text-white text-xs sm:text-sm focus:outline-none"
+                  className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-xs sm:text-sm focus:outline-none"
                 />
               </div>
 
@@ -1507,7 +1620,7 @@ export default function KitchenPage() {
               </div>
             </div>
 
-            {/* Staff Table / Cards */}
+            {/* Staff Table */}
             <div className="overflow-x-auto rounded-2xl border border-purple-800/40 bg-[#200a36]/80 shadow-md">
               <table className="w-full text-left text-xs sm:text-sm">
                 <thead className="bg-[#150624]/90 text-purple-300/70 uppercase text-[11px] font-semibold border-b border-purple-900/40">
@@ -1536,7 +1649,7 @@ export default function KitchenPage() {
                           <div className="flex items-center gap-2">
                             <span>{s.name}</span>
                             {s.status === "inactive" && (
-                              <span className="px-1.5 py-0.2 rounded bg-rose-950 text-rose-300 text-[10px]">
+                              <span className="px-1.5 py-0.5 rounded bg-rose-950 text-rose-300 text-[10px]">
                                 Inactive
                               </span>
                             )}
@@ -1636,7 +1749,7 @@ export default function KitchenPage() {
                   <span>🧾</span>
                   <span>Kitchen Staff Payment Ledger ({paymentsList.length})</span>
                 </h2>
-                <p className="text-xs text-purple-300/70">
+                <p className="text-xs text-purple-300/70 mt-0.5">
                   Record of all cash payouts, UPI transfers, and advances handed to kitchen staff.
                 </p>
               </div>
@@ -1731,7 +1844,7 @@ export default function KitchenPage() {
                     required
                     value={staffForm.name}
                     onChange={(e) => setStaffForm({ ...staffForm, name: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
                     placeholder="e.g. Ramesh Kumar"
                   />
                 </div>
@@ -1744,7 +1857,7 @@ export default function KitchenPage() {
                     <select
                       value={staffForm.kitchen_role}
                       onChange={(e) => setStaffForm({ ...staffForm, kitchen_role: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                      className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
                     >
                       {KITCHEN_ROLES.map((r) => (
                         <option key={r} value={r}>
@@ -1762,7 +1875,7 @@ export default function KitchenPage() {
                       type="tel"
                       value={staffForm.mobile}
                       onChange={(e) => setStaffForm({ ...staffForm, mobile: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                      className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
                       placeholder="9876543210"
                     />
                   </div>
@@ -1812,7 +1925,7 @@ export default function KitchenPage() {
                     min="0"
                     value={staffForm.wage_rate}
                     onChange={(e) => setStaffForm({ ...staffForm, wage_rate: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400 font-bold"
+                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400 font-bold"
                     placeholder="e.g. 800 or 20000"
                   />
                   <span className="text-[10px] text-purple-300/60 mt-1 block">
@@ -1830,7 +1943,7 @@ export default function KitchenPage() {
                     type="text"
                     value={staffForm.notes}
                     onChange={(e) => setStaffForm({ ...staffForm, notes: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
                     placeholder="e.g. Specialty in Biryani, Part-time"
                   />
                 </div>
@@ -1839,13 +1952,13 @@ export default function KitchenPage() {
                   <button
                     type="button"
                     onClick={() => setShowAddStaffModal(false)}
-                    className="px-4 py-2 rounded-xl bg-purple-950 text-purple-300 hover:text-white text-xs font-semibold"
+                    className="h-9 px-4 rounded-xl bg-purple-950 text-purple-300 hover:text-white text-xs font-semibold"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white text-xs font-bold shadow-md"
+                    className="h-9 px-5 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 text-white text-xs font-bold shadow-md"
                   >
                     {editingStaff ? "Update Staff" : "Add Staff"}
                   </button>
@@ -1889,7 +2002,7 @@ export default function KitchenPage() {
                         amount: st && st.balance > 0 ? String(st.balance) : "",
                       });
                     }}
-                    className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400 font-semibold"
+                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400 font-semibold"
                   >
                     {staffList.map((s) => (
                       <option key={s.id} value={s.id}>
@@ -1911,7 +2024,7 @@ export default function KitchenPage() {
                       step="any"
                       value={paymentForm.amount}
                       onChange={(e) => setPaymentForm({ ...paymentForm, amount: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-emerald-600/70 text-emerald-300 text-sm font-bold focus:outline-none focus:border-emerald-400"
+                      className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-emerald-600/70 text-emerald-300 text-sm font-bold focus:outline-none focus:border-emerald-400"
                       placeholder="e.g. 800"
                     />
                   </div>
@@ -1925,7 +2038,7 @@ export default function KitchenPage() {
                       required
                       value={paymentForm.payment_date}
                       onChange={(e) => setPaymentForm({ ...paymentForm, payment_date: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                      className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
                     />
                   </div>
                 </div>
@@ -1940,7 +2053,7 @@ export default function KitchenPage() {
                         key={mode}
                         type="button"
                         onClick={() => setPaymentForm({ ...paymentForm, payment_mode: mode })}
-                        className={`py-1.5 rounded-xl border text-xs font-semibold transition ${
+                        className={`h-9 rounded-xl border text-xs font-semibold transition flex items-center justify-center ${
                           paymentForm.payment_mode === mode
                             ? "bg-emerald-600 text-white border-emerald-400 shadow-sm"
                             : "bg-[#150624] text-purple-300 border-purple-900"
@@ -1960,7 +2073,7 @@ export default function KitchenPage() {
                     type="text"
                     value={paymentForm.note}
                     onChange={(e) => setPaymentForm({ ...paymentForm, note: e.target.value })}
-                    className="w-full px-3 py-2 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
+                    className="w-full h-9 px-3 rounded-xl bg-[#150624] border border-purple-800 text-white text-sm focus:outline-none focus:border-purple-400"
                     placeholder="e.g. Daily cash wage settlement / Advance"
                   />
                 </div>
@@ -1969,13 +2082,13 @@ export default function KitchenPage() {
                   <button
                     type="button"
                     onClick={() => setShowPaymentModal(false)}
-                    className="px-4 py-2 rounded-xl bg-purple-950 text-purple-300 hover:text-white text-xs font-semibold"
+                    className="h-9 px-4 rounded-xl bg-purple-950 text-purple-300 hover:text-white text-xs font-semibold"
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
-                    className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white text-xs font-bold shadow-md"
+                    className="h-9 px-5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 text-white text-xs font-bold shadow-md"
                   >
                     Record Payment 💵
                   </button>
