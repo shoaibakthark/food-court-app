@@ -167,6 +167,26 @@ function BillingContent() {
   const [autoPrintTriggered, setAutoPrintTriggered] = useState(false);
   const [copyStatus, setCopyStatus] = useState(false);
 
+  // Backup states
+  const [showDriveModal, setShowDriveModal] = useState(false);
+  const [exportingExcel, setExportingExcel] = useState(false);
+
+  const handleExportExcel = async () => {
+    try {
+      setExportingExcel(true);
+      const res = await exportEntireDatabaseToExcel();
+      if (res.success) {
+        alert(`✓ Complete Excel database backup downloaded successfully (${res.totalRecords} records across 11 sheets).`);
+      } else {
+        alert("Failed to export Excel backup: " + res.error);
+      }
+    } catch (err: any) {
+      alert("Error exporting Excel backup: " + err.message);
+    } finally {
+      setExportingExcel(false);
+    }
+  };
+
   // Load Company Profile from settings
   useEffect(() => {
     try {
@@ -513,6 +533,57 @@ function BillingContent() {
               }}
             >
               <span>🖨️</span> Print Ledger
+            </button>
+
+            {/* Google Drive Backup Button */}
+            <button
+              type="button"
+              onClick={() => setShowDriveModal(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                height: "38px",
+                background: "linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "8px",
+                padding: "0 14px",
+                fontWeight: 700,
+                fontSize: "12px",
+                cursor: "pointer",
+                whiteSpace: "nowrap",
+                boxShadow: "0 2px 6px rgba(37, 99, 235, 0.25)",
+              }}
+              title="Upload and sync database backup to Google Drive"
+            >
+              <span>☁️</span> Google Drive
+            </button>
+
+            {/* Excel Backup Button */}
+            <button
+              type="button"
+              onClick={handleExportExcel}
+              disabled={exportingExcel}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                height: "38px",
+                background: "linear-gradient(135deg, #059669 0%, #047857 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "8px",
+                padding: "0 14px",
+                fontWeight: 700,
+                fontSize: "12px",
+                cursor: exportingExcel ? "not-allowed" : "pointer",
+                whiteSpace: "nowrap",
+                boxShadow: "0 2px 6px rgba(5, 150, 105, 0.25)",
+              }}
+              title="Download entire 11-sheet database backup in Excel (.xlsx) format"
+            >
+              <span>📊</span> {exportingExcel ? "Exporting..." : "Backup to Excel"}
             </button>
 
             <TopbarUserBadge />
