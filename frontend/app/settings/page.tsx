@@ -80,6 +80,7 @@ export default function SettingsPage() {
 
   const [localBackupStatus, setLocalBackupStatus] = useState<LocalBackupStatus | null>(null);
   const [localBackupRunning, setLocalBackupRunning] = useState(false);
+  const [restoringFilename, setRestoringFilename] = useState<string | null>(null);
 
   const fetchBackupStatus = async () => {
     try {
@@ -109,6 +110,33 @@ export default function SettingsPage() {
       alert("Error triggering backup: " + err.message);
     } finally {
       setLocalBackupRunning(false);
+    }
+  };
+
+  const handleRestoreBackup = async (filename: string) => {
+    const ok = window.confirm(
+      `⚠️ RESTORE DATABASE WARNING:\n\nAre you sure you want to restore:\n"${filename}"?\n\nThis will OVERWRITE your current database records with the contents of this backup file.`
+    );
+    if (!ok) return;
+
+    try {
+      setRestoringFilename(filename);
+      const res = await fetch(`${API_URL}/backup/restore`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        alert(`✓ Database restored successfully from ${filename}!\nThe application will now reload.`);
+        window.location.reload();
+      } else {
+        alert("Restore failed: " + (data.detail || data.error || "Unknown error"));
+      }
+    } catch (err: any) {
+      alert("Error restoring database: " + err.message);
+    } finally {
+      setRestoringFilename(null);
     }
   };
 
@@ -874,6 +902,26 @@ export default function SettingsPage() {
                             <span style={{ fontWeight: 800, color: "#059669", background: "#ecfdf5", padding: "2px 8px", borderRadius: "10px" }}>
                               {b.size_mb} MB
                             </span>
+                            {!isOwner && (
+                              <button
+                                type="button"
+                                disabled={restoringFilename === b.filename}
+                                onClick={() => handleRestoreBackup(b.filename)}
+                                style={{
+                                  border: "1px solid #fca5a5",
+                                  background: "#fef2f2",
+                                  color: "#dc2626",
+                                  borderRadius: "6px",
+                                  padding: "3px 9px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  cursor: restoringFilename === b.filename ? "not-allowed" : "pointer",
+                                }}
+                                title="Restore this database backup (overwrites current data)"
+                              >
+                                {restoringFilename === b.filename ? "Restoring..." : "↺ Restore"}
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}

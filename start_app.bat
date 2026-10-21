@@ -23,4 +23,7 @@ echo   - Local PC access:  http://localhost:3000
 echo   - LAN/Mobile access: Open your IP on port 3000
 echo =========================================================
 echo.
-timeout /t 6
+timeout /t 4 >nul
+echo Opening web application in default browser...
+start http://localhost:3000
+timeout /t 3 >nul

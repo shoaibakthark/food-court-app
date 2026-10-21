@@ -490,6 +490,49 @@ function BillingContent() {
     window.print();
   };
 
+  const handleShareWhatsApp = (ev: BillingEvent) => {
+    const rawMobile = ev.customer_mobile || "";
+    const cleanMobile = rawMobile.replace(/[^0-9]/g, "");
+    const totalAmt = ev.quote ?? ev.total_estimate ?? 0;
+    const paidAmt = ev.paid_amount ?? 0;
+    const balanceAmt = ev.balance ?? Math.max(0, totalAmt - paidAmt);
+    const dateFormatted = ev.date
+      ? new Date(ev.date).toLocaleDateString("en-IN", {
+          day: "2-digit",
+          month: "short",
+          year: "numeric",
+        })
+      : "—";
+
+    const msg = [
+      `🧾 *FOOD COURT EVENT MANAGEMENT & CATERING*`,
+      `----------------------------------------`,
+      `*INVOICE & BILL SUMMARY*`,
+      `• *Invoice No:* INV-${String(ev.id).padStart(4, "0")}`,
+      `• *Customer:* ${ev.customer_name || "Valued Client"}`,
+      `• *Event:* ${ev.event_type || "Event"}`,
+      `• *Venue:* ${ev.place || "—"}`,
+      `• *Date:* ${dateFormatted}`,
+      `• *Guests:* ${ev.guest_count} Pax`,
+      `----------------------------------------`,
+      `• *Total Bill:* ₹${formatMoney(totalAmt)}`,
+      `• *Amount Paid:* ₹${formatMoney(paidAmt)}`,
+      `• *Balance Due:* ₹${formatMoney(balanceAmt)}`,
+      `----------------------------------------`,
+      balanceAmt <= 0
+        ? `✅ *Status: FULLY PAID & SETTLED*`
+        : `⚠️ *Status: BALANCE DUE (₹${formatMoney(balanceAmt)})*`,
+      ``,
+      `_Thank you for choosing Food Court Event Management!_`,
+    ].join("\n");
+
+    const phonePrefix = cleanMobile.length === 10 ? `91${cleanMobile}` : cleanMobile;
+    const url = phonePrefix
+      ? `https://wa.me/${phonePrefix}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank");
+  };
+
   return (
     <main className="dashboard">
       <AppSidebar activeRoute="/billing" />
@@ -1049,6 +1092,28 @@ function BillingContent() {
                             <div style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: "6px" }}>
                               <button
                                 type="button"
+                                onClick={() => handleShareWhatsApp(ev)}
+                                style={{
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  gap: "3px",
+                                  height: "30px",
+                                  padding: "0 9px",
+                                  borderRadius: "6px",
+                                  border: "1px solid #86efac",
+                                  background: "#f0fdf4",
+                                  color: "#15803d",
+                                  fontWeight: 700,
+                                  fontSize: "11.5px",
+                                  cursor: "pointer",
+                                }}
+                                title="Share bill directly on WhatsApp"
+                              >
+                                <span>💬</span> WhatsApp
+                              </button>
+
+                              <button
+                                type="button"
                                 onClick={() => openInvoice(ev, true)}
                                 style={{
                                   display: "inline-flex",
@@ -1202,6 +1267,28 @@ function BillingContent() {
                   title="Copy direct shareable invoice link"
                 >
                   {copyStatus ? "✓ Copied!" : "📋 Copy Link"}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => activeEvent && handleShareWhatsApp(activeEvent)}
+                  style={{
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    background: "#25D366",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "7px",
+                    padding: "7px 14px",
+                    fontWeight: 700,
+                    fontSize: "12px",
+                    cursor: "pointer",
+                    boxShadow: "0 2px 8px rgba(37, 211, 102, 0.4)",
+                  }}
+                  title="Share invoice summary directly to client on WhatsApp"
+                >
+                  <span>💬</span> Share WhatsApp
                 </button>
 
                 <button

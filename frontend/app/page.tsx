@@ -197,6 +197,36 @@ export default function Home() {
     return customerPendingEvents.reduce((sum, e) => sum + e.balance, 0);
   }, [customerPendingEvents]);
 
+  const handleSendWhatsAppReminder = (pending: CustomerPendingEvent) => {
+    const rawMobile = pending.customer_mobile || "";
+    const cleanMobile = rawMobile.replace(/[^0-9]/g, "");
+    const dateFormatted = pending.date ? new Date(pending.date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—";
+
+    const msg = [
+      `✨ *FOOD COURT EVENT MANAGEMENT & CATERING*`,
+      `----------------------------------------`,
+      `Dear *${pending.customer_name}*,`,
+      ``,
+      `Greetings from Food Court! We hope you had a wonderful celebration for your *${pending.event_type}* on ${dateFormatted}.`,
+      ``,
+      `This is a gentle payment reminder regarding the outstanding balance:`,
+      `• *Total Event Estimate:* ₹${formatMoney(pending.total)}`,
+      `• *Advance/Paid:* ₹${formatMoney(pending.paid)}`,
+      `• *Balance Due:* *₹${formatMoney(pending.balance)}*`,
+      ``,
+      `Please let us know once the transfer is completed, or reply here for any assistance.`,
+      `----------------------------------------`,
+      `_Warm regards,_`,
+      `*Food Court Management*`,
+    ].join("\n");
+
+    const phonePrefix = cleanMobile.length === 10 ? `91${cleanMobile}` : cleanMobile;
+    const url = phonePrefix
+      ? `https://wa.me/${phonePrefix}?text=${encodeURIComponent(msg)}`
+      : `https://wa.me/?text=${encodeURIComponent(msg)}`;
+    window.open(url, "_blank");
+  };
+
   // ==========================================================
   // STAFF PENDING CALCULATION
   // ==========================================================
@@ -1112,6 +1142,27 @@ export default function Home() {
                                 >
                                   Collect
                                 </Link>
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleSendWhatsAppReminder(e)}
+                                  style={{
+                                    padding: "6px 10px",
+                                    borderRadius: "6px",
+                                    background: "#f0fdf4",
+                                    color: "#15803d",
+                                    border: "1px solid #bbf7d0",
+                                    fontWeight: 700,
+                                    fontSize: "11px",
+                                    cursor: "pointer",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                  title="Send polite WhatsApp payment reminder to customer"
+                                >
+                                  <span>💬</span> WhatsApp
+                                </button>
 
                                 <Link
                                   href={`/events/${e.id}`}

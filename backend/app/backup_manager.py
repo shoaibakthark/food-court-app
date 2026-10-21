@@ -193,3 +193,63 @@ def get_backup_status() -> dict:
         "latest_backup": backup_files[0] if backup_files else None,
         "recent_backups": backup_files[:10],
     }
+
+
+def find_pg_restore() -> str:
+    """Find pg_restore executable path across common Windows installation directories or PATH."""
+    which_path = shutil.which("pg_restore")
+    if which_path:
+        return which_path
+
+    known_paths = [
+        r"C:\Program Files\PostgreSQL\18\bin\pg_restore.exe",
+        r"C:\Program Files\PostgreSQL\17\bin\pg_restore.exe",
+        r"C:\Program Files\PostgreSQL\16\bin\pg_restore.exe",
+        r"C:\Program Files\PostgreSQL\15\bin\pg_restore.exe",
+    ]
+    for p in known_paths:
+        if os.path.exists(p):
+            return p
+    return "pg_restore"
+
+
+def restore_backup(filename_or_path: str) -> dict:
+    """Restore database from a chosen .dump backup file."""
+    backup_dir = get_backup_dir()
+    if os.path.isabs(filename_or_path):
+        target_path = filename_or_path
+    else:
+        target_path = os.path.join(backup_dir, filename_or_path)
+
+    if not os.path.exists(target_path):
+        return {"success": False, "error": f"Backup file not found: {target_path}"}
+
+    pg_restore_bin = find_pg_restore()
+    params = get_db_connection_params()
+
+    env = os.environ.copy()
+    if params["password"]:
+        env["PGPASSWORD"] = params["password"]
+
+    cmd = [
+        pg_restore_bin,
+        "-U", params["user"],
+        "-h", params["host"],
+        "-p", params["port"],
+        "-d", params["dbname"],
+        "--clean",
+        "--if-exists",
+        "--no-owner",
+        target_path,
+    ]
+
+    try:
+        subprocess.run(cmd, env=env, capture_output=True, text=True)
+        return {
+            "success": True,
+            "filename": os.path.basename(target_path),
+            "filepath": target_path,
+            "message": f"Successfully restored database from {os.path.basename(target_path)}",
+        }
+    except Exception as e:
+        return {"success": False, "error": f"Restore execution failed: {str(e)}"}

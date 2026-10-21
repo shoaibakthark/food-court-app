@@ -234,6 +234,22 @@ def update_backup_config(payload: BackupConfigPayload):
     return {"message": "Backup directory updated successfully", "backup_dir": target_dir}
 
 
+class BackupRestorePayload(BaseModel):
+    filename: str
+
+
+@app.post("/backup/restore")
+def restore_database_backup(payload: BackupRestorePayload):
+    """Restore database from an existing .dump file in the permanent backup directory."""
+    filename = payload.filename.strip()
+    if not filename:
+        raise HTTPException(status_code=400, detail="Filename cannot be empty.")
+    result = backup_manager.restore_backup(filename)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Restore failed."))
+    return result
+
+
 # ============================================================
 # BASIC / DATABASE TEST
 # ============================================================
