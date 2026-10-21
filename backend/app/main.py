@@ -1,5 +1,8 @@
 
-from datetime import date as DateType
+from datetime import date as DateType, datetime
+import os
+import base64
+import subprocess
 from decimal import Decimal
 from typing import Optional
 
@@ -3042,34 +3045,129 @@ def get_kitchen_duties(
         query = query.filter(models.KitchenDuty.duty_date <= end_date)
 
     rows = query.order_by(models.KitchenDuty.duty_date.desc(), models.KitchenDuty.id.desc()).all()
+
+    # Preload payments and duties for relevant staff to automatically resolve payment status
+    staff_ids = list({d.staff_id for d, _, _, _ in rows})
+    payments_by_staff = {sid: [] for sid in staff_ids}
+    if staff_ids:
+        all_payments = db.query(models.KitchenPayment).filter(
+            models.KitchenPayment.staff_id.in_(staff_ids)
+        ).order_by(models.KitchenPayment.payment_date.asc(), models.KitchenPayment.id.asc()).all()
+        for p in all_payments:
+            payments_by_staff[p.staff_id].append(p)
+
+    all_duties_asc = {sid: [] for sid in staff_ids}
+    if staff_ids:
+        all_duties = db.query(models.KitchenDuty).filter(
+            models.KitchenDuty.staff_id.in_(staff_ids)
+        ).order_by(models.KitchenDuty.duty_date.asc(), models.KitchenDuty.id.asc()).all()
+        for dt in all_duties:
+            all_duties_asc[dt.staff_id].append(dt)
+
+    duty_coverage = {}
+    for sid in staff_ids:
+        p_list = payments_by_staff.get(sid, [])
+        d_list = all_duties_asc.get(sid, [])
+
+        total_paid = sum((p.amount for p in p_list), Decimal('0.00'))
+        total_wages = sum((dt.total_wage for dt in d_list), Decimal('0.00'))
+
+        # If staff has 0 or negative balance, all work days are 100% paid
+        is_fully_settled = (total_paid >= total_wages and total_wages > 0)
+
+        payments_by_date = {}
+        for p in p_list:
+            payments_by_date[p.payment_date] = p
+
+        remaining_pool = total_paid
+
+        for dt in d_list:
+            wage = dt.total_wage or Decimal('0.00')
+
+            if wage <= 0:
+                duty_coverage[dt.id] = {
+                    'paid_today': False,
+                    'paid_amount': Decimal('0.00'),
+                    'payment_mode': '—',
+                    'payment_status': 'free',
+                }
+                continue
+
+            if is_fully_settled:
+                last_mode = p_list[-1].payment_mode if p_list else 'Cash'
+                duty_coverage[dt.id] = {
+                    'paid_today': True,
+                    'paid_amount': wage,
+                    'payment_mode': last_mode,
+                    'payment_status': 'paid',
+                }
+                continue
+
+            same_day_p = payments_by_date.get(dt.duty_date)
+            if same_day_p and same_day_p.amount >= wage:
+                duty_coverage[dt.id] = {
+                    'paid_today': True,
+                    'paid_amount': wage,
+                    'payment_mode': same_day_p.payment_mode or 'Cash',
+                    'payment_status': 'paid',
+                }
+                continue
+
+            if remaining_pool >= wage:
+                remaining_pool -= wage
+                first_mode = p_list[0].payment_mode if p_list else 'Cash'
+                duty_coverage[dt.id] = {
+                    'paid_today': True,
+                    'paid_amount': wage,
+                    'payment_mode': first_mode,
+                    'payment_status': 'paid',
+                }
+            elif remaining_pool > 0:
+                part_amt = remaining_pool
+                remaining_pool = Decimal('0.00')
+                duty_coverage[dt.id] = {
+                    'paid_today': False,
+                    'paid_amount': part_amt,
+                    'payment_mode': 'Cash',
+                    'payment_status': 'partial',
+                }
+            else:
+                duty_coverage[dt.id] = {
+                    'paid_today': False,
+                    'paid_amount': Decimal('0.00'),
+                    'payment_mode': 'Cash',
+                    'payment_status': 'pending',
+                }
+
     results = []
     for d, s_name, k_role, w_type in rows:
-        payment = db.query(models.KitchenPayment).filter(
-            models.KitchenPayment.staff_id == d.staff_id,
-            models.KitchenPayment.payment_date == d.duty_date,
-            models.KitchenPayment.note.ilike(f"%Daily wage for {d.duty_date}%")
-        ).first()
+        cov = duty_coverage.get(d.id, {
+            'paid_today': False,
+            'paid_amount': Decimal('0.00'),
+            'payment_mode': 'Cash',
+            'payment_status': 'pending',
+        })
 
         results.append({
-            "id": d.id,
-            "staff_id": d.staff_id,
-            "staff_name": s_name,
-            "kitchen_role": k_role,
-            "wage_type": w_type,
-            "duty_date": d.duty_date,
-            "shift": d.shift,
-            "duty_status": d.duty_status,
-            "duty_units": d.duty_units,
-            "daily_rate": d.daily_rate,
-            "duty_wage": d.duty_wage,
-            "bonus": d.bonus,
-            "deduction": d.deduction,
-            "total_wage": d.total_wage,
-            "today_wage": d.total_wage,
-            "paid_today": payment is not None,
-            "paid_amount": payment.amount if payment else Decimal("0.00"),
-            "payment_mode": payment.payment_mode if payment else "Cash",
-            "note": d.note,
+            'id': d.id,
+            'staff_id': d.staff_id,
+            'staff_name': s_name,
+            'kitchen_role': k_role,
+            'wage_type': w_type,
+            'duty_date': d.duty_date,
+            'shift': d.shift,
+            'duty_status': d.duty_status,
+            'duty_units': d.duty_units,
+            'daily_rate': d.daily_rate,
+            'duty_wage': d.duty_wage,
+            'bonus': d.bonus,
+            'deduction': d.deduction,
+            'total_wage': d.total_wage,
+            'today_wage': d.total_wage,
+            'paid_today': cov['paid_today'],
+            'paid_amount': cov['paid_amount'],
+            'payment_mode': cov['payment_mode'],
+            'note': d.note,
         })
     return results
 
@@ -3310,3 +3408,148 @@ def delete_kitchen_duty(duty_id: int, db: Session = Depends(get_db)):
     return {"message": "Duty record deleted successfully"}
 
 
+
+
+# ============================================================
+# PERMANENT BACKUP DRIVE PATH MANAGEMENT
+# ============================================================
+
+class SavePermanentBackupRequest(BaseModel):
+    target_dir: str
+    file_name: Optional[str] = None
+    file_base64: str
+
+class OpenFolderRequest(BaseModel):
+    folder_path: str
+
+@app.get("/backup/permanent-path-info")
+def get_permanent_path_info(target_dir: str):
+    """
+    Validates a permanent backup directory path, verifies read/write permissions,
+    and returns recent backup files found in this folder.
+    """
+    clean_dir = os.path.abspath(target_dir.strip())
+    exists = os.path.exists(clean_dir)
+    writable = False
+    files = []
+
+    if exists:
+        try:
+            test_file = os.path.join(clean_dir, ".test_write_perm")
+            with open(test_file, "w") as f:
+                f.write("ok")
+            os.remove(test_file)
+            writable = True
+
+            for fname in os.listdir(clean_dir):
+                if fname.endswith(".xlsx") or fname.endswith(".json"):
+                    fpath = os.path.join(clean_dir, fname)
+                    stat = os.stat(fpath)
+                    files.append({
+                        "name": fname,
+                        "path": fpath,
+                        "size_bytes": stat.st_size,
+                        "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+            files.sort(key=lambda x: x["modified_at"], reverse=True)
+        except Exception:
+            writable = False
+    else:
+        parent = os.path.dirname(clean_dir)
+        writable = os.path.exists(parent) and os.access(parent, os.W_OK)
+
+    return {
+        "target_dir": clean_dir,
+        "exists": exists,
+        "writable": writable,
+        "backups_found": files[:15],
+        "total_backups": len(files)
+    }
+
+@app.post("/backup/save-to-permanent-path")
+def save_to_permanent_path(req: SavePermanentBackupRequest):
+    """
+    Saves an Excel or JSON backup file directly into the user's permanent drive folder.
+    Creates directory if it does not already exist.
+    """
+    clean_dir = os.path.abspath(req.target_dir.strip())
+    os.makedirs(clean_dir, exist_ok=True)
+
+    file_name = req.file_name or f"FoodCourt_Complete_Database_Backup_{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}.xlsx"
+    clean_file_name = "".join(c for c in file_name if c.isalnum() or c in ("-", "_", "."))
+    target_file_path = os.path.join(clean_dir, clean_file_name)
+
+    try:
+        decoded_bytes = base64.b64decode(req.file_base64)
+        with open(target_file_path, "wb") as f:
+            f.write(decoded_bytes)
+        
+        stat = os.stat(target_file_path)
+        return {
+            "success": True,
+            "file_name": clean_file_name,
+            "file_path": target_file_path,
+            "size_bytes": stat.st_size,
+            "saved_at": datetime.now().isoformat()
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to write backup file to disk: {str(e)}")
+
+@app.post("/backup/open-folder")
+def open_backup_folder(req: OpenFolderRequest):
+    """
+    Opens the target folder in Windows File Explorer.
+    """
+    clean_dir = os.path.abspath(req.folder_path.strip())
+    if not os.path.exists(clean_dir):
+        os.makedirs(clean_dir, exist_ok=True)
+
+    try:
+        if os.name == "nt":
+            os.startfile(clean_dir)
+        else:
+            subprocess.Popen(["xdg-open", clean_dir])
+        return {"success": True, "message": f"Opened folder: {clean_dir}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to open folder: {str(e)}")
+
+@app.get("/backup/suggested-paths")
+def get_suggested_paths():
+    """
+    Scans the system for typical backup drives and Google Drive desktop folders.
+    """
+    suggestions = []
+    user_home = os.path.expanduser("~")
+
+    for drive_letter in ["G", "H", "F"]:
+        g_drive = f"{drive_letter}:\\My Drive"
+        if os.path.exists(g_drive):
+            suggestions.append({
+                "label": f"Google Drive for Desktop ({drive_letter}:)",
+                "path": f"{drive_letter}:\\My Drive\\Food Court Backups",
+                "exists": True
+            })
+
+    user_gdrive = os.path.join(user_home, "Google Drive")
+    if os.path.exists(user_gdrive):
+        suggestions.append({
+            "label": "Google Drive Folder in User Profile",
+            "path": os.path.join(user_gdrive, "Food Court Backups"),
+            "exists": True
+        })
+
+    if os.path.exists("D:\\"):
+        suggestions.append({
+            "label": "Dedicated D: Drive",
+            "path": "D:\\FoodCourt_Backups",
+            "exists": os.path.exists("D:\\FoodCourt_Backups")
+        })
+
+    docs_path = os.path.join(user_home, "Documents", "FoodCourt_Backups")
+    suggestions.append({
+        "label": "Documents Folder",
+        "path": docs_path,
+        "exists": os.path.exists(docs_path)
+    })
+
+    return {"suggestions": suggestions}

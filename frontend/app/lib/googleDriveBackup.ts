@@ -263,8 +263,8 @@ export async function generateExcelBackupBlob(): Promise<{ blob: Blob; fileName:
     "Bonus Added (₹)": Number(kd.bonus) || 0,
     "Deduction (₹)": Number(kd.deduction) || 0,
     "Total Day Wage (₹)": Number(kd.total_wage) || 0,
-    "Paid Same Day?": kd.paid_today ? "YES" : "NO",
-    "Same-Day Paid Amount (₹)": Number(kd.paid_amount) || 0,
+    "Payment Status": kd.paid_today ? "PAID" : "PENDING",
+    "Paid Amount (₹)": Number(kd.paid_amount || (kd.paid_today ? kd.total_wage : 0)) || 0,
     "Payment Mode": kd.payment_mode || "Cash",
     "Duty Remarks": kd.note || "—",
   }));

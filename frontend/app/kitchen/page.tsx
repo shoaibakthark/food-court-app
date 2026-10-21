@@ -442,17 +442,27 @@ export default function KitchenPage() {
     }
   };
 
-  // Open Payment Modal
-  const openPaymentModal = (staff?: KitchenStaff) => {
+  // Open Payment Modal (can optionally pass a specific duty to pay)
+  const openPaymentModal = (staff?: KitchenStaff, duty?: KitchenDuty) => {
     if (staff) {
       setPaymentTargetStaff(staff);
+      const targetAmount = duty
+        ? String(duty.total_wage)
+        : String(staff.balance > 0 ? staff.balance : staff.wage_rate);
+      const targetDate = duty ? duty.duty_date : new Date().toISOString().split("T")[0];
+      const targetNote = duty
+        ? `Daily wage for ${duty.duty_date}`
+        : staff.wage_type === "monthly"
+        ? "Monthly salary payment"
+        : "Daily wage settlement";
+
       setPaymentForm({
         staff_id: String(staff.id),
-        amount: String(staff.balance > 0 ? staff.balance : staff.wage_rate),
-        payment_date: new Date().toISOString().split("T")[0],
+        amount: targetAmount,
+        payment_date: targetDate,
         payment_mode: "Cash",
         reference_no: "",
-        note: staff.wage_type === "monthly" ? "Monthly salary payment" : "Daily wage settlement",
+        note: targetNote,
       });
     } else {
       setPaymentTargetStaff(null);
@@ -1528,15 +1538,76 @@ export default function KitchenPage() {
                           </td>
 
                           <td style={{ padding: "14px 16px", textAlign: "center" }}>
-                            {d.paid_today ? (
-                              <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#ecfdf5", color: "#047857", fontWeight: 700, fontSize: "11px" }}>
-                                💵 Paid Cash
-                              </span>
-                            ) : (
-                              <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#f8fafc", color: "#64748b", fontWeight: 600, fontSize: "11px", border: "1px solid #e2e8f0" }}>
-                                ⏳ Pending
-                              </span>
-                            )}
+                            {(() => {
+                              const wage = Number(d.total_wage || 0);
+                              if (wage <= 0) {
+                                return (
+                                  <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#f8fafc", color: "#94a3b8", fontWeight: 600, fontSize: "11px", border: "1px solid #e2e8f0" }}>
+                                    — Free / Off
+                                  </span>
+                                );
+                              }
+
+                              const isFullySettled = selectedStaff && Number(selectedStaff.balance || 0) <= 0 && Number(selectedStaff.total_wages || 0) > 0;
+                              const sameDayPay = selectedStaffPayments.find((p) => p.payment_date === d.duty_date);
+                              const isSameDayPaid = sameDayPay && Number(sameDayPay.amount || 0) >= wage;
+                              const isPaid = d.paid_today || isFullySettled || isSameDayPaid;
+
+                              if (isPaid) {
+                                const mode = sameDayPay?.payment_mode || d.payment_mode || "Cash";
+                                return (
+                                  <span
+                                    style={{
+                                      padding: "4px 10px",
+                                      borderRadius: "6px",
+                                      background: "#ecfdf5",
+                                      color: "#047857",
+                                      fontWeight: 800,
+                                      fontSize: "11.5px",
+                                      border: "1px solid #a7f3d0",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
+                                    }}
+                                    title={`Paid in full (${mode})`}
+                                  >
+                                    <span>✓</span>
+                                    <span>Paid ({mode})</span>
+                                  </span>
+                                );
+                              }
+
+                              return (
+                                <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                                  <span style={{ padding: "3px 8px", borderRadius: "6px", background: "#fffbeb", color: "#b45309", fontWeight: 700, fontSize: "11px", border: "1px solid #fde68a" }}>
+                                    ⏳ Pending
+                                  </span>
+                                  {selectedStaff && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openPaymentModal(selectedStaff, d)}
+                                      style={{
+                                        padding: "3px 8px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #a7f3d0",
+                                        background: "#ecfdf5",
+                                        color: "#047857",
+                                        fontWeight: 700,
+                                        fontSize: "11px",
+                                        cursor: "pointer",
+                                        display: "inline-flex",
+                                        alignItems: "center",
+                                        gap: "3px",
+                                      }}
+                                      title={`Pay ₹${wage} for ${d.duty_date}`}
+                                    >
+                                      <span>💵</span>
+                                      <span>Pay</span>
+                                    </button>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
 
                           <td style={{ padding: "14px 20px", color: "#64748b" }}>
