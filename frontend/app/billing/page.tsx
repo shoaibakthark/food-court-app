@@ -147,6 +147,60 @@ function numberToWordsINR(amount: number | string | null | undefined): string {
   return ("Rupees " + res.trim() + " Only").replace(/\s+/g, " ");
 }
 
+function FoodCourtSeal() {
+  return (
+    <div
+      style={{
+        display: "inline-block",
+        transform: "rotate(-6deg)",
+        opacity: 0.92,
+        userSelect: "none",
+      }}
+    >
+      <svg width="86" height="86" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+        {/* Outer decorative ring */}
+        <circle cx="50" cy="50" r="47" fill="none" stroke="#3730a3" strokeWidth="2.4" />
+        <circle cx="50" cy="50" r="43.5" fill="none" stroke="#3730a3" strokeWidth="0.8" strokeDasharray="2,1.5" />
+
+        {/* Inner concentric boundary ring */}
+        <circle cx="50" cy="50" r="31.5" fill="none" stroke="#3730a3" strokeWidth="1.5" />
+
+        {/* Circular text paths */}
+        <defs>
+          <path id="fcSealTop" d="M 14,50 A 36,36 0 0,1 86,50" fill="none" />
+          <path id="fcSealBottom" d="M 14,52 A 36,36 0 0,0 86,52" fill="none" />
+        </defs>
+
+        {/* Top curved company name */}
+        <text fill="#3730a3" fontSize="6.8" fontWeight="900" letterSpacing="0.8px">
+          <textPath href="#fcSealTop" startOffset="50%" textAnchor="middle">
+            ★ FOOD COURT CATERING ★
+          </textPath>
+        </text>
+
+        {/* Bottom curved location */}
+        <text fill="#3730a3" fontSize="6.2" fontWeight="800" letterSpacing="0.8px">
+          <textPath href="#fcSealBottom" startOffset="50%" textAnchor="middle">
+            PUTHANATHANI • KERALA
+          </textPath>
+        </text>
+
+        {/* Center content */}
+        <text x="50" y="44" textAnchor="middle" fill="#3730a3" fontSize="5.5" fontWeight="900" letterSpacing="1px">
+          ★ ★ ★
+        </text>
+        <text x="50" y="52.5" textAnchor="middle" fill="#3730a3" fontSize="7.8" fontWeight="900" letterSpacing="0.6px">
+          OFFICIAL
+        </text>
+        <text x="50" y="60.5" textAnchor="middle" fill="#3730a3" fontSize="7.2" fontWeight="900" letterSpacing="0.6px">
+          SEAL
+        </text>
+        <line x1="36" y1="64" x2="64" y2="64" stroke="#3730a3" strokeWidth="0.8" />
+      </svg>
+    </div>
+  );
+}
+
 function BillingContent() {
   const { user, isOwner } = useAuth();
   const searchParams = useSearchParams();
@@ -1573,30 +1627,35 @@ function BillingContent() {
                           </div>
                         </div>
 
-                        {/* Bank remittance card */}
+                        {/* Event Billing & Invoice Summary card (No Bank Details) */}
                         <div
                           style={{
-                            background: "#fafafa",
-                            border: "1px solid #e5e7eb",
+                            background: "#fbf9fd",
+                            border: "1px solid #ebdcf5",
                             borderRadius: "7px",
                             padding: "8px 12px",
                           }}
                         >
-                          <div style={{ fontSize: "10px", fontWeight: 800, color: "#374151", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "5px", display: "flex", alignItems: "center", gap: "5px" }}>
-                            <span>🏦</span> COMPANY REMITTANCE & BANK DETAILS
+                          <div style={{ fontSize: "9.5px", fontWeight: 800, color: "#6d28d9", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "5px", display: "flex", alignItems: "center", gap: "5px" }}>
+                            <span>📋</span> EVENT BILLING & INVOICE SUMMARY
                           </div>
-                          <div style={{ display: "grid", gridTemplateColumns: "85px 1fr", gap: "2px 6px", fontSize: "11px" }}>
-                            <span style={{ color: "#6b7280" }}>Bank / Name:</span>
-                            <strong style={{ color: "#111827" }}>{profile.bankName || "Federal Bank Ltd"}</strong>
+                          <div style={{ display: "grid", gridTemplateColumns: "82px 1fr", gap: "2px 6px", fontSize: "11px" }}>
+                            <span style={{ color: "#6b7280" }}>Customer:</span>
+                            <strong style={{ color: "#111827" }}>{activeEvent.customer_name || "—"}</strong>
 
-                            <span style={{ color: "#6b7280" }}>A/c No:</span>
-                            <strong style={{ color: "#111827", fontFamily: "monospace", letterSpacing: "0.5px" }}>{profile.accountNo || "14280200049281"}</strong>
+                            <span style={{ color: "#6b7280" }}>Occasion:</span>
+                            <span style={{ color: "#111827", fontWeight: 600 }}>{activeEvent.event_type || "Banquet / Catering"}</span>
 
-                            <span style={{ color: "#6b7280" }}>IFSC / Branch:</span>
-                            <strong style={{ color: "#111827", fontFamily: "monospace" }}>{profile.ifscCode || "FDRL0001428"} • {profile.branchName || "Puthanathani"}</strong>
+                            <span style={{ color: "#6b7280" }}>Venue / City:</span>
+                            <span style={{ color: "#111827" }}>{activeEvent.place || "Specified Venue"}</span>
 
-                            <span style={{ color: "#6b7280" }}>UPI VPA:</span>
-                            <strong style={{ color: "#6d28d9", fontFamily: "monospace" }}>{profile.upiId || "foodcourt@upi"}</strong>
+                            <span style={{ color: "#6b7280" }}>Billed Pax:</span>
+                            <strong style={{ color: "#6d28d9" }}>{activeEvent.guest_count} Guaranteed Guests</strong>
+
+                            <span style={{ color: "#6b7280" }}>Settlement:</span>
+                            <strong style={{ color: bal <= 0 ? "#15803d" : "#b45309" }}>
+                              {bal <= 0 ? "✓ Full Settlement Received" : "Standard Commercial Settlement"}
+                            </strong>
                           </div>
                         </div>
                       </div>
@@ -1784,46 +1843,35 @@ function BillingContent() {
                   >
                     {/* Customer Acceptance */}
                     <div style={{ textAlign: "center", flex: 1 }}>
-                      <div style={{ height: "26px" }} />
+                      <div style={{ height: "78px", display: "flex", alignItems: "flex-end", justifyContent: "center", paddingBottom: "8px" }}>
+                        <span style={{ fontSize: "9.5px", color: "#94a3b8", fontStyle: "italic" }}>
+                          Customer Signature
+                        </span>
+                      </div>
                       <div style={{ borderTop: "1px solid #cbd5e1", width: "100%", margin: "0 auto" }} />
                       <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#1e0836", marginTop: "3px" }}>
                         Customer Acceptance
                       </div>
                       <div style={{ fontSize: "9px", color: "#64748b" }}>
-                        Signature
+                        Signed & Acknowledged
                       </div>
                     </div>
 
-                    {/* Authorized Signatory */}
-                    <div style={{ textAlign: "center", flex: 1 }}>
+                    {/* Authorized Signatory with Official Food Court Seal */}
+                    <div style={{ textAlign: "center", flex: 1, position: "relative" }}>
                       <div
                         style={{
-                          height: "26px",
+                          height: "90px",
                           display: "flex",
                           alignItems: "center",
                           justifyContent: "center",
+                          marginBottom: "-12px",
                         }}
                       >
-                        <span
-                          style={{
-                            border: "1px dashed #c084fc",
-                            borderRadius: "50%",
-                            width: "28px",
-                            height: "28px",
-                            display: "grid",
-                            placeItems: "center",
-                            fontSize: "6.5px",
-                            color: "#7c3aed",
-                            fontWeight: 700,
-                            textTransform: "uppercase",
-                            opacity: 0.6,
-                          }}
-                        >
-                          SEAL
-                        </span>
+                        <FoodCourtSeal />
                       </div>
                       <div style={{ borderTop: "1.5px solid #1e0836", width: "100%", margin: "0 auto" }} />
-                      <div style={{ fontSize: "10.5px", fontWeight: 800, color: "#1e0836", marginTop: "3px" }}>
+                      <div style={{ fontSize: "11px", fontWeight: 800, color: "#1e0836", marginTop: "3px" }}>
                         Authorized Signatory
                       </div>
                       <div style={{ fontSize: "9px", color: "#64748b" }}>
@@ -1854,6 +1902,8 @@ function BillingContent() {
             height: auto !important;
             min-height: 0 !important;
             overflow: visible !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
           }
           .dashboard {
             display: block !important;
