@@ -181,6 +181,14 @@ export default function ExpensesPage() {
   const [settleReference, setSettleReference] = useState("");
   const [settleNote, setSettleNote] = useState("");
 
+  // Modal State for QUICK MARK EXPENSE AS PAID
+  const [markPaidModalOpen, setMarkPaidModalOpen] = useState(false);
+  const [targetExpense, setTargetExpense] = useState<ExpenseRecord | null>(null);
+  const [markPaidMode, setMarkPaidMode] = useState("Cash");
+  const [markPaidDate, setMarkPaidDate] = useState(new Date().toISOString().slice(0, 10));
+  const [markPaidRef, setMarkPaidRef] = useState("");
+  const [markingPaid, setMarkingPaid] = useState(false);
+
   const loadData = useCallback(async () => {
     try {
       setLoading(true);
@@ -824,11 +832,76 @@ export default function ExpensesPage() {
     setFormAmount(String(exp.amount));
     setFormDate(exp.expense_date ? exp.expense_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
     setFormEventId(exp.event_id ?? "");
-    setFormPaymentMethod(exp.payment_method || "Cash");
+    setFormPaymentMethod(isCredit ? "Cash" : (exp.payment_method || "Cash"));
     setFormVendor(exp.vendor || "");
     setFormBillNumber(exp.bill_number || "");
     setFormNote(exp.note || "");
     setModalOpen(true);
+  };
+
+  // Open Quick Mark as Paid Modal
+  const openMarkPaidModal = (exp: ExpenseRecord) => {
+    setTargetExpense(exp);
+    setMarkPaidMode("Cash");
+    setMarkPaidDate(new Date().toISOString().slice(0, 10));
+    setMarkPaidRef("");
+    setMarkPaidModalOpen(true);
+  };
+
+  // 1-Click Instant Settle helper (Cash, UPI, etc. today)
+  const handleQuickMarkPaid = async (exp: ExpenseRecord, chosenMode: string) => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    await executeMarkExpensePaid(exp, chosenMode, todayStr);
+  };
+
+  // Execute Mark Expense as Paid API call
+  const executeMarkExpensePaid = async (
+    exp: ExpenseRecord,
+    mode: string,
+    date?: string,
+    refNote?: string
+  ) => {
+    try {
+      setMarkingPaid(true);
+      const existingNote = (exp.note || "").trim();
+      const cleanRef = (refNote || "").trim();
+      let noteText = existingNote;
+      if (cleanRef) {
+        noteText = existingNote ? `${existingNote} • Paid via ${mode} (${cleanRef})` : `Paid via ${mode} (${cleanRef})`;
+      }
+
+      const payload: Record<string, any> = {
+        payment_method: mode,
+      };
+      if (date) {
+        payload.expense_date = date;
+      }
+      if (noteText) {
+        payload.note = noteText;
+      }
+
+      const res = await fetchWithAuth(`${API_URL}/expenses/${exp.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.detail || `Failed to update expense status (${res.status})`);
+      }
+
+      setSuccessMsg(`✓ Expense #${exp.id} ("${exp.title}") marked as PAID via ${mode}! Ledger updated.`);
+      setMarkPaidModalOpen(false);
+      setTargetExpense(null);
+      await loadData();
+      setTimeout(() => setSuccessMsg(null), 4500);
+    } catch (err: any) {
+      console.error("Mark as paid error:", err);
+      alert(err.message || "Failed to mark expense as paid");
+    } finally {
+      setMarkingPaid(false);
+    }
   };
 
   // Active selected vendor account in the settlement modal
@@ -1576,10 +1649,10 @@ export default function ExpensesPage() {
                     </span>
                     {(
                       [
-                        { id: "all", label: `All Transactions (${unifiedLedgerEntries.length})` },
-                        { id: "paid", label: `✓ Direct Paid (${metrics.directPaidCount})` },
-                        { id: "credit", label: `🔴 Credit Purchases (${metrics.creditIncurredCount})` },
-                        { id: "clearances", label: `🟢 Credit Clearances (${settlements.length})` },
+                        { id: "all", label: `All Records (${expenses.length + settlements.length})`, color: "#2563eb" },
+                        { id: "credit", label: `🔴 Unpaid Credit (${metrics.creditIncurredCount})`, color: "#dc2626" },
+                        { id: "paid", label: `🟢 Direct Paid (${metrics.directPaidCount})`, color: "#059669" },
+                        { id: "clearances", label: `🤝 Clearances (${settlements.length})`, color: "#0284c7" },
                       ] as const
                     ).map((t) => {
                       const active = entryTypeFilter === t.id;
@@ -1589,15 +1662,16 @@ export default function ExpensesPage() {
                           type="button"
                           onClick={() => setEntryTypeFilter(t.id)}
                           style={{
-                            padding: "5px 12px",
+                            padding: "6px 14px",
                             borderRadius: "20px",
-                            border: active ? "1px solid #2563eb" : "1px solid #cbd5e1",
-                            background: active ? "#2563eb" : "#ffffff",
+                            border: active ? `2px solid ${t.color}` : "1px solid #cbd5e1",
+                            background: active ? t.color : "#ffffff",
                             color: active ? "#ffffff" : "#334155",
                             fontSize: "12px",
-                            fontWeight: active ? 700 : 500,
+                            fontWeight: active ? 800 : 600,
                             cursor: "pointer",
                             transition: "all 0.15s ease",
+                            boxShadow: active ? `0 2px 6px ${t.color}33` : "none",
                           }}
                         >
                           {t.label}
@@ -1987,53 +2061,59 @@ export default function ExpensesPage() {
                               </td>
 
                               {/* Status / Type */}
-                              <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                              <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
                                 {isCredit && (
                                   <span
                                     style={{
-                                      display: "inline-block",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
                                       fontSize: "11px",
-                                      fontWeight: 700,
-                                      padding: "3px 8px",
-                                      borderRadius: "4px",
+                                      fontWeight: 800,
+                                      padding: "4px 8px",
+                                      borderRadius: "6px",
                                       background: "#fef2f2",
                                       color: "#dc2626",
                                       border: "1px solid #fecaca",
                                     }}
                                   >
-                                    🔴 Credit (On Account)
+                                    <span style={{ fontSize: "8px" }}>🔴</span> Unpaid Credit
                                   </span>
                                 )}
                                 {isPaid && (
                                   <span
                                     style={{
-                                      display: "inline-block",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
                                       fontSize: "11px",
                                       fontWeight: 700,
-                                      padding: "3px 8px",
-                                      borderRadius: "4px",
-                                      background: "#f1f5f9",
-                                      color: "#0369a1",
-                                      border: "1px solid #e2e8f0",
+                                      padding: "4px 8px",
+                                      borderRadius: "6px",
+                                      background: "#ecfdf5",
+                                      color: "#047857",
+                                      border: "1px solid #a7f3d0",
                                     }}
                                   >
-                                    ✓ Paid ({row.paymentMode})
+                                    <span>✓</span> Paid ({row.paymentMode})
                                   </span>
                                 )}
                                 {isClearance && (
                                   <span
                                     style={{
-                                      display: "inline-block",
+                                      display: "inline-flex",
+                                      alignItems: "center",
+                                      gap: "4px",
                                       fontSize: "11px",
                                       fontWeight: 700,
-                                      padding: "3px 8px",
-                                      borderRadius: "4px",
-                                      background: "#ecfdf5",
+                                      padding: "4px 8px",
+                                      borderRadius: "6px",
+                                      background: "#f0fdf4",
                                       color: "#059669",
-                                      border: "1px solid #a7f3d0",
+                                      border: "1px solid #bbf7d0",
                                     }}
                                   >
-                                    🟢 Credit Cleared ({row.paymentMode})
+                                    <span>🤝</span> Cleared ({row.paymentMode})
                                   </span>
                                 )}
                               </td>
@@ -2087,86 +2167,73 @@ export default function ExpensesPage() {
                               </td>
 
                               {/* Actions */}
-                              <td className="no-print" style={{ padding: "12px 16px", textAlign: "center", whiteSpace: "nowrap" }}>
-                                <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                              <td className="no-print" style={{ padding: "10px 14px", textAlign: "center", whiteSpace: "nowrap" }}>
+                                <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "6px" }}>
                                   {!isOwner && row.rawExpense && (
                                     <>
-                                      {isCredit && (() => {
-                                        const vAcc = vendorAccounts.find((v) => v.name.toLowerCase() === row.vendor.toLowerCase());
-                                        const isDue = (vAcc ? vAcc.pendingBalance > 0 : row.creditIncurred > 0);
-                                        if (!isDue) {
-                                          return (
-                                            <span
-                                              title={`${row.vendor} credit account is fully settled (₹0 Due)`}
-                                              style={{
-                                                padding: "4px 8px",
-                                                borderRadius: "4px",
-                                                background: "#f1f5f9",
-                                                color: "#059669",
-                                                border: "1px solid #cbd5e1",
-                                                fontSize: "11px",
-                                                fontWeight: 700,
-                                                display: "inline-flex",
-                                                alignItems: "center",
-                                                gap: "3px",
-                                                cursor: "default",
-                                              }}
-                                            >
-                                              Cleared ✓
-                                            </span>
-                                          );
-                                        }
-                                        return (
-                                          <button
-                                            type="button"
-                                            onClick={() => openClearSettlementModal(row.vendor, vAcc ? Math.min(row.creditIncurred, vAcc.pendingBalance) : row.creditIncurred)}
-                                            title={`Clear credit balance for ${row.vendor}`}
-                                            style={{
-                                              padding: "4px 8px",
-                                              borderRadius: "4px",
-                                              background: "#ecfdf5",
-                                              color: "#047857",
-                                              border: "1px solid #a7f3d0",
-                                              fontSize: "11px",
-                                              fontWeight: 700,
-                                              cursor: "pointer",
-                                            }}
-                                          >
-                                            Clear 🤝
-                                          </button>
-                                        );
-                                      })()}
+                                      {isCredit && (
+                                        <button
+                                          type="button"
+                                          onClick={() => openMarkPaidModal(row.rawExpense!)}
+                                          title="Mark this credit bill as Paid"
+                                          style={{
+                                            padding: "5px 11px",
+                                            borderRadius: "6px",
+                                            background: "#16a34a",
+                                            color: "#ffffff",
+                                            border: "none",
+                                            fontSize: "12px",
+                                            fontWeight: 800,
+                                            cursor: "pointer",
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "4px",
+                                            boxShadow: "0 1px 3px rgba(22, 163, 74, 0.3)",
+                                            whiteSpace: "nowrap",
+                                          }}
+                                        >
+                                          <span>💵</span> Mark Paid
+                                        </button>
+                                      )}
                                       <button
                                         type="button"
                                         onClick={() => openEditModal(row.rawExpense!)}
+                                        title="Edit this expense"
                                         style={{
-                                          padding: "4px 8px",
-                                          borderRadius: "4px",
-                                          background: "#f1f5f9",
+                                          padding: "5px 9px",
+                                          borderRadius: "6px",
+                                          background: "#f8fafc",
                                           color: "#334155",
-                                          border: "none",
+                                          border: "1px solid #cbd5e1",
                                           fontSize: "12px",
                                           fontWeight: 600,
                                           cursor: "pointer",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "3px",
                                         }}
                                       >
-                                        Edit
+                                        <span>✏️</span> Edit
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handleDeleteExpense(row.rawId, row.title)}
+                                        title="Delete this expense record"
                                         style={{
-                                          padding: "4px 8px",
-                                          borderRadius: "4px",
-                                          background: "#fef2f2",
-                                          color: "#dc2626",
-                                          border: "none",
+                                          padding: "5px 8px",
+                                          borderRadius: "6px",
+                                          background: "#fff1f2",
+                                          color: "#e11d48",
+                                          border: "1px solid #fecdd3",
                                           fontSize: "12px",
                                           fontWeight: 600,
                                           cursor: "pointer",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "3px",
                                         }}
                                       >
-                                        Delete
+                                        <span>🗑️</span>
                                       </button>
                                     </>
                                   )}
@@ -2177,11 +2244,11 @@ export default function ExpensesPage() {
                                       onClick={() => handleDeleteSettlement(row.rawId, row.vendor, row.creditCleared)}
                                       title="Void this clearance and restore credit balance"
                                       style={{
-                                        padding: "4px 8px",
-                                        borderRadius: "4px",
-                                        background: "#fef2f2",
-                                        color: "#dc2626",
-                                        border: "none",
+                                        padding: "5px 10px",
+                                        borderRadius: "6px",
+                                        background: "#fff1f2",
+                                        color: "#e11d48",
+                                        border: "1px solid #fecdd3",
                                         fontSize: "11px",
                                         fontWeight: 700,
                                         cursor: "pointer",
@@ -2434,15 +2501,15 @@ export default function ExpensesPage() {
                                 </td>
                                 <td style={{ padding: "12px 16px" }}>
                                   {isCredit ? (
-                                    <span style={{ padding: "2px 6px", borderRadius: "4px", background: "#fef2f2", color: "#dc2626", fontSize: "11px", fontWeight: 700 }}>
-                                      🔴 Credit (On Account)
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "6px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", fontSize: "11px", fontWeight: 800 }}>
+                                      🔴 Unpaid Credit
                                     </span>
                                   ) : isClearance ? (
-                                    <span style={{ padding: "2px 6px", borderRadius: "4px", background: "#ecfdf5", color: "#059669", fontSize: "11px", fontWeight: 700 }}>
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "6px", background: "#f0fdf4", color: "#059669", border: "1px solid #bbf7d0", fontSize: "11px", fontWeight: 700 }}>
                                       🟢 Cleared ({entry.paymentMode})
                                     </span>
                                   ) : (
-                                    <span style={{ padding: "2px 6px", borderRadius: "4px", background: "#f1f5f9", color: "#0369a1", fontSize: "11px", fontWeight: 700 }}>
+                                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "6px", background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0", fontSize: "11px", fontWeight: 700 }}>
                                       ✓ Paid ({entry.paymentMode})
                                     </span>
                                   )}
@@ -2457,25 +2524,49 @@ export default function ExpensesPage() {
                                   ₹{formatMoney(entry.runningCreditBalance)}
                                 </td>
                                 <td className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>
-                                  {!isOwner && isCredit && entry.rawExpense && (
-                                    selectedVendorData.pendingBalance > 0 ? (
+                                  <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "6px" }}>
+                                    {!isOwner && isCredit && entry.rawExpense && (
                                       <button
                                         type="button"
-                                        onClick={() => openClearSettlementModal(selectedVendorData.name, Math.min(entry.totalAmount, selectedVendorData.pendingBalance))}
-                                        title={`Clear credit balance for ${selectedVendorData.name}`}
-                                        style={{ padding: "4px 8px", borderRadius: "4px", background: "#ecfdf5", color: "#047857", border: "1px solid #a7f3d0", fontSize: "11px", fontWeight: 700, cursor: "pointer" }}
+                                        onClick={() => openMarkPaidModal(entry.rawExpense!)}
+                                        title="Mark this credit bill as Paid"
+                                        style={{
+                                          padding: "4px 10px",
+                                          borderRadius: "6px",
+                                          background: "#16a34a",
+                                          color: "#ffffff",
+                                          border: "none",
+                                          fontSize: "11px",
+                                          fontWeight: 800,
+                                          cursor: "pointer",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "3px",
+                                          boxShadow: "0 1px 2px rgba(22, 163, 74, 0.3)",
+                                        }}
                                       >
-                                        Clear 🤝
+                                        <span>💵</span> Mark Paid
                                       </button>
-                                    ) : (
-                                      <span
-                                        title="Supplier account is fully settled (₹0 Due)"
-                                        style={{ padding: "4px 8px", borderRadius: "4px", background: "#f1f5f9", color: "#059669", border: "1px solid #cbd5e1", fontSize: "11px", fontWeight: 700, display: "inline-flex", alignItems: "center", gap: "3px", cursor: "default" }}
+                                    )}
+                                    {!isOwner && entry.rawExpense && (
+                                      <button
+                                        type="button"
+                                        onClick={() => openEditModal(entry.rawExpense!)}
+                                        style={{
+                                          padding: "4px 8px",
+                                          borderRadius: "6px",
+                                          background: "#f1f5f9",
+                                          color: "#334155",
+                                          border: "1px solid #cbd5e1",
+                                          fontSize: "11px",
+                                          fontWeight: 600,
+                                          cursor: "pointer",
+                                        }}
                                       >
-                                        Cleared ✓
-                                      </span>
-                                    )
-                                  )}
+                                        Edit
+                                      </button>
+                                    )}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -2985,6 +3076,319 @@ export default function ExpensesPage() {
           )}
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* QUICK MARK EXPENSE AS PAID MODAL */}
+      {/* ======================================================== */}
+      {markPaidModalOpen && targetExpense && (
+        <div
+          className="no-print"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(15, 23, 42, 0.65)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "20px",
+          }}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "520px",
+              boxShadow: "0 25px 50px -12px rgba(0, 0, 0, 0.25)",
+              overflow: "hidden",
+              border: "1px solid #e2e8f0",
+            }}
+          >
+            {/* Header */}
+            <div
+              style={{
+                padding: "18px 22px",
+                background: "linear-gradient(135deg, #065f46 0%, #047857 100%)",
+                color: "#ffffff",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 800, display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span>💵</span> Mark Expense as Paid
+                </h3>
+                <span style={{ fontSize: "12px", color: "#a7f3d0", marginTop: "2px", display: "block" }}>
+                  Instantly settle this credit bill and clear it from supplier dues
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setMarkPaidModalOpen(false);
+                  setTargetExpense(null);
+                }}
+                disabled={markingPaid}
+                style={{
+                  background: "rgba(255, 255, 255, 0.2)",
+                  border: "none",
+                  color: "#fff",
+                  borderRadius: "50%",
+                  width: "28px",
+                  height: "28px",
+                  cursor: "pointer",
+                  fontSize: "14px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Bill Summary Card */}
+            <div style={{ padding: "20px 22px 0 22px" }}>
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  padding: "14px 16px",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  gap: "12px",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: "15px", fontWeight: 800, color: "#0f172a" }}>
+                    {targetExpense.title}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#64748b", marginTop: "3px" }}>
+                    {targetExpense.vendor ? `Supplier: ${targetExpense.vendor}` : "Direct Payee"} • {targetExpense.category}
+                    {targetExpense.bill_number ? ` • Bill #${targetExpense.bill_number}` : ""}
+                  </div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <span style={{ fontSize: "11px", color: "#dc2626", fontWeight: 700, textTransform: "uppercase" }}>
+                    Amount Due
+                  </span>
+                  <div style={{ fontSize: "22px", fontWeight: 900, color: "#dc2626" }}>
+                    ₹{formatMoney(targetExpense.amount)}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* 1-Click Instant Settle Presets */}
+            <div style={{ padding: "16px 22px 0 22px" }}>
+              <label style={{ display: "block", fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px" }}>
+                ⚡ 1-Click Instant Settle (Today):
+              </label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
+                <button
+                  type="button"
+                  disabled={markingPaid}
+                  onClick={() => handleQuickMarkPaid(targetExpense, "Cash")}
+                  style={{
+                    padding: "10px 8px",
+                    borderRadius: "8px",
+                    background: "#ecfdf5",
+                    border: "1px solid #a7f3d0",
+                    color: "#065f46",
+                    fontWeight: 800,
+                    fontSize: "12px",
+                    cursor: markingPaid ? "not-allowed" : "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "4px",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "18px" }}>💵</span>
+                  <span>Paid in Cash</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={markingPaid}
+                  onClick={() => handleQuickMarkPaid(targetExpense, "UPI / GPay / PhonePe")}
+                  style={{
+                    padding: "10px 8px",
+                    borderRadius: "8px",
+                    background: "#eff6ff",
+                    border: "1px solid #bfdbfe",
+                    color: "#1e40af",
+                    fontWeight: 800,
+                    fontSize: "12px",
+                    cursor: markingPaid ? "not-allowed" : "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "4px",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "18px" }}>📱</span>
+                  <span>Paid via UPI</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={markingPaid}
+                  onClick={() => handleQuickMarkPaid(targetExpense, "Bank Transfer / NEFT")}
+                  style={{
+                    padding: "10px 8px",
+                    borderRadius: "8px",
+                    background: "#f8fafc",
+                    border: "1px solid #cbd5e1",
+                    color: "#334155",
+                    fontWeight: 800,
+                    fontSize: "12px",
+                    cursor: markingPaid ? "not-allowed" : "pointer",
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "center",
+                    gap: "4px",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  <span style={{ fontSize: "18px" }}>🏦</span>
+                  <span>Bank Transfer</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Divider */}
+            <div style={{ display: "flex", alignItems: "center", margin: "16px 22px", gap: "10px" }}>
+              <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
+              <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700, textTransform: "uppercase" }}>or Custom Details</span>
+              <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
+            </div>
+
+            {/* Custom Options Form */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                executeMarkExpensePaid(targetExpense, markPaidMode, markPaidDate, markPaidRef);
+              }}
+              style={{ padding: "0 22px 22px 22px", display: "flex", flexDirection: "column", gap: "12px" }}
+            >
+              <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
+                    Payment Mode *
+                  </label>
+                  <select
+                    value={markPaidMode}
+                    onChange={(e) => setMarkPaidMode(e.target.value)}
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #cbd5e1",
+                      fontSize: "13px",
+                      background: "#ffffff",
+                      color: "#0f172a",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {DIRECT_PAYMENT_METHODS.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
+                    Payment Date *
+                  </label>
+                  <input
+                    type="date"
+                    value={markPaidDate}
+                    onChange={(e) => setMarkPaidDate(e.target.value)}
+                    required
+                    style={{
+                      width: "100%",
+                      padding: "9px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #cbd5e1",
+                      fontSize: "13px",
+                      background: "#ffffff",
+                      color: "#0f172a",
+                    }}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "5px" }}>
+                  Reference / Transaction Note (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. UPI Ref 9845..., Cheque #4521"
+                  value={markPaidRef}
+                  onChange={(e) => setMarkPaidRef(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "13px",
+                    background: "#ffffff",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  disabled={markingPaid}
+                  onClick={() => {
+                    setMarkPaidModalOpen(false);
+                    setTargetExpense(null);
+                  }}
+                  style={{
+                    padding: "9px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#475569",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={markingPaid}
+                  style={{
+                    padding: "9px 20px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "#059669",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 800,
+                    cursor: markingPaid ? "not-allowed" : "pointer",
+                    boxShadow: "0 2px 6px rgba(5, 150, 105, 0.3)",
+                  }}
+                >
+                  {markingPaid ? "Updating..." : "✓ Confirm Payment"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* CLEAR CREDIT BALANCE MODAL */}
@@ -3533,69 +3937,69 @@ export default function ExpensesPage() {
             {/* Modal Form */}
             <form onSubmit={handleSaveExpense} style={{ padding: "20px 22px", overflowY: "auto", flex: 1, display: "flex", flexDirection: "column" }}>
               {/* Expense Type Toggle: Direct Paid vs Credit Purchase */}
-              {!editingExpenseId && (
-                <div style={{ marginBottom: "16px" }}>
-                  <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "6px", textTransform: "uppercase" }}>
-                    Payment & Purchase Type *
-                  </label>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormType("paid");
+              <div style={{ marginBottom: "16px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#475569", marginBottom: "6px", textTransform: "uppercase" }}>
+                  Payment & Purchase Type *
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormType("paid");
+                      if (isCreditExpense(formPaymentMethod)) {
                         setFormPaymentMethod("Cash");
-                      }}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: "8px",
-                        border: formType === "paid" ? "2px solid #059669" : "1px solid #cbd5e1",
-                        background: formType === "paid" ? "#ecfdf5" : "#ffffff",
-                        color: formType === "paid" ? "#065f46" : "#475569",
-                        fontWeight: 700,
-                        fontSize: "13px",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: "6px",
-                        boxShadow: formType === "paid" ? "0 2px 6px rgba(5, 150, 105, 0.15)" : "none",
-                      }}
-                    >
-                      <span>💵</span> Direct Paid (Cash / UPI)
-                    </button>
+                      }
+                    }}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: "8px",
+                      border: formType === "paid" ? "2px solid #059669" : "1px solid #cbd5e1",
+                      background: formType === "paid" ? "#ecfdf5" : "#ffffff",
+                      color: formType === "paid" ? "#065f46" : "#475569",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      boxShadow: formType === "paid" ? "0 2px 6px rgba(5, 150, 105, 0.15)" : "none",
+                    }}
+                  >
+                    <span>💵</span> Direct Paid (Cash / UPI)
+                  </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFormType("credit");
-                        setFormPaymentMethod("Credit (On Account)");
-                      }}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: "8px",
-                        border: formType === "credit" ? "2px solid #dc2626" : "1px solid #cbd5e1",
-                        background: formType === "credit" ? "#fef2f2" : "#ffffff",
-                        color: formType === "credit" ? "#991b1b" : "#475569",
-                        fontWeight: 700,
-                        fontSize: "13px",
-                        cursor: "pointer",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: "6px",
-                        boxShadow: formType === "credit" ? "0 2px 6px rgba(220, 38, 38, 0.15)" : "none",
-                      }}
-                    >
-                      <span>📋</span> Credit Purchase (Khata)
-                    </button>
-                  </div>
-                  <div style={{ fontSize: "11px", color: formType === "credit" ? "#dc2626" : "#059669", marginTop: "6px", fontWeight: 600 }}>
-                    {formType === "credit"
-                      ? "🔴 Bought on credit. Creates an outstanding balance owed to the supplier."
-                      : "✓ Paid immediately with Cash / UPI. Complete transaction with no debt owed."}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFormType("credit");
+                      setFormPaymentMethod("Credit (On Account)");
+                    }}
+                    style={{
+                      padding: "10px 14px",
+                      borderRadius: "8px",
+                      border: formType === "credit" ? "2px solid #dc2626" : "1px solid #cbd5e1",
+                      background: formType === "credit" ? "#fef2f2" : "#ffffff",
+                      color: formType === "credit" ? "#991b1b" : "#475569",
+                      fontWeight: 700,
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: "6px",
+                      boxShadow: formType === "credit" ? "0 2px 6px rgba(220, 38, 38, 0.15)" : "none",
+                    }}
+                  >
+                    <span>📋</span> Credit Purchase (Khata)
+                  </button>
                 </div>
-              )}
+                <div style={{ fontSize: "11px", color: formType === "credit" ? "#dc2626" : "#059669", marginTop: "6px", fontWeight: 600 }}>
+                  {formType === "credit"
+                    ? "🔴 Bought on credit. Creates an outstanding balance owed to the supplier."
+                    : "✓ Paid immediately with Cash / UPI / Bank. Complete transaction with no debt owed."}
+                </div>
+              </div>
 
               {/* Vendor & Bill Number row */}
               <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: "14px", marginBottom: "16px" }}>
