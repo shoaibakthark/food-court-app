@@ -1833,20 +1833,7 @@ def create_expense_settlement(
             models.ExpenseSettlement.vendor.ilike(vendor)
         ).all()
         total_cleared = sum((Decimal(str(s.amount or 0)) for s in vendor_settlements), Decimal("0"))
-
         pending_balance = max(Decimal("0"), total_credit - total_cleared)
-
-        if pending_balance <= Decimal("0"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Cannot record clearance: Supplier '{vendor}' has ₹0 outstanding credit due (already fully settled).",
-            )
-
-        if amount > pending_balance:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Clearance amount (₹{amount:,.2f}) exceeds the outstanding credit balance of ₹{pending_balance:,.2f} for '{vendor}'. Maximum allowed clearance is ₹{pending_balance:,.2f}.",
-            )
 
         date_val = payload.get("settlement_date") or payload.get("date")
         if date_val and isinstance(date_val, str) and date_val.strip():

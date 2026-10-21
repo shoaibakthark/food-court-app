@@ -184,6 +184,7 @@ export default function ExpensesPage() {
   // Modal State for QUICK MARK EXPENSE AS PAID
   const [markPaidModalOpen, setMarkPaidModalOpen] = useState(false);
   const [targetExpense, setTargetExpense] = useState<ExpenseRecord | null>(null);
+  const [markPaidAmount, setMarkPaidAmount] = useState("");
   const [markPaidMode, setMarkPaidMode] = useState("Cash");
   const [markPaidDate, setMarkPaidDate] = useState(new Date().toISOString().slice(0, 10));
   const [markPaidRef, setMarkPaidRef] = useState("");
@@ -842,6 +843,7 @@ export default function ExpensesPage() {
   // Open Quick Mark as Paid Modal
   const openMarkPaidModal = (exp: ExpenseRecord) => {
     setTargetExpense(exp);
+    setMarkPaidAmount(String(exp.amount));
     setMarkPaidMode("Cash");
     setMarkPaidDate(new Date().toISOString().slice(0, 10));
     setMarkPaidRef("");
@@ -851,51 +853,115 @@ export default function ExpensesPage() {
   // 1-Click Instant Settle helper (Cash, UPI, etc. today)
   const handleQuickMarkPaid = async (exp: ExpenseRecord, chosenMode: string) => {
     const todayStr = new Date().toISOString().slice(0, 10);
-    await executeMarkExpensePaid(exp, chosenMode, todayStr);
+    const customAmt = parseFloat(markPaidAmount) || exp.amount;
+    await executeMarkExpensePaid(exp, chosenMode, customAmt, todayStr);
   };
 
-  // Execute Mark Expense as Paid API call
+  // Execute Mark Expense as Paid API call (Supports Full & Custom Partial Amount Settlement)
   const executeMarkExpensePaid = async (
     exp: ExpenseRecord,
     mode: string,
+    settleAmt?: number,
     date?: string,
     refNote?: string
   ) => {
     try {
       setMarkingPaid(true);
+      const originalAmt = Number(exp.amount) || 0;
+      const payAmt = settleAmt !== undefined ? Number(settleAmt) : (parseFloat(markPaidAmount) || originalAmt);
+
+      if (isNaN(payAmt) || payAmt <= 0) {
+        alert("Please enter a valid settlement amount greater than zero.");
+        return;
+      }
+
+      if (payAmt > originalAmt) {
+        alert(`Settlement amount (₹${formatMoney(payAmt)}) cannot exceed the bill amount of ₹${formatMoney(originalAmt)}.`);
+        return;
+      }
+
       const existingNote = (exp.note || "").trim();
       const cleanRef = (refNote || "").trim();
-      let noteText = existingNote;
-      if (cleanRef) {
-        noteText = existingNote ? `${existingNote} • Paid via ${mode} (${cleanRef})` : `Paid via ${mode} (${cleanRef})`;
+      const dateToUse = date || (exp.expense_date ? exp.expense_date.slice(0, 10) : new Date().toISOString().slice(0, 10));
+
+      // CASE 1: Full Bill Settlement
+      if (payAmt === originalAmt) {
+        let noteText = existingNote;
+        if (cleanRef) {
+          noteText = existingNote ? `${existingNote} • Paid via ${mode} (${cleanRef})` : `Paid via ${mode} (${cleanRef})`;
+        }
+
+        const payload: Record<string, any> = {
+          payment_method: mode,
+          expense_date: dateToUse,
+          ...(noteText ? { note: noteText } : {}),
+        };
+
+        const res = await fetchWithAuth(`${API_URL}/expenses/${exp.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => null);
+          throw new Error(err?.detail || `Failed to update expense status (${res.status})`);
+        }
+
+        setSuccessMsg(`✓ Expense #${exp.id} ("${exp.title}") fully settled: ₹${formatMoney(originalAmt)} marked as PAID via ${mode}!`);
+      } else {
+        // CASE 2: Custom Partial Amount Settlement (payAmt < originalAmt)
+        const remainingBalance = originalAmt - payAmt;
+
+        // Step 1: Update current expense row to the paid custom amount
+        const paidNote = existingNote
+          ? `${existingNote} • Partial settlement of ₹${formatMoney(payAmt)} via ${mode}${cleanRef ? ` (${cleanRef})` : ""} (Original Bill: ₹${formatMoney(originalAmt)})`
+          : `Partial settlement of ₹${formatMoney(payAmt)} via ${mode}${cleanRef ? ` (${cleanRef})` : ""} (Original Bill: ₹${formatMoney(originalAmt)})`;
+
+        const updatePayload = {
+          amount: payAmt,
+          payment_method: mode,
+          expense_date: dateToUse,
+          note: paidNote,
+        };
+
+        const resUpdate = await fetchWithAuth(`${API_URL}/expenses/${exp.id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updatePayload),
+        });
+
+        if (!resUpdate.ok) {
+          const err = await resUpdate.json().catch(() => null);
+          throw new Error(err?.detail || "Failed to record custom settlement payment");
+        }
+
+        // Step 2: Create remaining credit bill for remaining balance
+        const balancePayload = {
+          title: `${exp.title} (Balance Due)`,
+          category: exp.category,
+          amount: remainingBalance,
+          expense_date: exp.expense_date ? exp.expense_date.slice(0, 10) : dateToUse,
+          event_id: exp.event_id || null,
+          payment_method: "Credit (On Account)",
+          vendor: exp.vendor || null,
+          bill_number: exp.bill_number ? `${exp.bill_number}-BAL` : null,
+          note: `Balance credit due (₹${formatMoney(remainingBalance)}) after custom settlement of ₹${formatMoney(payAmt)} on ${exp.title}.`,
+        };
+
+        await fetchWithAuth(`${API_URL}/expenses`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(balancePayload),
+        }).catch((e) => console.warn("Could not create balance credit row:", e));
+
+        setSuccessMsg(`✓ Custom settlement recorded! ₹${formatMoney(payAmt)} PAID via ${mode}. Remaining balance of ₹${formatMoney(remainingBalance)} retained as Credit bill.`);
       }
 
-      const payload: Record<string, any> = {
-        payment_method: mode,
-      };
-      if (date) {
-        payload.expense_date = date;
-      }
-      if (noteText) {
-        payload.note = noteText;
-      }
-
-      const res = await fetchWithAuth(`${API_URL}/expenses/${exp.id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => null);
-        throw new Error(err?.detail || `Failed to update expense status (${res.status})`);
-      }
-
-      setSuccessMsg(`✓ Expense #${exp.id} ("${exp.title}") marked as PAID via ${mode}! Ledger updated.`);
       setMarkPaidModalOpen(false);
       setTargetExpense(null);
       await loadData();
-      setTimeout(() => setSuccessMsg(null), 4500);
+      setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err: any) {
       console.error("Mark as paid error:", err);
       alert(err.message || "Failed to mark expense as paid");
@@ -913,26 +979,12 @@ export default function ExpensesPage() {
 
   // Open CREDIT BALANCE CLEARANCE (Settlement) Modal
   const openClearSettlementModal = (vendorName?: string, presetAmount?: number) => {
-    // 1. If called for a specific vendor, verify whether they have outstanding credit
-    if (vendorName && vendorName.trim()) {
-      const vAcc = vendorAccounts.find((v) => v.name.toLowerCase() === vendorName.trim().toLowerCase());
-      if (vAcc && vAcc.pendingBalance <= 0) {
-        alert(`Supplier "${vAcc.name}" is already fully settled (₹0 Due). No credit clearance is needed.`);
-        return;
-      }
-    }
-
-    // 2. If general call (no vendor), check if any supplier has outstanding credit
     const vendorsWithDue = vendorAccounts.filter((v) => v.name !== "Direct / Cash Outflows" && v.pendingBalance > 0);
-    if (!vendorName && vendorsWithDue.length === 0) {
-      alert("All supplier accounts are already fully settled (₹0 Due). There are no outstanding credit balances to clear.");
-      return;
-    }
-
     const dueVendor = vendorsWithDue[0]?.name;
     const targetVendor =
       (vendorName && vendorName.trim() && !vendorName.toLowerCase().includes("direct") ? vendorName.trim() : "") ||
       dueVendor ||
+      (vendorAccounts.length > 0 ? vendorAccounts[0].name : "") ||
       "";
 
     const vendorData = vendorAccounts.find((v) => v.name.toLowerCase() === targetVendor.toLowerCase());
@@ -944,14 +996,10 @@ export default function ExpensesPage() {
     }
 
     let amountToSet = "";
-    if (vendorData && vendorData.pendingBalance > 0) {
-      if (presetAmount !== undefined && presetAmount > 0) {
-        amountToSet = String(Math.min(presetAmount, vendorData.pendingBalance));
-      } else {
-        amountToSet = String(vendorData.pendingBalance);
-      }
-    } else if (presetAmount !== undefined && presetAmount > 0) {
+    if (presetAmount !== undefined && presetAmount > 0) {
       amountToSet = String(presetAmount);
+    } else if (vendorData && vendorData.pendingBalance > 0) {
+      amountToSet = String(vendorData.pendingBalance);
     }
 
     setSettleVendor(targetVendor);
@@ -1039,17 +1087,6 @@ export default function ExpensesPage() {
     if (!amt || isNaN(amt) || amt <= 0) {
       alert("Please enter a valid clearance amount greater than zero.");
       return;
-    }
-
-    if (activeModalVendorAccount) {
-      if (activeModalVendorAccount.pendingBalance <= 0) {
-        alert(`Supplier "${vendor}" has ₹0 outstanding balance and is already fully settled.`);
-        return;
-      }
-      if (amt > activeModalVendorAccount.pendingBalance) {
-        alert(`Clearance amount (₹${formatMoney(amt)}) exceeds the outstanding credit balance of ₹${formatMoney(activeModalVendorAccount.pendingBalance)} for ${vendor}. Please adjust the amount.`);
-        return;
-      }
     }
 
     try {
@@ -3175,13 +3212,87 @@ export default function ExpensesPage() {
                 </div>
                 <div style={{ textAlign: "right" }}>
                   <span style={{ fontSize: "11px", color: "#dc2626", fontWeight: 700, textTransform: "uppercase" }}>
-                    Amount Due
+                    Total Bill Due
                   </span>
                   <div style={{ fontSize: "22px", fontWeight: 900, color: "#dc2626" }}>
                     ₹{formatMoney(targetExpense.amount)}
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Custom Settlement Amount Field */}
+            <div style={{ padding: "14px 22px 0 22px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a" }}>
+                  Settlement Amount to Pay (₹) *
+                </label>
+                <div style={{ display: "flex", gap: "6px" }}>
+                  <button
+                    type="button"
+                    onClick={() => setMarkPaidAmount(String(targetExpense.amount))}
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      border: parseFloat(markPaidAmount) === targetExpense.amount ? "1px solid #059669" : "1px solid #cbd5e1",
+                      background: parseFloat(markPaidAmount) === targetExpense.amount ? "#ecfdf5" : "#ffffff",
+                      color: parseFloat(markPaidAmount) === targetExpense.amount ? "#047857" : "#475569",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    ⚡ Full (₹{formatMoney(targetExpense.amount)})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMarkPaidAmount(String(Math.round(targetExpense.amount / 2)))}
+                    style={{
+                      padding: "2px 8px",
+                      borderRadius: "6px",
+                      border: parseFloat(markPaidAmount) === Math.round(targetExpense.amount / 2) ? "1px solid #0284c7" : "1px solid #cbd5e1",
+                      background: parseFloat(markPaidAmount) === Math.round(targetExpense.amount / 2) ? "#eff6ff" : "#ffffff",
+                      color: parseFloat(markPaidAmount) === Math.round(targetExpense.amount / 2) ? "#0369a1" : "#475569",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    50% (₹{formatMoney(Math.round(targetExpense.amount / 2))})
+                  </button>
+                </div>
+              </div>
+
+              <div style={{ position: "relative" }}>
+                <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "15px", fontWeight: 800, color: "#059669" }}>
+                  ₹
+                </span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="1"
+                  max={targetExpense.amount}
+                  value={markPaidAmount}
+                  onChange={(e) => setMarkPaidAmount(e.target.value)}
+                  placeholder="Enter custom settlement amount..."
+                  style={{
+                    width: "100%",
+                    padding: "9px 12px 9px 28px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    fontSize: "15px",
+                    fontWeight: 800,
+                    color: "#0f172a",
+                    background: "#ffffff",
+                  }}
+                />
+              </div>
+
+              {parseFloat(markPaidAmount) > 0 && parseFloat(markPaidAmount) < targetExpense.amount && (
+                <div style={{ marginTop: "6px", fontSize: "11px", color: "#b45309", fontWeight: 700, background: "#fef3c7", border: "1px solid #fde68a", padding: "6px 10px", borderRadius: "6px" }}>
+                  ✂️ Custom Partial Settlement: ₹{formatMoney(parseFloat(markPaidAmount))} will be marked as Paid. Remaining ₹{formatMoney(targetExpense.amount - parseFloat(markPaidAmount))} will stay on Credit as balance due.
+                </div>
+              )}
             </div>
 
             {/* 1-Click Instant Settle Presets */}
@@ -3275,7 +3386,13 @@ export default function ExpensesPage() {
             <form
               onSubmit={(e) => {
                 e.preventDefault();
-                executeMarkExpensePaid(targetExpense, markPaidMode, markPaidDate, markPaidRef);
+                executeMarkExpensePaid(
+                  targetExpense,
+                  markPaidMode,
+                  parseFloat(markPaidAmount) || targetExpense.amount,
+                  markPaidDate,
+                  markPaidRef
+                );
               }}
               style={{ padding: "0 22px 22px 22px", display: "flex", flexDirection: "column", gap: "12px" }}
             >
@@ -3650,69 +3767,132 @@ export default function ExpensesPage() {
                 </div>
               )}
 
-              {/* Clearance Amount & Quick Full Balance Button */}
+              {/* Clearance Amount & Quick Custom Amount Settlement Chips */}
               <div style={{ marginBottom: "16px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "6px", flexWrap: "wrap", gap: "6px" }}>
                   <label style={{ fontSize: "13px", fontWeight: 700, color: "#0f172a" }}>
-                    Clearance Amount (₹) *
+                    Settlement Amount (₹) *
                   </label>
                   {activeModalVendorAccount && activeModalVendorAccount.pendingBalance > 0 && (
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      <button
+                        type="button"
+                        onClick={() => setSettleAmount(String(activeModalVendorAccount.pendingBalance))}
+                        style={{
+                          border: "1px solid #a7f3d0",
+                          background: parseFloat(settleAmount) === activeModalVendorAccount.pendingBalance ? "#059669" : "#ecfdf5",
+                          color: parseFloat(settleAmount) === activeModalVendorAccount.pendingBalance ? "#ffffff" : "#047857",
+                          fontSize: "11px",
+                          fontWeight: 800,
+                          padding: "3px 10px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        ⚡ Full Due (₹{formatMoney(activeModalVendorAccount.pendingBalance)})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSettleAmount(String(Math.round(activeModalVendorAccount.pendingBalance / 2)))}
+                        style={{
+                          border: "1px solid #bae6fd",
+                          background: parseFloat(settleAmount) === Math.round(activeModalVendorAccount.pendingBalance / 2) ? "#0284c7" : "#f0f9ff",
+                          color: parseFloat(settleAmount) === Math.round(activeModalVendorAccount.pendingBalance / 2) ? "#ffffff" : "#0369a1",
+                          fontSize: "11px",
+                          fontWeight: 800,
+                          padding: "3px 10px",
+                          borderRadius: "6px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        50% (₹{formatMoney(Math.round(activeModalVendorAccount.pendingBalance / 2))})
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick preset amount chips */}
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                  {[500, 1000, 2000, 5000, 10000].map((presetAmt) => (
                     <button
+                      key={presetAmt}
                       type="button"
-                      onClick={() => setSettleAmount(String(activeModalVendorAccount.pendingBalance))}
+                      onClick={() => setSettleAmount(String(presetAmt))}
                       style={{
-                        border: "1px solid #a7f3d0",
-                        background: "#ecfdf5",
-                        color: "#047857",
-                        fontSize: "11px",
-                        fontWeight: 800,
-                        padding: "3px 10px",
+                        padding: "3px 8px",
                         borderRadius: "6px",
+                        background: parseFloat(settleAmount) === presetAmt ? "#334155" : "#f8fafc",
+                        color: parseFloat(settleAmount) === presetAmt ? "#ffffff" : "#475569",
+                        border: "1px solid #cbd5e1",
+                        fontSize: "11px",
+                        fontWeight: 700,
                         cursor: "pointer",
                       }}
                     >
-                      ⚡ Clear Full Credit Balance (₹{formatMoney(activeModalVendorAccount.pendingBalance)})
+                      +₹{formatMoney(presetAmt)}
                     </button>
-                  )}
+                  ))}
                 </div>
+
                 <div style={{ position: "relative" }}>
-                  <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "16px", fontWeight: 800, color: (activeModalVendorAccount && activeModalVendorAccount.pendingBalance <= 0) ? "#94a3b8" : "#059669" }}>
+                  <span style={{ position: "absolute", left: "12px", top: "50%", transform: "translateY(-50%)", fontSize: "16px", fontWeight: 800, color: "#059669" }}>
                     ₹
                   </span>
                   <input
                     type="number"
                     step="0.01"
                     min="1"
-                    max={activeModalVendorAccount && activeModalVendorAccount.pendingBalance > 0 ? activeModalVendorAccount.pendingBalance : undefined}
-                    placeholder={activeModalVendorAccount && activeModalVendorAccount.pendingBalance <= 0 ? "Account is fully settled (₹0 Due)" : "Enter amount to clear..."}
+                    placeholder="Enter custom settlement amount..."
                     value={settleAmount}
-                    disabled={activeModalVendorAccount ? activeModalVendorAccount.pendingBalance <= 0 : false}
                     onChange={(e) => setSettleAmount(e.target.value)}
                     required
                     style={{
                       width: "100%",
                       padding: "10px 12px 10px 28px",
                       borderRadius: "8px",
-                      border: (activeModalVendorAccount && parseFloat(settleAmount) > activeModalVendorAccount.pendingBalance) ? "1px solid #ef4444" : "1px solid #cbd5e1",
+                      border: "1px solid #cbd5e1",
                       fontSize: "16px",
                       fontWeight: 800,
-                      color: (activeModalVendorAccount && activeModalVendorAccount.pendingBalance <= 0) ? "#94a3b8" : "#059669",
-                      background: (activeModalVendorAccount && activeModalVendorAccount.pendingBalance <= 0) ? "#f8fafc" : "#ffffff",
+                      color: "#0f172a",
+                      background: "#ffffff",
                     }}
                   />
                 </div>
 
-                {/* Over-clearance warning */}
-                {activeModalVendorAccount && activeModalVendorAccount.pendingBalance > 0 && parseFloat(settleAmount) > activeModalVendorAccount.pendingBalance && (
-                  <div style={{ marginTop: "6px", fontSize: "12px", color: "#dc2626", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
-                    <span>❌</span>
-                    <span>Amount exceeds outstanding balance (₹{formatMoney(activeModalVendorAccount.pendingBalance)}). Maximum allowed is ₹{formatMoney(activeModalVendorAccount.pendingBalance)}.</span>
+                {/* Live Settlement Breakdown */}
+                {activeModalVendorAccount && parseFloat(settleAmount) > 0 && (
+                  <div style={{
+                    marginTop: "8px",
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    fontSize: "12px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "8px",
+                  }}>
+                    <div>
+                      <span style={{ color: "#64748b" }}>Current Due: </span>
+                      <span style={{ fontWeight: 700, color: "#dc2626" }}>₹{formatMoney(activeModalVendorAccount.pendingBalance)}</span>
+                      <span style={{ color: "#64748b" }}> − Settlement: </span>
+                      <span style={{ fontWeight: 800, color: "#059669" }}>₹{formatMoney(parseFloat(settleAmount))}</span>
+                    </div>
+                    <div>
+                      <span style={{ color: "#64748b" }}>Remaining Due: </span>
+                      <span style={{ fontWeight: 900, color: parseFloat(settleAmount) >= activeModalVendorAccount.pendingBalance ? "#059669" : "#dc2626" }}>
+                        ₹{formatMoney(Math.max(0, activeModalVendorAccount.pendingBalance - parseFloat(settleAmount)))}
+                        {parseFloat(settleAmount) >= activeModalVendorAccount.pendingBalance ? " (Fully Cleared ✓)" : ""}
+                      </span>
+                    </div>
                   </div>
                 )}
-                {activeModalVendorAccount && activeModalVendorAccount.pendingBalance <= 0 && (
-                  <div style={{ marginTop: "6px", fontSize: "12px", color: "#b91c1c", fontWeight: 700, display: "flex", alignItems: "center", gap: "4px" }}>
-                    <span>🚫</span>
-                    <span>This account has ₹0 outstanding balance and is already fully settled.</span>
+
+                {activeModalVendorAccount && activeModalVendorAccount.pendingBalance > 0 && parseFloat(settleAmount) > activeModalVendorAccount.pendingBalance && (
+                  <div style={{ marginTop: "6px", fontSize: "11px", color: "#0369a1", fontWeight: 700, background: "#f0f9ff", border: "1px solid #bae6fd", padding: "6px 10px", borderRadius: "6px" }}>
+                    ℹ️ Advance Payment: Settlement amount exceeds current due by ₹{formatMoney(parseFloat(settleAmount) - activeModalVendorAccount.pendingBalance)}. This will clear all dues and record an advance credit.
                   </div>
                 )}
               </div>
@@ -3827,10 +4007,8 @@ export default function ExpensesPage() {
                 </button>
 
                 {(() => {
-                  const isZeroDue = activeModalVendorAccount ? activeModalVendorAccount.pendingBalance <= 0 : false;
                   const parsedAmt = parseFloat(settleAmount) || 0;
-                  const isOverAmt = activeModalVendorAccount ? parsedAmt > activeModalVendorAccount.pendingBalance : false;
-                  const isBlocked = settling || isZeroDue || isOverAmt || parsedAmt <= 0;
+                  const isBlocked = settling || parsedAmt <= 0;
 
                   return (
                     <button
@@ -3848,7 +4026,7 @@ export default function ExpensesPage() {
                         boxShadow: isBlocked ? "none" : "0 2px 6px rgba(5, 150, 105, 0.25)",
                       }}
                     >
-                      {settling ? "Clearing..." : isZeroDue ? "Account Already Settled" : isOverAmt ? "Amount Exceeds Balance" : "✓ Confirm Credit Clearance"}
+                      {settling ? "Recording..." : `✓ Record Settlement (₹${formatMoney(parsedAmt)})`}
                     </button>
                   );
                 })()}
