@@ -850,13 +850,6 @@ export default function ExpensesPage() {
     setMarkPaidModalOpen(true);
   };
 
-  // 1-Click Instant Settle helper (Cash, UPI, etc. today)
-  const handleQuickMarkPaid = async (exp: ExpenseRecord, chosenMode: string) => {
-    const todayStr = new Date().toISOString().slice(0, 10);
-    const customAmt = parseFloat(markPaidAmount) || exp.amount;
-    await executeMarkExpensePaid(exp, chosenMode, customAmt, todayStr);
-  };
-
   // Execute Mark Expense as Paid API call (Supports Full & Custom Partial Amount Settlement)
   const executeMarkExpensePaid = async (
     exp: ExpenseRecord,
@@ -1268,32 +1261,6 @@ export default function ExpensesPage() {
                 </button>
               )}
             </div>
-
-            {/* Clear Credit Balance Button */}
-            {!isOwner && (
-              <button
-                type="button"
-                onClick={() => openClearSettlementModal()}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "6px",
-                  background: "#059669",
-                  color: "#ffffff",
-                  border: "none",
-                  borderRadius: "8px",
-                  padding: "9px 15px",
-                  fontWeight: 700,
-                  fontSize: "12px",
-                  cursor: "pointer",
-                  whiteSpace: "nowrap",
-                  flexShrink: 0,
-                  boxShadow: "0 1px 3px rgba(5, 150, 105, 0.2)",
-                }}
-              >
-                <span>🤝</span> Clear Supplier Credit
-              </button>
-            )}
 
             {/* Print Ledger Button */}
             <button
@@ -3295,94 +3262,7 @@ export default function ExpensesPage() {
               )}
             </div>
 
-            {/* 1-Click Instant Settle Presets */}
-            <div style={{ padding: "16px 22px 0 22px" }}>
-              <label style={{ display: "block", fontSize: "11px", fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px" }}>
-                ⚡ 1-Click Instant Settle (Today):
-              </label>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "8px" }}>
-                <button
-                  type="button"
-                  disabled={markingPaid}
-                  onClick={() => handleQuickMarkPaid(targetExpense, "Cash")}
-                  style={{
-                    padding: "10px 8px",
-                    borderRadius: "8px",
-                    background: "#ecfdf5",
-                    border: "1px solid #a7f3d0",
-                    color: "#065f46",
-                    fontWeight: 800,
-                    fontSize: "12px",
-                    cursor: markingPaid ? "not-allowed" : "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "4px",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <span style={{ fontSize: "18px" }}>💵</span>
-                  <span>Paid in Cash</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={markingPaid}
-                  onClick={() => handleQuickMarkPaid(targetExpense, "UPI / GPay / PhonePe")}
-                  style={{
-                    padding: "10px 8px",
-                    borderRadius: "8px",
-                    background: "#eff6ff",
-                    border: "1px solid #bfdbfe",
-                    color: "#1e40af",
-                    fontWeight: 800,
-                    fontSize: "12px",
-                    cursor: markingPaid ? "not-allowed" : "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "4px",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <span style={{ fontSize: "18px" }}>📱</span>
-                  <span>Paid via UPI</span>
-                </button>
-
-                <button
-                  type="button"
-                  disabled={markingPaid}
-                  onClick={() => handleQuickMarkPaid(targetExpense, "Bank Transfer / NEFT")}
-                  style={{
-                    padding: "10px 8px",
-                    borderRadius: "8px",
-                    background: "#f8fafc",
-                    border: "1px solid #cbd5e1",
-                    color: "#334155",
-                    fontWeight: 800,
-                    fontSize: "12px",
-                    cursor: markingPaid ? "not-allowed" : "pointer",
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    gap: "4px",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <span style={{ fontSize: "18px" }}>🏦</span>
-                  <span>Bank Transfer</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Divider */}
-            <div style={{ display: "flex", alignItems: "center", margin: "16px 22px", gap: "10px" }}>
-              <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
-              <span style={{ fontSize: "11px", color: "#94a3b8", fontWeight: 700, textTransform: "uppercase" }}>or Custom Details</span>
-              <div style={{ flex: 1, height: "1px", background: "#e2e8f0" }} />
-            </div>
-
-            {/* Custom Options Form */}
+            {/* Payment Details Form */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();
@@ -3394,7 +3274,7 @@ export default function ExpensesPage() {
                   markPaidRef
                 );
               }}
-              style={{ padding: "0 22px 22px 22px", display: "flex", flexDirection: "column", gap: "12px" }}
+              style={{ padding: "16px 22px 22px 22px", display: "flex", flexDirection: "column", gap: "12px" }}
             >
               <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "12px" }}>
                 <div>
@@ -3809,29 +3689,6 @@ export default function ExpensesPage() {
                       </button>
                     </div>
                   )}
-                </div>
-
-                {/* Quick preset amount chips */}
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
-                  {[500, 1000, 2000, 5000, 10000].map((presetAmt) => (
-                    <button
-                      key={presetAmt}
-                      type="button"
-                      onClick={() => setSettleAmount(String(presetAmt))}
-                      style={{
-                        padding: "3px 8px",
-                        borderRadius: "6px",
-                        background: parseFloat(settleAmount) === presetAmt ? "#334155" : "#f8fafc",
-                        color: parseFloat(settleAmount) === presetAmt ? "#ffffff" : "#475569",
-                        border: "1px solid #cbd5e1",
-                        fontSize: "11px",
-                        fontWeight: 700,
-                        cursor: "pointer",
-                      }}
-                    >
-                      +₹{formatMoney(presetAmt)}
-                    </button>
-                  ))}
                 </div>
 
                 <div style={{ position: "relative" }}>
