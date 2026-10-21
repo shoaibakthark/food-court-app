@@ -101,37 +101,6 @@ class FoodItemCreate(BaseModel):
     session_id: int
 
 
-class CreateEventRequest(BaseModel):
-
-    customer: CustomerCreate
-
-    event_date: date
-
-    venue: str
-
-    event_type: str
-
-    guest_count: int
-
-    notes: str | None = None
-
-    food_amount: Decimal = 0
-
-    decor_amount: Decimal = 0
-
-    total_amount: Decimal = 0
-
-    quote_amount: Decimal | None = None
-
-    food_items: list[EventFoodItemCreate] = Field(
-        default_factory=list
-    )
-
-    decor_items: list[EventDecorItemCreate] = Field(
-        default_factory=list
-    )
-
-
 # ============================================================
 # EVENT EQUIPMENT ITEM
 # ============================================================

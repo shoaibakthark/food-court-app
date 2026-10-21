@@ -172,10 +172,14 @@ export function getApiUrl(): string {
 export function authHeaders(): Record<string, string> {
   const user = getAuthUser();
   if (!user) return {};
-  return {
+  const headers: Record<string, string> = {
     "X-User-Role": user.role,
     "X-User-Id": String(user.id),
   };
+  if (user.token) {
+    headers["Authorization"] = `Bearer ${user.token}`;
+  }
+  return headers;
 }
 
 export async function fetchWithAuth(
@@ -187,6 +191,9 @@ export async function fetchWithAuth(
   if (user) {
     headers.set("X-User-Role", user.role);
     headers.set("X-User-Id", String(user.id));
+    if (user.token) {
+      headers.set("Authorization", `Bearer ${user.token}`);
+    }
   }
 
   let finalInput = input;

@@ -59,6 +59,59 @@ export default function SettingsPage() {
   const [showDriveModal, setShowDriveModal] = useState(false);
   const [exportProgress, setExportProgress] = useState<string | null>(null);
 
+  // Local PostgreSQL Database Backup states
+  type LocalBackupStatus = {
+    backup_dir: string;
+    free_space_gb: number;
+    total_backups: number;
+    latest_backup: {
+      filename: string;
+      filepath: string;
+      size_mb: number;
+      created_at: string;
+    } | null;
+    recent_backups: Array<{
+      filename: string;
+      filepath: string;
+      size_mb: number;
+      created_at: string;
+    }>;
+  };
+
+  const [localBackupStatus, setLocalBackupStatus] = useState<LocalBackupStatus | null>(null);
+  const [localBackupRunning, setLocalBackupRunning] = useState(false);
+
+  const fetchBackupStatus = async () => {
+    try {
+      const res = await fetch(`${API_URL}/backup/status`);
+      if (res.ok) {
+        const data = await res.json();
+        setLocalBackupStatus(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch backup status", err);
+    }
+  };
+
+  const handleRunLocalBackup = async () => {
+    try {
+      setLocalBackupRunning(true);
+      const res = await fetch(`${API_URL}/backup/run`, { method: "POST" });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setSuccessMsg(`✓ Database backed up successfully! Saved to: ${data.filepath} (${data.size_mb} MB)`);
+        setTimeout(() => setSuccessMsg(null), 8000);
+        await fetchBackupStatus();
+      } else {
+        alert("Backup failed: " + (data.detail || data.error || "Unknown error"));
+      }
+    } catch (err: any) {
+      alert("Error triggering backup: " + err.message);
+    } finally {
+      setLocalBackupRunning(false);
+    }
+  };
+
   const handleExportExcel = async () => {
     try {
       setExportingExcel(true);
@@ -128,6 +181,7 @@ export default function SettingsPage() {
       } catch {
         setApiOnline(false);
       }
+      fetchBackupStatus();
     }
     checkHealth();
   }, []);
@@ -233,6 +287,29 @@ export default function SettingsPage() {
               title="Sync complete database to Google Drive in Excel (.xlsx) format"
             >
               ☁️ Google Drive
+            </button>
+
+            <button
+              type="button"
+              onClick={handleRunLocalBackup}
+              disabled={localBackupRunning}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                background: "linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "8px",
+                padding: "8px 15px",
+                fontWeight: 700,
+                fontSize: "12px",
+                cursor: localBackupRunning ? "not-allowed" : "pointer",
+                boxShadow: "0 3px 10px rgba(79, 70, 229, 0.35)",
+              }}
+              title="Immediately dump local PostgreSQL database to permanent storage drive"
+            >
+              💾 {localBackupRunning ? "Backing up..." : "Backup DB (D:)"}
             </button>
 
             <button
@@ -688,6 +765,121 @@ export default function SettingsPage() {
                     <div style={{ fontSize: "12px", color: "#7a6e8a", marginTop: "4px" }}>Expense Records</div>
                   </div>
                 </div>
+              </div>
+
+              {/* LOCAL POSTGRESQL DATABASE BACKUP CARD */}
+              <div
+                style={{
+                  background: "#fff",
+                  borderRadius: "14px",
+                  border: "1px solid #c7d2fe",
+                  padding: "24px",
+                  boxShadow: "0 4px 16px rgba(79, 70, 229, 0.08)",
+                  marginBottom: "24px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "12px", marginBottom: "14px" }}>
+                  <div>
+                    <h3 style={{ margin: "0 0 4px 0", color: "#1e1b4b", fontSize: "18px", fontWeight: 800, display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span>💾</span> Permanent Drive PostgreSQL Database Backup
+                    </h3>
+                    <p style={{ margin: 0, color: "#64748b", fontSize: "13px" }}>
+                      Automated binary dumps (<code style={{ background: "#f1f5f9", padding: "1px 5px", borderRadius: "4px" }}>pg_dump</code>) stored directly on your permanent drive for disaster recovery.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleRunLocalBackup}
+                    disabled={localBackupRunning}
+                    style={{
+                      background: "linear-gradient(135deg, #4f46e5 0%, #3730a3 100%)",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "11px 22px",
+                      fontWeight: 700,
+                      fontSize: "13.5px",
+                      cursor: localBackupRunning ? "not-allowed" : "pointer",
+                      boxShadow: "0 4px 14px rgba(79, 70, 229, 0.4)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span>⚡</span>
+                    <span>{localBackupRunning ? "Creating Backup..." : "Backup Database Now"}</span>
+                  </button>
+                </div>
+
+                {/* Storage & Schedule Metrics */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "12px", marginBottom: "18px" }}>
+                  <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px 14px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Permanent Backup Folder</div>
+                    <div style={{ fontSize: "13px", fontWeight: 800, color: "#0f172a", marginTop: "4px", wordBreak: "break-all" }}>
+                      📁 {localBackupStatus?.backup_dir || "D:\\food_court_backups"}
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px 14px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Drive Free Space</div>
+                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#059669", marginTop: "4px" }}>
+                      💽 {localBackupStatus?.free_space_gb ? `${localBackupStatus.free_space_gb} GB Available` : "Checking..."}
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px 14px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Daily Automated Schedule</div>
+                    <div style={{ fontSize: "13px", fontWeight: 800, color: "#2563eb", marginTop: "4px" }}>
+                      ⏰ Daily at 11:59 PM (Windows Task)
+                    </div>
+                  </div>
+
+                  <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "12px 14px" }}>
+                    <div style={{ fontSize: "11px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Total Backups Stored</div>
+                    <div style={{ fontSize: "14px", fontWeight: 800, color: "#7c3aed", marginTop: "4px" }}>
+                      📦 {localBackupStatus?.total_backups || 0} Backup Dumps
+                    </div>
+                  </div>
+                </div>
+
+                {/* Recent Backup Files List */}
+                {localBackupStatus?.recent_backups && localBackupStatus.recent_backups.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: "12px", fontWeight: 700, color: "#334155", marginBottom: "8px" }}>
+                      Recent Local PostgreSQL Backups:
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                      {localBackupStatus.recent_backups.slice(0, 4).map((b) => (
+                        <div
+                          key={b.filename}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            background: "#fdfdfd",
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "6px",
+                            padding: "8px 12px",
+                            fontSize: "12px",
+                          }}
+                        >
+                          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                            <span>📄</span>
+                            <span style={{ fontWeight: 700, color: "#0f172a" }}>{b.filename}</span>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: "12px", color: "#64748b" }}>
+                            <span>{new Date(b.created_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}</span>
+                            <span style={{ fontWeight: 800, color: "#059669", background: "#ecfdf5", padding: "2px 8px", borderRadius: "10px" }}>
+                              {b.size_mb} MB
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div

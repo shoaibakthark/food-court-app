@@ -13,7 +13,7 @@ from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, engine
-from app import crud, schemas, models
+from app import crud, schemas, models, security, backup_manager
 
 
 # ============================================================
@@ -28,12 +28,12 @@ try:
     with SessionLocal() as db_init:
         if db_init.query(models.User).count() == 0:
             db_init.add_all([
-                models.User(username="admin", password="admin123", name="Administrator", role="admin"),
-                models.User(username="owner", password="owner123", name="Owner", role="owner"),
-                models.User(username="manager", password="manager123", name="Manager", role="manager"),
+                models.User(username="admin", password=security.get_password_hash("admin123"), name="Administrator", role="admin"),
+                models.User(username="owner", password=security.get_password_hash("owner123"), name="Owner", role="owner"),
+                models.User(username="manager", password=security.get_password_hash("manager123"), name="Manager", role="manager"),
             ])
             db_init.commit()
-            print("Successfully initialized default users: admin, owner, manager")
+            print("Successfully initialized default users: admin, owner, manager (bcrypt hashed)")
 except Exception as init_err:
     print(f"Database initialization notice: {init_err}")
 
@@ -57,6 +57,15 @@ app.add_middleware(
 @app.middleware("http")
 async def role_access_middleware(request, call_next):
     user_role = request.headers.get("X-User-Role")
+
+    # If Authorization Bearer token is provided, verify signed cryptographic token
+    auth_header = request.headers.get("Authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+        decoded = security.decode_access_token(token)
+        if decoded and decoded.get("role"):
+            user_role = decoded["role"]
+
     path = request.url.path
 
     if user_role == "owner":
@@ -107,8 +116,25 @@ def login(payload: LoginPayload, db: Session = Depends(get_db)):
     password = payload.password.strip()
 
     user = db.query(models.User).filter(func.lower(models.User.username) == username.lower()).first()
-    if not user or user.password != password:
+    if not user or not security.verify_password(password, user.password):
         raise HTTPException(status_code=401, detail="Invalid username or password")
+
+    # Seamlessly upgrade legacy plaintext password to secure bcrypt hash
+    if security.is_legacy_plaintext(user.password):
+        try:
+            user.password = security.get_password_hash(password)
+            db.commit()
+            db.refresh(user)
+        except Exception:
+            db.rollback()
+
+    # Generate cryptographic signed session token
+    signed_token = security.create_access_token({
+        "sub": user.id,
+        "role": user.role,
+        "username": user.username,
+        "name": user.name,
+    })
 
     allowed_pages = ["*"]
     if user.role == "manager":
@@ -119,7 +145,7 @@ def login(payload: LoginPayload, db: Session = Depends(get_db)):
         "username": user.username,
         "name": user.name,
         "role": user.role,
-        "token": f"fc-session-{user.role}-{user.id}",
+        "token": signed_token,
         "permissions": {
             "all": user.role == "admin",
             "read_only": user.role == "owner",
@@ -152,7 +178,6 @@ def get_auth_roles():
             "badge": "Full Access",
             "description": "Full access to all modules, financial ledgers, and actions.",
             "default_username": "admin",
-            "default_password": "admin123",
         },
         {
             "role": "owner",
@@ -160,7 +185,6 @@ def get_auth_roles():
             "badge": "Read Only",
             "description": "Complete view of reports, revenue, events, and ledgers without edit/delete rights.",
             "default_username": "owner",
-            "default_password": "owner123",
         },
         {
             "role": "manager",
@@ -168,9 +192,46 @@ def get_auth_roles():
             "badge": "Staff Payments Only",
             "description": "Dedicated access to the Staff directory and Staff Wage Disbursements.",
             "default_username": "manager",
-            "default_password": "manager123",
         },
     ]
+
+
+# ============================================================
+# LOCAL DATABASE BACKUP ENDPOINTS (PERMANENT DRIVE)
+# ============================================================
+
+@app.get("/backup/status")
+def get_database_backup_status():
+    """Retrieve the current permanent backup directory, file count, and latest backups."""
+    return backup_manager.get_backup_status()
+
+
+@app.post("/backup/run")
+def trigger_database_backup():
+    """Immediately trigger a PostgreSQL database dump to the permanent backup directory."""
+    result = backup_manager.execute_backup()
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "Backup failed."))
+    return result
+
+
+class BackupConfigPayload(BaseModel):
+    backup_dir: str
+
+
+@app.post("/backup/config")
+def update_backup_config(payload: BackupConfigPayload):
+    """Update or verify the permanent backup folder directory path."""
+    target_dir = payload.backup_dir.strip()
+    if not target_dir:
+        raise HTTPException(status_code=400, detail="Backup directory path cannot be empty.")
+    try:
+        os.makedirs(target_dir, exist_ok=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot create or access directory: {str(e)}")
+    
+    os.environ["BACKUP_DIR"] = target_dir
+    return {"message": "Backup directory updated successfully", "backup_dir": target_dir}
 
 
 # ============================================================
