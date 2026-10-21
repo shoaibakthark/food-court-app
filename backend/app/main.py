@@ -3103,16 +3103,6 @@ def get_kitchen_duties(
                 }
                 continue
 
-            same_day_p = payments_by_date.get(dt.duty_date)
-            if same_day_p and same_day_p.amount >= wage:
-                duty_coverage[dt.id] = {
-                    'paid_today': True,
-                    'paid_amount': wage,
-                    'payment_mode': same_day_p.payment_mode or 'Cash',
-                    'payment_status': 'paid',
-                }
-                continue
-
             if remaining_pool >= wage:
                 remaining_pool -= wage
                 first_mode = p_list[0].payment_mode if p_list else 'Cash'

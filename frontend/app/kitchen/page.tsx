@@ -1549,12 +1549,11 @@ export default function KitchenPage() {
                               }
 
                               const isFullySettled = selectedStaff && Number(selectedStaff.balance || 0) <= 0 && Number(selectedStaff.total_wages || 0) > 0;
-                              const sameDayPay = selectedStaffPayments.find((p) => p.payment_date === d.duty_date);
-                              const isSameDayPaid = sameDayPay && Number(sameDayPay.amount || 0) >= wage;
-                              const isPaid = d.paid_today || isFullySettled || isSameDayPaid;
+                              const isPaid = isFullySettled || Boolean(d.paid_today);
+                              const paidAmt = Number(d.paid_amount || 0);
 
                               if (isPaid) {
-                                const mode = sameDayPay?.payment_mode || d.payment_mode || "Cash";
+                                const mode = d.payment_mode || "Cash";
                                 return (
                                   <span
                                     style={{
@@ -1574,6 +1573,51 @@ export default function KitchenPage() {
                                     <span>✓</span>
                                     <span>Paid ({mode})</span>
                                   </span>
+                                );
+                              }
+
+                              if (paidAmt > 0 && paidAmt < wage) {
+                                const remainingDue = wage - paidAmt;
+                                return (
+                                  <div style={{ display: "inline-flex", alignItems: "center", gap: "6px", justifyContent: "center" }}>
+                                    <span
+                                      style={{
+                                        padding: "3px 8px",
+                                        borderRadius: "6px",
+                                        background: "#fef3c7",
+                                        color: "#b45309",
+                                        fontWeight: 700,
+                                        fontSize: "11px",
+                                        border: "1px solid #fde68a",
+                                      }}
+                                      title={`₹${paidAmt} paid, ₹${remainingDue} balance remaining`}
+                                    >
+                                      🟡 Partial (₹{remainingDue} due)
+                                    </span>
+                                    {selectedStaff && (
+                                      <button
+                                        type="button"
+                                        onClick={() => openPaymentModal(selectedStaff, d)}
+                                        style={{
+                                          padding: "3px 8px",
+                                          borderRadius: "6px",
+                                          border: "1px solid #a7f3d0",
+                                          background: "#ecfdf5",
+                                          color: "#047857",
+                                          fontWeight: 700,
+                                          fontSize: "11px",
+                                          cursor: "pointer",
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "3px",
+                                        }}
+                                        title={`Pay remaining ₹${remainingDue}`}
+                                      >
+                                        <span>💵</span>
+                                        <span>Pay</span>
+                                      </button>
+                                    )}
+                                  </div>
                                 );
                               }
 
