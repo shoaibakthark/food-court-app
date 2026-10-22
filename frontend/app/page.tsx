@@ -140,6 +140,9 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [chartTimeframe, setChartTimeframe] = useState<6 | 12>(6);
+  const [chartSeries, setChartSeries] = useState<"both" | "revenue" | "expenses">("both");
+  const [hoveredPointIndex, setHoveredPointIndex] = useState<number | null>(null);
 
   // ==========================================================
   // LOAD DASHBOARD DATA (EVENTS, PAYMENTS, STAFF, KITCHEN, EXPENSES)
@@ -420,6 +423,117 @@ export default function Home() {
     if (totalRevenue <= 0) return 0;
     return Math.round((netProfit / totalRevenue) * 100);
   }, [netProfit, totalRevenue]);
+
+  // ==========================================================
+  // COMPACT INDIAN NUMBER FORMATTER (FOR CHART Y-AXIS)
+  // ==========================================================
+
+  const formatCompactIndian = (num: number) => {
+    if (num >= 10000000) {
+      const cr = (num / 10000000).toFixed(1).replace(/\.0$/, "");
+      return `₹${cr}Cr`;
+    }
+    if (num >= 100000) {
+      const lk = (num / 100000).toFixed(1).replace(/\.0$/, "");
+      return `₹${lk}L`;
+    }
+    if (num >= 1000) {
+      const k = (num / 1000).toFixed(1).replace(/\.0$/, "");
+      return `₹${k}k`;
+    }
+    return `₹${num}`;
+  };
+
+  // ==========================================================
+  // MONTHLY REVENUE & EXPENSES CHART AGGREGATION
+  // ==========================================================
+
+  const monthlyChartData = useMemo(() => {
+    const now = new Date();
+    let anchor = new Date(now.getFullYear(), now.getMonth(), 1);
+    events.forEach((e) => {
+      if (e.date) {
+        const d = new Date(e.date);
+        if (d > anchor) anchor = new Date(d.getFullYear(), d.getMonth(), 1);
+      }
+    });
+
+    const months: {
+      key: string;
+      shortMonth: string;
+      fullMonth: string;
+      year: number;
+      revenue: number;
+      eventsCount: number;
+      expenses: number;
+      expenseCount: number;
+    }[] = [];
+
+    for (let i = chartTimeframe - 1; i >= 0; i--) {
+      const d = new Date(anchor.getFullYear(), anchor.getMonth() - i, 1);
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const key = `${yyyy}-${mm}`;
+      const shortMonth = d.toLocaleString("en-IN", { month: "short" });
+      const fullMonth = d.toLocaleString("en-IN", { month: "long", year: "numeric" });
+      months.push({
+        key,
+        shortMonth,
+        fullMonth,
+        year: yyyy,
+        revenue: 0,
+        eventsCount: 0,
+        expenses: 0,
+        expenseCount: 0,
+      });
+    }
+
+    events.forEach((e) => {
+      if (!e.date) return;
+      const key = e.date.slice(0, 7);
+      const m = months.find((item) => item.key === key);
+      if (m) {
+        m.revenue += Number(e.quote ?? e.total_estimate ?? 0);
+        m.eventsCount += 1;
+      }
+    });
+
+    expensesList.forEach((exp) => {
+      if (!exp.expense_date) return;
+      const key = exp.expense_date.slice(0, 7);
+      const m = months.find((item) => item.key === key);
+      if (m) {
+        m.expenses += Number(exp.amount || 0);
+        m.expenseCount += 1;
+      }
+    });
+
+    const rawMax = Math.max(
+      ...months.map((m) => Math.max(m.revenue, chartSeries !== "revenue" ? m.expenses : 0)),
+      10000
+    );
+
+    let topVal = 100000;
+    if (rawMax > 10000000) {
+      topVal = Math.ceil(rawMax / 5000000) * 5000000;
+    } else if (rawMax > 1000000) {
+      topVal = Math.ceil(rawMax / 1000000) * 1000000;
+    } else if (rawMax > 100000) {
+      topVal = Math.ceil(rawMax / 200000) * 200000;
+    } else {
+      topVal = Math.ceil(rawMax / 25000) * 25000;
+    }
+
+    const timeframeTotalRev = months.reduce((acc, m) => acc + m.revenue, 0);
+    const timeframeTotalExp = months.reduce((acc, m) => acc + m.expenses, 0);
+
+    return {
+      months,
+      maxVal: topVal,
+      timeframeTotalRev,
+      timeframeTotalExp,
+    };
+  }, [events, expensesList, chartTimeframe, chartSeries]);
 
   // ==========================================================
   // UPCOMING EVENTS
@@ -960,17 +1074,26 @@ export default function Home() {
 
                 </div>
 
-                <select defaultValue="6">
-
-                  <option value="6">
-                    Last 6 months
-                  </option>
-
-                  <option value="12">
-                    Last 12 months
-                  </option>
-
-                </select>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                  <select
+                    value={chartTimeframe}
+                    onChange={(e) => setChartTimeframe(Number(e.target.value) as 6 | 12)}
+                    style={{
+                      padding: "6px 12px",
+                      borderRadius: "8px",
+                      border: "1px solid #ddd6fe",
+                      background: "#fdfcff",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      color: "#6d28d9",
+                      cursor: "pointer",
+                      outline: "none",
+                    }}
+                  >
+                    <option value={6}>Last 6 months</option>
+                    <option value={12}>Last 12 months</option>
+                  </select>
+                </div>
 
               </div>
 
@@ -1036,51 +1159,371 @@ export default function Home() {
                 </div>
               </div>
 
-              <div className="chart">
-
-                <div className="chart-y">
-
-                  <span>
-                    ₹{formatMoney(totalRevenue)}
-                  </span>
-
-                  <span>
-                    ₹0
-                  </span>
-
-                </div>
-
-                <div className="chart-area">
-
-                  <div
-                    className="chart-line"
-                    style={{
-                      height: "100%",
-                    }}
-                  >
-
-                    <span className="point p1"></span>
-                    <span className="point p2"></span>
-                    <span className="point p3"></span>
-                    <span className="point p4"></span>
-                    <span className="point p5"></span>
-                    <span className="point p6"></span>
-
+              {/* REVENUE & EXPENSES CHART */}
+              <div className="chart-container">
+                {/* CHART SERIES CONTROLS & TIMEFRAME STATS */}
+                <div className="chart-controls-bar">
+                  <div className="chart-series-pills">
+                    <button
+                      type="button"
+                      onClick={() => setChartSeries("both")}
+                      className={`chart-pill ${chartSeries === "both" ? "active-all" : ""}`}
+                    >
+                      All (Revenue & Expenses)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartSeries("revenue")}
+                      className={`chart-pill ${chartSeries === "revenue" ? "active-revenue" : ""}`}
+                    >
+                      <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: "#7c3aed" }}></span>
+                      Revenue
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setChartSeries("expenses")}
+                      className={`chart-pill ${chartSeries === "expenses" ? "active-expenses" : ""}`}
+                    >
+                      <span style={{ display: "inline-block", width: "8px", height: "8px", borderRadius: "50%", background: "#ef4444" }}></span>
+                      Expenses
+                    </button>
                   </div>
 
-                  <div className="chart-months">
-
-                    <span>May</span>
-                    <span>Jun</span>
-                    <span>Jul</span>
-                    <span>Aug</span>
-                    <span>Sep</span>
-                    <span>Oct</span>
-
+                  <div style={{ fontSize: "11px", color: "#71717a", fontWeight: 600 }}>
+                    Period Revenue: <strong style={{ color: "#7c3aed" }}>₹{formatMoney(monthlyChartData.timeframeTotalRev)}</strong>
                   </div>
-
                 </div>
 
+                {(() => {
+                  const { months, maxVal } = monthlyChartData;
+                  const svgWidth = 650;
+                  const svgHeight = 210;
+                  const paddingLeft = 58;
+                  const paddingRight = 24;
+                  const paddingTop = 22;
+                  const paddingBottom = 32;
+                  const chartW = svgWidth - paddingLeft - paddingRight;
+                  const chartH = svgHeight - paddingTop - paddingBottom;
+                  const baselineY = paddingTop + chartH;
+
+                  // Compute coordinates for each month
+                  const count = months.length;
+                  const revPts = months.map((m, i) => {
+                    const x = paddingLeft + (count <= 1 ? chartW / 2 : (i / (count - 1)) * chartW);
+                    const norm = Math.min(1, Math.max(0, m.revenue / maxVal));
+                    const y = baselineY - norm * chartH;
+                    return { x, y, month: m, index: i };
+                  });
+
+                  const expPts = months.map((m, i) => {
+                    const x = paddingLeft + (count <= 1 ? chartW / 2 : (i / (count - 1)) * chartW);
+                    const norm = Math.min(1, Math.max(0, m.expenses / maxVal));
+                    const y = baselineY - norm * chartH;
+                    return { x, y, month: m, index: i };
+                  });
+
+                  // Build smooth S-curves
+                  const buildSmoothPath = (pts: { x: number; y: number }[]) => {
+                    if (pts.length === 0) return "";
+                    let d = `M ${pts[0].x.toFixed(1)} ${pts[0].y.toFixed(1)}`;
+                    for (let i = 0; i < pts.length - 1; i++) {
+                      const p0 = pts[i];
+                      const p1 = pts[i + 1];
+                      const cp1x = p0.x + (p1.x - p0.x) / 2;
+                      const cp1y = p0.y;
+                      const cp2x = p0.x + (p1.x - p0.x) / 2;
+                      const cp2y = p1.y;
+                      d += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p1.x.toFixed(1)} ${p1.y.toFixed(1)}`;
+                    }
+                    return d;
+                  };
+
+                  const revLinePath = buildSmoothPath(revPts);
+                  const revAreaPath = revPts.length > 0
+                    ? `${revLinePath} L ${revPts[revPts.length - 1].x.toFixed(1)} ${baselineY} L ${revPts[0].x.toFixed(1)} ${baselineY} Z`
+                    : "";
+
+                  const expLinePath = buildSmoothPath(expPts);
+                  const expAreaPath = expPts.length > 0
+                    ? `${expLinePath} L ${expPts[expPts.length - 1].x.toFixed(1)} ${baselineY} L ${expPts[0].x.toFixed(1)} ${baselineY} Z`
+                    : "";
+
+                  // Y ticks (4 levels: 0%, 33.3%, 66.7%, 100%)
+                  const yTicks = [
+                    { val: maxVal, y: paddingTop },
+                    { val: Math.round((maxVal * 2) / 3), y: paddingTop + chartH / 3 },
+                    { val: Math.round(maxVal / 3), y: paddingTop + (chartH * 2) / 3 },
+                    { val: 0, y: baselineY },
+                  ];
+
+                  const hoveredData = hoveredPointIndex !== null && revPts[hoveredPointIndex]
+                    ? revPts[hoveredPointIndex]
+                    : null;
+
+                  return (
+                    <svg
+                      viewBox={`0 0 ${svgWidth} ${svgHeight}`}
+                      className="chart-svg"
+                      style={{ overflow: "visible" }}
+                    >
+                      <defs>
+                        <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#7c3aed" stopOpacity="0.28" />
+                          <stop offset="80%" stopColor="#7c3aed" stopOpacity="0.04" />
+                          <stop offset="100%" stopColor="#7c3aed" stopOpacity="0" />
+                        </linearGradient>
+
+                        <linearGradient id="expensesGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor="#ef4444" stopOpacity="0.22" />
+                          <stop offset="80%" stopColor="#ef4444" stopOpacity="0.03" />
+                          <stop offset="100%" stopColor="#ef4444" stopOpacity="0" />
+                        </linearGradient>
+
+                        <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+                          <feDropShadow dx="0" dy="4" stdDeviation="4" floodColor="#000000" floodOpacity="0.12" />
+                        </filter>
+                      </defs>
+
+                      {/* Horizontal Gridlines & Y Axis Ticks */}
+                      {yTicks.map((tick, i) => (
+                        <g key={i}>
+                          <line
+                            x1={paddingLeft}
+                            y1={tick.y}
+                            x2={svgWidth - paddingRight}
+                            y2={tick.y}
+                            stroke="#e9e5f0"
+                            strokeDasharray={i === yTicks.length - 1 ? undefined : "3 3"}
+                            strokeWidth={i === yTicks.length - 1 ? "1.5" : "1"}
+                          />
+                          <text
+                            x={paddingLeft - 8}
+                            y={tick.y + 4}
+                            textAnchor="end"
+                            fontSize="10"
+                            fontWeight="600"
+                            fill="#8a8490"
+                          >
+                            {formatCompactIndian(tick.val)}
+                          </text>
+                        </g>
+                      ))}
+
+                      {/* Revenue Area & Line */}
+                      {(chartSeries === "both" || chartSeries === "revenue") && (
+                        <>
+                          <path d={revAreaPath} fill="url(#revenueGrad)" />
+                          <path
+                            d={revLinePath}
+                            fill="none"
+                            stroke="#7c3aed"
+                            strokeWidth="3"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </>
+                      )}
+
+                      {/* Expenses Area & Line */}
+                      {(chartSeries === "both" || chartSeries === "expenses") && (
+                        <>
+                          <path d={expAreaPath} fill="url(#expensesGrad)" />
+                          <path
+                            d={expLinePath}
+                            fill="none"
+                            stroke="#ef4444"
+                            strokeWidth="2.5"
+                            strokeDasharray={chartSeries === "both" ? "4 4" : undefined}
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </>
+                      )}
+
+                      {/* X Axis Month Labels */}
+                      {revPts.map((p, i) => (
+                        <text
+                          key={i}
+                          x={p.x}
+                          y={baselineY + 18}
+                          textAnchor="middle"
+                          fontSize="11"
+                          fontWeight={hoveredPointIndex === i ? "800" : "600"}
+                          fill={hoveredPointIndex === i ? "#7c3aed" : "#71717a"}
+                          style={{ transition: "all 0.15s ease" }}
+                        >
+                          {p.month.shortMonth}
+                        </text>
+                      ))}
+
+                      {/* Hover Guideline */}
+                      {hoveredData && (
+                        <line
+                          x1={hoveredData.x}
+                          y1={paddingTop}
+                          x2={hoveredData.x}
+                          y2={baselineY}
+                          stroke="#7c3aed"
+                          strokeWidth="1.5"
+                          strokeDasharray="3 3"
+                          opacity="0.7"
+                        />
+                      )}
+
+                      {/* Revenue Data Points */}
+                      {(chartSeries === "both" || chartSeries === "revenue") &&
+                        revPts.map((p, i) => {
+                          const isHovered = hoveredPointIndex === i;
+                          const hasData = p.month.revenue > 0;
+                          return (
+                            <g key={`rev-pt-${i}`}>
+                              {isHovered && (
+                                <circle
+                                  cx={p.x}
+                                  cy={p.y}
+                                  r="9"
+                                  fill="#7c3aed"
+                                  opacity="0.2"
+                                />
+                              )}
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={isHovered ? "6" : hasData ? "4.5" : "3"}
+                                fill="#ffffff"
+                                stroke="#7c3aed"
+                                strokeWidth={isHovered ? "3" : hasData ? "2.5" : "1.5"}
+                                style={{ transition: "all 0.15s ease" }}
+                              />
+                            </g>
+                          );
+                        })}
+
+                      {/* Expenses Data Points */}
+                      {(chartSeries === "both" || chartSeries === "expenses") &&
+                        expPts.map((p, i) => {
+                          const isHovered = hoveredPointIndex === i;
+                          const hasData = p.month.expenses > 0;
+                          return (
+                            <g key={`exp-pt-${i}`}>
+                              {isHovered && (
+                                <circle
+                                  cx={p.x}
+                                  cy={p.y}
+                                  r="8"
+                                  fill="#ef4444"
+                                  opacity="0.2"
+                                />
+                              )}
+                              <circle
+                                cx={p.x}
+                                cy={p.y}
+                                r={isHovered ? "5.5" : hasData ? "4" : "2.5"}
+                                fill="#ffffff"
+                                stroke="#ef4444"
+                                strokeWidth={isHovered ? "2.5" : hasData ? "2" : "1.2"}
+                                style={{ transition: "all 0.15s ease" }}
+                              />
+                            </g>
+                          );
+                        })}
+
+                      {/* Interactive Hover Columns */}
+                      {revPts.map((p, i) => {
+                        const step = count > 1 ? chartW / (count - 1) : chartW;
+                        const colX = p.x - step / 2;
+                        return (
+                          <rect
+                            key={`hit-${i}`}
+                            x={Math.max(0, colX)}
+                            y={paddingTop}
+                            width={step}
+                            height={chartH + 25}
+                            fill="transparent"
+                            style={{ cursor: "pointer" }}
+                            onMouseEnter={() => setHoveredPointIndex(i)}
+                            onMouseLeave={() => setHoveredPointIndex(null)}
+                          />
+                        );
+                      })}
+
+                      {/* Floating Interactive Tooltip */}
+                      {hoveredData && (
+                        (() => {
+                          const m = hoveredData.month;
+                          const boxW = 160;
+                          const boxH = 68;
+                          let tipX = hoveredData.x - boxW / 2;
+                          if (tipX < 10) tipX = 10;
+                          if (tipX + boxW > svgWidth - 10) tipX = svgWidth - boxW - 10;
+                          let tipY = Math.min(hoveredData.y, expPts[hoveredData.index]?.y || hoveredData.y) - boxH - 12;
+                          if (tipY < 4) tipY = paddingTop + 10;
+
+                          return (
+                            <g filter="url(#shadow)" style={{ pointerEvents: "none" }}>
+                              <rect
+                                x={tipX}
+                                y={tipY}
+                                width={boxW}
+                                height={boxH}
+                                rx="8"
+                                fill="#1e0836"
+                                opacity="0.96"
+                              />
+                              <text
+                                x={tipX + 10}
+                                y={tipY + 16}
+                                fill="#ffffff"
+                                fontSize="11"
+                                fontWeight="800"
+                              >
+                                {m.fullMonth}
+                              </text>
+
+                              <text
+                                x={tipX + 10}
+                                y={tipY + 34}
+                                fill="#c4b5fd"
+                                fontSize="10"
+                                fontWeight="700"
+                              >
+                                ● Revenue: ₹{formatMoney(m.revenue)}
+                              </text>
+                              <text
+                                x={tipX + boxW - 10}
+                                y={tipY + 34}
+                                fill="#a78bfa"
+                                fontSize="9"
+                                textAnchor="end"
+                              >
+                                ({m.eventsCount} events)
+                              </text>
+
+                              <text
+                                x={tipX + 10}
+                                y={tipY + 52}
+                                fill="#fca5a5"
+                                fontSize="10"
+                                fontWeight="700"
+                              >
+                                ● Expenses: ₹{formatMoney(m.expenses)}
+                              </text>
+                              <text
+                                x={tipX + boxW - 10}
+                                y={tipY + 52}
+                                fill="#f87171"
+                                fontSize="9"
+                                textAnchor="end"
+                              >
+                                ({m.expenseCount} items)
+                              </text>
+                            </g>
+                          );
+                        })()
+                      )}
+                    </svg>
+                  );
+                })()}
               </div>
 
             </div>
