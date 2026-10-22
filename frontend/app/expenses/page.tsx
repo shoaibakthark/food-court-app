@@ -614,7 +614,7 @@ export default function ExpensesPage() {
     });
 
     // 2. Add Settlements (Credit Clearances)
-    if (entryTypeFilter !== "credit" && entryTypeFilter !== "paid") {
+    if (entryTypeFilter === "clearances") {
       settlements.forEach((s) => {
         const sDate = s.settlement_date ? s.settlement_date.slice(0, 10) : "";
 
@@ -1404,112 +1404,205 @@ export default function ExpensesPage() {
               display: "grid",
               gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))",
               gap: "16px",
-              marginBottom: "24px",
+              marginBottom: "18px",
             }}
           >
             {/* 1. Total Expenses */}
             <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setActiveTab("general");
+                setEntryTypeFilter("all");
+                setSelectedVendor(null);
+              }}
               style={{
                 background: "#ffffff",
                 border: "1px solid #e2e8f0",
                 borderRadius: "12px",
                 padding: "18px 20px",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                position: "relative",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                minHeight: "120px",
+                minHeight: "115px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
               }}
             >
-              <div style={{ fontSize: "12px", color: "#475569", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Total Expenditure
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#475569", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                  Total Expenditure
+                </span>
+                <span style={{ fontSize: "16px" }}>💳</span>
               </div>
-              <div style={{ fontSize: "26px", fontWeight: 800, color: "#0f172a", marginTop: "6px" }}>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#0f172a", marginTop: "4px" }}>
                 ₹{formatMoney(metrics.totalExpense)}
               </div>
-              <div style={{ fontSize: "12px", color: "#64748b", marginTop: "6px" }}>
-                Across {expenses.length} purchases ({formatMoney(metrics.directPaidTotal)} cash, {formatMoney(metrics.creditIncurredTotal)} credit)
+              <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px" }}>
+                {expenses.length} purchases recorded (Click to view)
               </div>
             </div>
 
             {/* 2. Direct Paid (Cash / UPI / Bank) */}
             <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setActiveTab("general");
+                setEntryTypeFilter("paid");
+                setSelectedVendor(null);
+              }}
               style={{
                 background: "#ffffff",
                 border: "1px solid #e2e8f0",
                 borderRadius: "12px",
                 padding: "18px 20px",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                position: "relative",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                minHeight: "120px",
+                minHeight: "115px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
               }}
             >
-              <div style={{ fontSize: "12px", color: "#0284c7", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Direct Paid (Cash / UPI)
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#0284c7", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                  Direct Paid (Cash / UPI)
+                </span>
+                <span style={{ fontSize: "16px" }}>🟢</span>
               </div>
-              <div style={{ fontSize: "26px", fontWeight: 800, color: "#0369a1", marginTop: "6px" }}>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#0369a1", marginTop: "4px" }}>
                 ₹{formatMoney(metrics.directPaidTotal)}
               </div>
-              <div style={{ fontSize: "12px", color: "#0284c7", marginTop: "6px" }}>
-                {metrics.directPaidCount} cash / digital payments (Settled immediately)
+              <div style={{ fontSize: "12px", color: "#0284c7", marginTop: "4px" }}>
+                {metrics.directPaidCount} payments settled on the spot
               </div>
             </div>
 
             {/* 3. Supplier Credit Cleared */}
             <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setActiveTab("settlement");
+                setSelectedVendor(null);
+              }}
               style={{
                 background: "#ffffff",
                 border: "1px solid #e2e8f0",
                 borderRadius: "12px",
                 padding: "18px 20px",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                position: "relative",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                minHeight: "120px",
+                minHeight: "115px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
               }}
             >
-              <div style={{ fontSize: "12px", color: "#059669", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Supplier Credit Cleared
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: "#059669", fontWeight: 700, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                  Supplier Credit Cleared
+                </span>
+                <span style={{ fontSize: "16px" }}>🤝</span>
               </div>
-              <div style={{ fontSize: "26px", fontWeight: 800, color: "#047857", marginTop: "6px" }}>
+              <div style={{ fontSize: "26px", fontWeight: 800, color: "#047857", marginTop: "4px" }}>
                 ₹{formatMoney(metrics.totalSettled)}
               </div>
-              <div style={{ fontSize: "12px", color: "#059669", marginTop: "6px" }}>
+              <div style={{ fontSize: "12px", color: "#059669", marginTop: "4px" }}>
                 {settlements.length} settlement payments to suppliers
               </div>
             </div>
 
             {/* 4. Net Supplier Credit Due */}
             <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setActiveTab("vendors");
+                setVendorStatusFilter("due");
+                setSelectedVendor(null);
+              }}
               style={{
                 background: metrics.netCreditDue > 0 ? "#fffafb" : "#ffffff",
                 border: metrics.netCreditDue > 0 ? "1px solid #fecaca" : "1px solid #e2e8f0",
                 borderRadius: "12px",
                 padding: "18px 20px",
                 boxShadow: "0 1px 3px rgba(0,0,0,0.05)",
-                position: "relative",
                 display: "flex",
                 flexDirection: "column",
                 justifyContent: "space-between",
-                minHeight: "120px",
+                minHeight: "115px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
               }}
             >
-              <div style={{ fontSize: "12px", color: metrics.netCreditDue > 0 ? "#b91c1c" : "#059669", fontWeight: 800, letterSpacing: "0.5px", textTransform: "uppercase" }}>
-                Net Supplier Credit Due
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "12px", color: metrics.netCreditDue > 0 ? "#b91c1c" : "#059669", fontWeight: 800, letterSpacing: "0.5px", textTransform: "uppercase" }}>
+                  Net Supplier Khata Due
+                </span>
+                <span style={{ fontSize: "16px" }}>🔴</span>
               </div>
-              <div style={{ fontSize: "28px", fontWeight: 900, color: metrics.netCreditDue > 0 ? "#dc2626" : "#059669", marginTop: "6px" }}>
+              <div style={{ fontSize: "28px", fontWeight: 900, color: metrics.netCreditDue > 0 ? "#dc2626" : "#059669", marginTop: "4px" }}>
                 ₹{formatMoney(metrics.netCreditDue)}
               </div>
-              <div style={{ fontSize: "12px", color: metrics.netCreditDue > 0 ? "#b91c1c" : "#059669", marginTop: "6px", fontWeight: 600 }}>
-                {pendingVendorsCount > 0 ? `${pendingVendorsCount} suppliers waiting for payment` : "✓ All supplier accounts fully settled"}
+              <div style={{ fontSize: "12px", color: metrics.netCreditDue > 0 ? "#b91c1c" : "#059669", marginTop: "4px", fontWeight: 600 }}>
+                {pendingVendorsCount > 0 ? `${pendingVendorsCount} suppliers waiting for payment →` : "✓ All supplier accounts fully settled"}
               </div>
             </div>
+          </div>
+
+          {/* QUICK HELP GUIDE STRIP */}
+          <div
+            className="no-print"
+            style={{
+              background: "#fbf9fd",
+              border: "1px solid #f0ebf8",
+              borderRadius: "10px",
+              padding: "10px 16px",
+              marginBottom: "20px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              flexWrap: "wrap",
+              gap: "10px",
+              fontSize: "12px",
+              color: "#64748b",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "16px", flexWrap: "wrap" }}>
+              <span>
+                <strong style={{ color: "#059669" }}>🟢 Direct Paid:</strong> Paid immediately via Cash, UPI, or Bank.
+              </span>
+              <span>
+                <strong style={{ color: "#dc2626" }}>🔴 Khata Credit:</strong> Purchased on credit from suppliers to be settled later.
+              </span>
+              <span>
+                <strong style={{ color: "#0284c7" }}>🤝 Settlement:</strong> Clear or partially pay a supplier's credit dues.
+              </span>
+            </div>
+
+            {!isOwner && (
+              <button
+                type="button"
+                onClick={() => openClearSettlementModal()}
+                style={{
+                  background: "#059669",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "6px",
+                  padding: "4px 10px",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                }}
+              >
+                🤝 Quick Settle Supplier
+              </button>
+            )}
           </div>
 
           {/* LEDGER NAVIGATION TABS */}
@@ -1534,7 +1627,7 @@ export default function ExpensesPage() {
                 background: activeTab === "general" ? "#fff" : "transparent",
                 border: "none",
                 borderBottom: activeTab === "general" ? "3px solid #2563eb" : "3px solid transparent",
-                padding: "12px 16px",
+                padding: "12px 18px",
                 borderRadius: "8px 8px 0 0",
                 fontSize: "14px",
                 fontWeight: activeTab === "general" ? 800 : 600,
@@ -1546,7 +1639,7 @@ export default function ExpensesPage() {
                 marginBottom: "-2px",
               }}
             >
-              <span>📜</span> Unified Expenses Ledger ({unifiedLedgerEntries.length})
+              <span>📋</span> All Expenses ({expenses.length})
             </button>
 
             <button
@@ -1559,7 +1652,7 @@ export default function ExpensesPage() {
                 background: activeTab === "vendors" ? "#fff" : "transparent",
                 border: "none",
                 borderBottom: activeTab === "vendors" ? "3px solid #2563eb" : "3px solid transparent",
-                padding: "12px 16px",
+                padding: "12px 18px",
                 borderRadius: "8px 8px 0 0",
                 fontSize: "14px",
                 fontWeight: activeTab === "vendors" ? 800 : 600,
@@ -1571,7 +1664,7 @@ export default function ExpensesPage() {
                 marginBottom: "-2px",
               }}
             >
-              <span>🏪</span> Supplier Accounts & Khata ({vendorAccounts.length})
+              <span>🏪</span> Supplier Khata & Dues ({vendorAccounts.length})
             </button>
 
             <button
@@ -1584,7 +1677,7 @@ export default function ExpensesPage() {
                 background: activeTab === "settlement" ? "#fff" : "transparent",
                 border: "none",
                 borderBottom: activeTab === "settlement" ? "3px solid #059669" : "3px solid transparent",
-                padding: "12px 16px",
+                padding: "12px 18px",
                 borderRadius: "8px 8px 0 0",
                 fontSize: "14px",
                 fontWeight: activeTab === "settlement" ? 800 : 600,
@@ -1596,7 +1689,7 @@ export default function ExpensesPage() {
                 marginBottom: "-2px",
               }}
             >
-              <span>🤝</span> Credit Clearances ({settlements.length})
+              <span>🧾</span> Payment Receipts ({settlements.length})
             </button>
 
             <button
@@ -1608,12 +1701,12 @@ export default function ExpensesPage() {
               style={{
                 background: activeTab === "audit" ? "#fff" : "transparent",
                 border: "none",
-                borderBottom: activeTab === "audit" ? "3px solid #2563eb" : "3px solid transparent",
-                padding: "12px 16px",
+                borderBottom: activeTab === "audit" ? "3px solid #7c3aed" : "3px solid transparent",
+                padding: "12px 18px",
                 borderRadius: "8px 8px 0 0",
                 fontSize: "14px",
                 fontWeight: activeTab === "audit" ? 800 : 600,
-                color: activeTab === "audit" ? "#2563eb" : "#64748b",
+                color: activeTab === "audit" ? "#7c3aed" : "#64748b",
                 cursor: "pointer",
                 display: "inline-flex",
                 alignItems: "center",
@@ -1621,16 +1714,16 @@ export default function ExpensesPage() {
                 marginBottom: "-2px",
               }}
             >
-              <span>📅</span> Monthly & Category Audit
+              <span>📊</span> Category & Monthly Summary
             </button>
           </div>
 
           {/* ======================================================== */}
-          {/* TAB 1: UNIFIED EXPENSES LEDGER */}
+          {/* TAB 1: ALL EXPENSES (CLEAN & SIMPLE) */}
           {/* ======================================================== */}
           {activeTab === "general" && (
             <div>
-              {/* Filter Controls Bar */}
+              {/* Single Compact Modern Filter Strip */}
               <div
                 className="no-print"
                 style={{
@@ -1639,250 +1732,147 @@ export default function ExpensesPage() {
                   borderRadius: "12px",
                   padding: "14px 18px",
                   boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-                  marginBottom: "20px",
+                  marginBottom: "18px",
                   display: "flex",
-                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
                   gap: "12px",
                 }}
               >
-                {/* Row 1: Entry Type Filter */}
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                    <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>
-                      Filter By:
-                    </span>
-                    {(
-                      [
-                        { id: "all", label: `All Records (${expenses.length + settlements.length})`, color: "#2563eb" },
-                        { id: "credit", label: `🔴 Unpaid Credit (${metrics.creditIncurredCount})`, color: "#dc2626" },
-                        { id: "paid", label: `🟢 Direct Paid (${metrics.directPaidCount})`, color: "#059669" },
-                        { id: "clearances", label: `🤝 Clearances (${settlements.length})`, color: "#0284c7" },
-                      ] as const
-                    ).map((t) => {
-                      const active = entryTypeFilter === t.id;
-                      return (
-                        <button
-                          key={t.id}
-                          type="button"
-                          onClick={() => setEntryTypeFilter(t.id)}
-                          style={{
-                            padding: "6px 14px",
-                            borderRadius: "20px",
-                            border: active ? `2px solid ${t.color}` : "1px solid #cbd5e1",
-                            background: active ? t.color : "#ffffff",
-                            color: active ? "#ffffff" : "#334155",
-                            fontSize: "12px",
-                            fontWeight: active ? 800 : 600,
-                            cursor: "pointer",
-                            transition: "all 0.15s ease",
-                            boxShadow: active ? `0 2px 6px ${t.color}33` : "none",
-                          }}
-                        >
-                          {t.label}
-                        </button>
-                      );
-                    })}
-                  </div>
+                {/* Left: Quick Status Filter Pills */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={() => setEntryTypeFilter("all")}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "20px",
+                      border: entryTypeFilter === "all" ? "2px solid #2563eb" : "1px solid #cbd5e1",
+                      background: entryTypeFilter === "all" ? "#2563eb" : "#ffffff",
+                      color: entryTypeFilter === "all" ? "#ffffff" : "#475569",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    All Expenses ({expenses.length})
+                  </button>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 600 }}>Sequence:</span>
+                  <button
+                    type="button"
+                    onClick={() => setEntryTypeFilter("paid")}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "20px",
+                      border: entryTypeFilter === "paid" ? "2px solid #059669" : "1px solid #cbd5e1",
+                      background: entryTypeFilter === "paid" ? "#059669" : "#ffffff",
+                      color: entryTypeFilter === "paid" ? "#ffffff" : "#047857",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <span>✓</span> Direct Paid ({metrics.directPaidCount})
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setEntryTypeFilter("credit")}
+                    style={{
+                      padding: "6px 14px",
+                      borderRadius: "20px",
+                      border: entryTypeFilter === "credit" ? "2px solid #dc2626" : "1px solid #cbd5e1",
+                      background: entryTypeFilter === "credit" ? "#dc2626" : "#ffffff",
+                      color: entryTypeFilter === "credit" ? "#ffffff" : "#b91c1c",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "5px",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <span>🔴</span> Khata Credit ({metrics.creditIncurredCount})
+                  </button>
+                </div>
+
+                {/* Right: Dropdowns & Period */}
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <select
+                    value={categoryFilter}
+                    onChange={(e) => setCategoryFilter(e.target.value)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: "8px",
+                      border: "1px solid #cbd5e1",
+                      background: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#1e0836",
+                      cursor: "pointer",
+                      outline: "none",
+                    }}
+                  >
+                    <option value="All">All Categories</option>
+                    {CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>
+                        {cat}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    value={datePreset}
+                    onChange={(e) => setDatePreset(e.target.value as DatePreset)}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: "8px",
+                      border: "1px solid #cbd5e1",
+                      background: "#ffffff",
+                      fontSize: "12px",
+                      fontWeight: 600,
+                      color: "#1e0836",
+                      cursor: "pointer",
+                      outline: "none",
+                    }}
+                  >
+                    <option value="all">All Time</option>
+                    <option value="this_month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="this_week">This Week</option>
+                    <option value="today">Today</option>
+                  </select>
+
+                  {(categoryFilter !== "All" || datePreset !== "all" || entryTypeFilter !== "all" || searchQuery) && (
                     <button
                       type="button"
-                      onClick={() => setSortOrder(sortOrder === "desc" ? "asc" : "desc")}
+                      onClick={() => {
+                        setCategoryFilter("All");
+                        setDatePreset("all");
+                        setEntryTypeFilter("all");
+                        setSearchQuery("");
+                      }}
                       style={{
-                        padding: "5px 12px",
-                        borderRadius: "6px",
-                        border: "1px solid #cbd5e1",
-                        background: "#ffffff",
-                        fontSize: "12px",
-                        color: "#0f172a",
+                        padding: "6px 10px",
+                        borderRadius: "8px",
+                        border: "1px solid #fecaca",
+                        background: "#fff5f5",
+                        color: "#b91c1c",
+                        fontSize: "11px",
                         fontWeight: 700,
                         cursor: "pointer",
                       }}
                     >
-                      {sortOrder === "desc" ? "Newest First ▾" : "Oldest First ▴"}
+                      ✕ Reset
                     </button>
-                  </div>
-                </div>
-
-                {/* Row 2: Period Presets */}
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "6px" }}>
-                  <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase", marginRight: "4px" }}>
-                    Period:
-                  </span>
-                  {(
-                    [
-                      { id: "all", label: "All Time" },
-                      { id: "this_month", label: "This Month" },
-                      { id: "last_month", label: "Last Month" },
-                      { id: "this_week", label: "This Week" },
-                      { id: "today", label: "Today" },
-                      { id: "custom", label: "Custom Range" },
-                    ] as const
-                  ).map((p) => {
-                    const active = datePreset === p.id;
-                    return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        onClick={() => setDatePreset(p.id)}
-                        style={{
-                          padding: "4px 10px",
-                          borderRadius: "16px",
-                          border: active ? "1px solid #0f172a" : "1px solid #cbd5e1",
-                          background: active ? "#0f172a" : "#ffffff",
-                          color: active ? "#ffffff" : "#475569",
-                          fontSize: "11px",
-                          fontWeight: active ? 700 : 500,
-                          cursor: "pointer",
-                        }}
-                      >
-                        {p.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Custom Date Range */}
-                {datePreset === "custom" && (
-                  <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "12px",
-                      padding: "10px 14px",
-                      background: "#f8fafc",
-                      borderRadius: "8px",
-                      border: "1px dashed #cbd5e1",
-                      flexWrap: "wrap",
-                    }}
-                  >
-                    <span style={{ fontSize: "12px", fontWeight: 700, color: "#2563eb" }}>Custom Dates:</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ fontSize: "12px", color: "#555" }}>From:</span>
-                      <input
-                        type="date"
-                        value={customStartDate}
-                        onChange={(e) => setCustomStartDate(e.target.value)}
-                        style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
-                      />
-                    </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ fontSize: "12px", color: "#555" }}>To:</span>
-                      <input
-                        type="date"
-                        value={customEndDate}
-                        onChange={(e) => setCustomEndDate(e.target.value)}
-                        style={{ padding: "4px 8px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* Row 3: Dropdowns & Period Totals */}
-                <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", justifyContent: "space-between", gap: "10px" }}>
-                  <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: "12px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Category:</span>
-                      <select
-                        value={categoryFilter}
-                        onChange={(e) => setCategoryFilter(e.target.value)}
-                        style={{
-                          height: "32px",
-                          padding: "0 10px",
-                          borderRadius: "6px",
-                          border: "1px solid #cbd5e1",
-                          background: "#ffffff",
-                          fontSize: "12px",
-                          color: "#0f172a",
-                          outline: "none",
-                        }}
-                      >
-                        <option value="All">All Categories</option>
-                        {CATEGORIES.map((cat) => (
-                          <option key={cat} value={cat}>
-                            {cat}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                      <span style={{ fontSize: "11px", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Allocation:</span>
-                      <select
-                        value={allocationFilter}
-                        onChange={(e) => setAllocationFilter(e.target.value)}
-                        style={{
-                          height: "32px",
-                          padding: "0 10px",
-                          borderRadius: "6px",
-                          border: "1px solid #cbd5e1",
-                          background: "#ffffff",
-                          fontSize: "12px",
-                          color: "#0f172a",
-                          outline: "none",
-                        }}
-                      >
-                        <option value="All">All Allocations</option>
-                        <option value="Event">Event Specific Only</option>
-                        <option value="Overhead">General Overhead Only</option>
-                      </select>
-                    </div>
-
-                    {(categoryFilter !== "All" || allocationFilter !== "All" || datePreset !== "all" || entryTypeFilter !== "all" || searchQuery) && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setCategoryFilter("All");
-                          setAllocationFilter("All");
-                          setDatePreset("all");
-                          setEntryTypeFilter("all");
-                          setCustomStartDate("");
-                          setCustomEndDate("");
-                          setSearchQuery("");
-                        }}
-                        style={{
-                          height: "32px",
-                          padding: "0 10px",
-                          borderRadius: "6px",
-                          border: "1px solid #fecaca",
-                          background: "#fff5f5",
-                          color: "#b91c1c",
-                          fontSize: "11px",
-                          fontWeight: 700,
-                          cursor: "pointer",
-                        }}
-                      >
-                        ✕ Reset Filters
-                      </button>
-                    )}
-                  </div>
-
-                  {/* Summary of Active Filtered Entries */}
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                    <div style={{ fontSize: "12px", color: "#64748b" }}>
-                      Total Spend: <strong style={{ color: "#0f172a" }}>₹{formatMoney(activeLedgerTotals.totalSpend)}</strong>
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#64748b" }}>
-                      Credit Taken: <strong style={{ color: "#dc2626" }}>₹{formatMoney(activeLedgerTotals.totalCredit)}</strong>
-                    </div>
-                    <div style={{ fontSize: "12px", color: "#64748b" }}>
-                      Credit Cleared: <strong style={{ color: "#059669" }}>₹{formatMoney(activeLedgerTotals.totalCleared)}</strong>
-                    </div>
-                    <div
-                      style={{
-                        fontSize: "13px",
-                        fontWeight: 800,
-                        color: activeLedgerTotals.netDue > 0 ? "#dc2626" : "#059669",
-                        background: activeLedgerTotals.netDue > 0 ? "#fef2f2" : "#ecfdf5",
-                        border: activeLedgerTotals.netDue > 0 ? "1px solid #fecaca" : "1px solid #a7f3d0",
-                        padding: "3px 10px",
-                        borderRadius: "8px",
-                      }}
-                    >
-                      Credit Due: ₹{formatMoney(activeLedgerTotals.netDue)}
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -1898,7 +1888,7 @@ export default function ExpensesPage() {
               >
                 {loading ? (
                   <div style={{ padding: "48px", textAlign: "center", color: "#64748b" }}>
-                    Loading expenses and credit ledger...
+                    Loading expenses...
                   </div>
                 ) : unifiedLedgerEntries.length === 0 ? (
                   <div style={{ padding: "50px 20px", textAlign: "center" }}>
@@ -1933,7 +1923,7 @@ export default function ExpensesPage() {
                       className="ledger-table"
                       style={{
                         width: "100%",
-                        minWidth: "960px",
+                        minWidth: "900px",
                         borderCollapse: "collapse",
                         fontSize: "13px",
                         textAlign: "left",
@@ -1950,21 +1940,10 @@ export default function ExpensesPage() {
                         >
                           <th style={{ padding: "12px 16px" }}>Date</th>
                           <th style={{ padding: "12px 16px" }}>Voucher / Bill #</th>
-                          <th style={{ padding: "12px 16px" }}>Payee / Vendor</th>
-                          <th style={{ padding: "12px 16px" }}>Particulars / Description</th>
-                          <th style={{ padding: "12px 16px" }}>Payment Type</th>
-                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Total Amount (₹)</th>
-                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Impact</th>
-                          <th
-                            style={{
-                              padding: "12px 16px",
-                              textAlign: "right",
-                              background: "#f1f5f9",
-                              color: "#0f172a",
-                            }}
-                          >
-                            Net Credit Due (₹)
-                          </th>
+                          <th style={{ padding: "12px 16px" }}>Expense Title & Details</th>
+                          <th style={{ padding: "12px 16px" }}>Supplier / Payee</th>
+                          <th style={{ padding: "12px 16px" }}>Payment Status</th>
+                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Amount (₹)</th>
                           <th className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>
                             Actions
                           </th>
@@ -1973,7 +1952,6 @@ export default function ExpensesPage() {
                       <tbody>
                         {unifiedLedgerEntries.map((row) => {
                           const isCredit = row.kind === "credit_bill";
-                          const isClearance = row.kind === "clearance";
                           const isPaid = row.kind === "paid_expense";
 
                           return (
@@ -1981,7 +1959,7 @@ export default function ExpensesPage() {
                               key={row.id}
                               style={{
                                 borderBottom: "1px solid #f1f5f9",
-                                background: isClearance ? "#f0fdf4" : isCredit ? "#fffafb" : "#ffffff",
+                                background: isCredit ? "#fffafb" : "#ffffff",
                                 transition: "background 0.15s ease",
                               }}
                             >
@@ -1996,14 +1974,58 @@ export default function ExpensesPage() {
                                   style={{
                                     padding: "2px 6px",
                                     borderRadius: "4px",
-                                    border: isClearance ? "1px solid #a7f3d0" : isCredit ? "1px solid #fecaca" : "1px solid #e2e8f0",
-                                    background: isClearance ? "#ecfdf5" : isCredit ? "#fef2f2" : "#f8fafc",
-                                    color: isClearance ? "#047857" : isCredit ? "#dc2626" : "#475569",
+                                    border: isCredit ? "1px solid #fecaca" : "1px solid #e2e8f0",
+                                    background: isCredit ? "#fef2f2" : "#f8fafc",
+                                    color: isCredit ? "#dc2626" : "#475569",
                                     fontWeight: 700,
                                   }}
                                 >
                                   {row.refNumber}
                                 </span>
+                              </td>
+
+                              {/* Title, Category & Event */}
+                              <td style={{ padding: "12px 16px" }}>
+                                <div style={{ fontWeight: 700, color: "#0f172a" }}>{row.title}</div>
+                                <div style={{ display: "flex", gap: "6px", alignItems: "center", marginTop: "4px", flexWrap: "wrap" }}>
+                                  <span
+                                    style={{
+                                      fontSize: "11px",
+                                      fontWeight: 700,
+                                      padding: "1px 6px",
+                                      borderRadius: "6px",
+                                      background: "#f1f5f9",
+                                      color: "#475569",
+                                      border: "1px solid #e2e8f0",
+                                    }}
+                                  >
+                                    {row.category}
+                                  </span>
+
+                                  {row.eventId && (
+                                    <Link
+                                      href={`/events/${row.eventId}`}
+                                      style={{
+                                        fontSize: "11px",
+                                        color: "#2563eb",
+                                        fontWeight: 700,
+                                        textDecoration: "none",
+                                        background: "#eff6ff",
+                                        padding: "1px 6px",
+                                        borderRadius: "6px",
+                                        border: "1px solid #dbeafe",
+                                      }}
+                                    >
+                                      Event #{row.eventId} {row.eventType ? `• ${row.eventType}` : ""}
+                                    </Link>
+                                  )}
+
+                                  {row.note && (
+                                    <span style={{ fontSize: "11px", color: "#64748b" }}>
+                                      • {row.note}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
 
                               {/* Vendor / Supplier */}
@@ -2026,47 +2048,18 @@ export default function ExpensesPage() {
                                       textAlign: "left",
                                       fontSize: "13px",
                                     }}
-                                    title="View vendor account statement"
+                                    title="Click to view supplier Khata statement"
                                   >
-                                    {row.vendor}
+                                    🏪 {row.vendor}
                                   </button>
                                 ) : (
                                   <span style={{ color: "#64748b", fontWeight: 500 }}>{row.vendor}</span>
                                 )}
                               </td>
 
-                              {/* Particulars */}
-                              <td style={{ padding: "12px 16px" }}>
-                                <div style={{ fontWeight: 600, color: "#0f172a" }}>{row.title}</div>
-                                {row.note && (
-                                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "2px", maxWidth: "260px" }}>
-                                    {row.note}
-                                  </div>
-                                )}
-                                {row.eventId && (
-                                  <div style={{ marginTop: "4px" }}>
-                                    <Link
-                                      href={`/events/${row.eventId}`}
-                                      style={{
-                                        fontSize: "11px",
-                                        color: "#2563eb",
-                                        fontWeight: 700,
-                                        textDecoration: "none",
-                                        background: "#eff6ff",
-                                        padding: "2px 6px",
-                                        borderRadius: "4px",
-                                        display: "inline-block",
-                                      }}
-                                    >
-                                      Event #{row.eventId} {row.eventType ? `• ${row.eventType}` : ""}
-                                    </Link>
-                                  </div>
-                                )}
-                              </td>
-
-                              {/* Status / Type */}
-                              <td style={{ padding: "10px 14px", whiteSpace: "nowrap" }}>
-                                {isCredit && (
+                              {/* Payment Status Badge */}
+                              <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
+                                {isCredit ? (
                                   <span
                                     style={{
                                       display: "inline-flex",
@@ -2081,10 +2074,9 @@ export default function ExpensesPage() {
                                       border: "1px solid #fecaca",
                                     }}
                                   >
-                                    <span style={{ fontSize: "8px" }}>🔴</span> Unpaid Credit
+                                    <span>🔴</span> Khata Credit
                                   </span>
-                                )}
-                                {isPaid && (
+                                ) : (
                                   <span
                                     style={{
                                       display: "inline-flex",
@@ -2102,72 +2094,20 @@ export default function ExpensesPage() {
                                     <span>✓</span> Paid ({row.paymentMode})
                                   </span>
                                 )}
-                                {isClearance && (
-                                  <span
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "4px",
-                                      fontSize: "11px",
-                                      fontWeight: 700,
-                                      padding: "4px 8px",
-                                      borderRadius: "6px",
-                                      background: "#f0fdf4",
-                                      color: "#059669",
-                                      border: "1px solid #bbf7d0",
-                                    }}
-                                  >
-                                    <span>🤝</span> Cleared ({row.paymentMode})
-                                  </span>
-                                )}
                               </td>
 
-                              {/* Total Amount */}
+                              {/* Amount */}
                               <td
                                 style={{
                                   padding: "12px 16px",
                                   textAlign: "right",
                                   fontWeight: 800,
                                   color: "#0f172a",
-                                  fontSize: "13px",
+                                  fontSize: "14px",
                                   whiteSpace: "nowrap",
                                 }}
                               >
                                 ₹{formatMoney(row.totalAmount)}
-                              </td>
-
-                              {/* Credit Impact */}
-                              <td
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "right",
-                                  fontWeight: 700,
-                                  fontSize: "13px",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                {isCredit ? (
-                                  <span style={{ color: "#dc2626" }}>+₹{formatMoney(row.creditIncurred)}</span>
-                                ) : isClearance ? (
-                                  <span style={{ color: "#059669" }}>-₹{formatMoney(row.creditCleared)}</span>
-                                ) : (
-                                  <span style={{ color: "#94a3b8", fontSize: "12px" }}>Settled (₹0 Due)</span>
-                                )}
-                              </td>
-
-                              {/* Net Credit Due */}
-                              <td
-                                style={{
-                                  padding: "12px 16px",
-                                  textAlign: "right",
-                                  fontWeight: 800,
-                                  color: row.runningCreditBalance > 0 ? "#dc2626" : "#059669",
-                                  fontSize: "13px",
-                                  background: "#f8fafc",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
-                                ₹{formatMoney(row.runningCreditBalance)}
                               </td>
 
                               {/* Actions */}
@@ -2178,12 +2118,12 @@ export default function ExpensesPage() {
                                       {isCredit && (
                                         <button
                                           type="button"
-                                          onClick={() => openMarkPaidModal(row.rawExpense!)}
-                                          title="Mark this credit bill as Paid"
+                                          onClick={() => openClearSettlementModal(row.vendor, row.totalAmount)}
+                                          title="Settle this vendor Khata balance"
                                           style={{
-                                            padding: "5px 11px",
+                                            padding: "5px 10px",
                                             borderRadius: "6px",
-                                            background: "#16a34a",
+                                            background: "#059669",
                                             color: "#ffffff",
                                             border: "none",
                                             fontSize: "12px",
@@ -2192,11 +2132,11 @@ export default function ExpensesPage() {
                                             display: "inline-flex",
                                             alignItems: "center",
                                             gap: "4px",
-                                            boxShadow: "0 1px 3px rgba(22, 163, 74, 0.3)",
+                                            boxShadow: "0 1px 3px rgba(5, 150, 105, 0.3)",
                                             whiteSpace: "nowrap",
                                           }}
                                         >
-                                          <span>💵</span> Mark Paid
+                                          <span>🤝</span> Settle
                                         </button>
                                       )}
                                       <button
@@ -2241,26 +2181,6 @@ export default function ExpensesPage() {
                                       </button>
                                     </>
                                   )}
-
-                                  {!isOwner && isClearance && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleDeleteSettlement(row.rawId, row.vendor, row.creditCleared)}
-                                      title="Void this clearance and restore credit balance"
-                                      style={{
-                                        padding: "5px 10px",
-                                        borderRadius: "6px",
-                                        background: "#fff1f2",
-                                        color: "#e11d48",
-                                        border: "1px solid #fecdd3",
-                                        fontSize: "11px",
-                                        fontWeight: 700,
-                                        cursor: "pointer",
-                                      }}
-                                    >
-                                      Void ✕
-                                    </button>
-                                  )}
                                 </div>
                               </td>
                             </tr>
@@ -2279,27 +2199,10 @@ export default function ExpensesPage() {
                           }}
                         >
                           <td colSpan={5} style={{ padding: "12px 16px", fontSize: "13px" }}>
-                            Audited Summary ({activeLedgerTotals.count} Transactions)
+                            Total Listed ({unifiedLedgerEntries.length} Expenses)
                           </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", fontSize: "14px", color: "#0f172a" }}>
+                          <td style={{ padding: "12px 16px", textAlign: "right", fontSize: "15px", color: "#0f172a", fontWeight: 900 }}>
                             ₹{formatMoney(activeLedgerTotals.totalSpend)}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", fontSize: "13px" }}>
-                            <span style={{ color: "#dc2626" }}>+₹{formatMoney(activeLedgerTotals.totalCredit)}</span>
-                            {" / "}
-                            <span style={{ color: "#059669" }}>-₹{formatMoney(activeLedgerTotals.totalCleared)}</span>
-                          </td>
-                          <td
-                            style={{
-                              padding: "12px 16px",
-                              textAlign: "right",
-                              fontSize: "15px",
-                              fontWeight: 900,
-                              color: activeLedgerTotals.netDue > 0 ? "#dc2626" : "#059669",
-                              background: "#f1f5f9",
-                            }}
-                          >
-                            ₹{formatMoney(activeLedgerTotals.netDue)}
                           </td>
                           <td className="no-print" />
                         </tr>
