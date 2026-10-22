@@ -271,6 +271,7 @@ export default function ExpensesPage() {
       if (isCreditExpense(e.payment_method)) {
         acc.totalCredit += amt;
         acc.creditBillCount += 1;
+        acc.pendingBalance += amt;
       } else {
         acc.totalDirectPaid += amt;
       }
@@ -304,10 +305,6 @@ export default function ExpensesPage() {
       const d = (s.settlement_date || "").slice(0, 10);
       if (d > acc.lastDate) acc.lastDate = d;
       acc.settlements.push(s);
-    });
-
-    Object.values(map).forEach((acc) => {
-      acc.pendingBalance = Math.max(0, acc.totalCredit - acc.totalCleared);
     });
 
     return Object.values(map).sort((a, b) => b.pendingBalance - a.pendingBalance || a.name.localeCompare(b.name));
@@ -544,6 +541,22 @@ export default function ExpensesPage() {
         noteText = existingNote ? `${existingNote} • Paid via ${markPaidMode}` : `Paid via ${markPaidMode}`;
       }
 
+      // Record the clearance in expense_settlements if vendor is specified
+      if (targetExpense.vendor && targetExpense.vendor.trim()) {
+        await fetchWithAuth(`${API_URL}/expenses/settlements`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            vendor: targetExpense.vendor.trim(),
+            amount: payAmt,
+            settlement_date: markPaidDate,
+            payment_mode: markPaidMode,
+            reference_no: cleanRef || null,
+            note: `Payment for bill #${targetExpense.id} ("${targetExpense.title}")`,
+          }),
+        }).catch((err) => console.warn("Settlement record warning:", err));
+      }
+
       // CASE 1: Full Payment
       if (payAmt === originalAmt) {
         const payload = {
@@ -648,8 +661,64 @@ export default function ExpensesPage() {
         throw new Error(err?.detail || `Failed to record settlement (${res.status})`);
       }
 
+      // Automatically update corresponding unpaid credit bills for this vendor
+      const unpaidVendorBills = expenses
+        .filter((exp) => exp.vendor && exp.vendor.trim().toLowerCase() === vendor.toLowerCase() && isCreditExpense(exp.payment_method))
+        .sort((a, b) => (a.expense_date || "").localeCompare(b.expense_date || ""));
+
+      let remainingToSettle = amt;
+      for (const bill of unpaidVendorBills) {
+        if (remainingToSettle <= 0) break;
+        const billAmt = Number(bill.amount) || 0;
+
+        if (remainingToSettle >= billAmt) {
+          // Full bill covered
+          await fetchWithAuth(`${API_URL}/expenses/${bill.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              payment_method: settleMode,
+              expense_date: settleDate,
+              note: (bill.note ? `${bill.note} • ` : "") + `Settled via ${settleMode}${settleRef ? ` (${settleRef})` : ""}`,
+            }),
+          });
+          remainingToSettle -= billAmt;
+        } else {
+          // Partial bill covered
+          const remainingBillAmt = billAmt - remainingToSettle;
+          // Update current to covered amount
+          await fetchWithAuth(`${API_URL}/expenses/${bill.id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount: remainingToSettle,
+              payment_method: settleMode,
+              expense_date: settleDate,
+              note: (bill.note ? `${bill.note} • ` : "") + `Partial settlement of ₹${formatMoney(remainingToSettle)} via ${settleMode}`,
+            }),
+          });
+          // Create remaining due bill
+          await fetchWithAuth(`${API_URL}/expenses`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              title: `${bill.title} (Balance Due)`,
+              category: bill.category,
+              amount: remainingBillAmt,
+              expense_date: bill.expense_date,
+              payment_method: "Credit (On Account)",
+              vendor: bill.vendor,
+              bill_number: bill.bill_number,
+              note: `Remaining balance due (₹${formatMoney(remainingBillAmt)}) after settlement of ₹${formatMoney(remainingToSettle)} on ${bill.title}.`,
+              event_id: bill.event_id,
+            }),
+          });
+          remainingToSettle = 0;
+        }
+      }
+
       setSettleModalOpen(false);
-      setSuccessMsg(`✓ Settlement of ₹${formatMoney(amt)} to ${vendor} via ${settleMode} recorded! Khata balance updated.`);
+      setSuccessMsg(`✓ Settlement of ₹${formatMoney(amt)} to ${vendor} via ${settleMode} recorded! Bills and Khata balance updated.`);
       await loadData();
       setTimeout(() => setSuccessMsg(null), 5000);
     } catch (err: any) {
