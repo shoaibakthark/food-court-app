@@ -70,6 +70,57 @@ type CustomerPendingEvent = {
   balance: number;
 };
 
+type KitchenSummary = {
+  total_staff: number;
+  active_staff: number;
+  monthly_staff_count: number;
+  daily_staff_count: number;
+  total_wages: number;
+  total_paid: number;
+  total_pending_balance: number;
+  today_duties_count: number;
+  today_duty_wages: number;
+};
+
+type KitchenStaffMember = {
+  id: number;
+  name: string;
+  mobile?: string | null;
+  kitchen_role: string;
+  wage_type: "daily" | "monthly";
+  wage_rate: number;
+  status: string;
+  duties_count: number;
+  total_wages: number;
+  total_paid: number;
+  balance: number;
+};
+
+type ExpenseRecord = {
+  id: number;
+  title: string;
+  category: string;
+  amount: number;
+  expense_date: string;
+  event_id?: number | null;
+  payment_method?: string | null;
+  vendor?: string | null;
+  bill_number?: string | null;
+  note?: string | null;
+  event_type?: string | null;
+  event_place?: string | null;
+};
+
+type ExpenseSettlementRecord = {
+  id: number;
+  vendor: string;
+  amount: number;
+  settlement_date: string;
+  payment_mode?: string | null;
+  reference_no?: string | null;
+  note?: string | null;
+};
+
 // ============================================================
 // DASHBOARD
 // ============================================================
@@ -81,13 +132,17 @@ export default function Home() {
   const [events, setEvents] = useState<EventData[]>([]);
   const [payments, setPayments] = useState<PaymentData[]>([]);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
-  const [pendingTab, setPendingTab] = useState<"customer" | "staff">("customer");
+  const [kitchenSummary, setKitchenSummary] = useState<KitchenSummary | null>(null);
+  const [kitchenStaffList, setKitchenStaffList] = useState<KitchenStaffMember[]>([]);
+  const [expensesList, setExpensesList] = useState<ExpenseRecord[]>([]);
+  const [settlementsList, setSettlementsList] = useState<ExpenseSettlementRecord[]>([]);
+  const [pendingTab, setPendingTab] = useState<"customer" | "staff" | "kitchen" | "supplier">("customer");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   // ==========================================================
-  // LOAD DASHBOARD DATA (EVENTS, PAYMENTS, STAFF)
+  // LOAD DASHBOARD DATA (EVENTS, PAYMENTS, STAFF, KITCHEN, EXPENSES)
   // ==========================================================
 
   useEffect(() => {
@@ -98,10 +153,22 @@ export default function Home() {
         setLoading(true);
         setError("");
 
-        const [eventsRes, paymentsRes, staffRes] = await Promise.all([
+        const [
+          eventsRes,
+          paymentsRes,
+          staffRes,
+          kitchenSummaryRes,
+          kitchenStaffRes,
+          expensesRes,
+          settlementsRes,
+        ] = await Promise.all([
           fetch(`${API_URL}/events`, { cache: "no-store" }),
           fetch(`${API_URL}/payments`, { cache: "no-store" }).catch(() => null),
           fetch(`${API_URL}/staff`, { cache: "no-store" }).catch(() => null),
+          fetch(`${API_URL}/kitchen/summary`, { cache: "no-store" }).catch(() => null),
+          fetch(`${API_URL}/kitchen/staff`, { cache: "no-store" }).catch(() => null),
+          fetch(`${API_URL}/expenses`, { cache: "no-store" }).catch(() => null),
+          fetch(`${API_URL}/expenses/settlements`, { cache: "no-store" }).catch(() => null),
         ]);
 
         if (!eventsRes.ok) {
@@ -119,6 +186,26 @@ export default function Home() {
         if (staffRes && staffRes.ok) {
           const staffData = await staffRes.json();
           setStaffList(Array.isArray(staffData) ? staffData : []);
+        }
+
+        if (kitchenSummaryRes && kitchenSummaryRes.ok) {
+          const kSummaryData = await kitchenSummaryRes.json();
+          setKitchenSummary(kSummaryData);
+        }
+
+        if (kitchenStaffRes && kitchenStaffRes.ok) {
+          const kStaffData = await kitchenStaffRes.json();
+          setKitchenStaffList(Array.isArray(kStaffData) ? kStaffData : []);
+        }
+
+        if (expensesRes && expensesRes.ok) {
+          const expData = await expensesRes.json();
+          setExpensesList(Array.isArray(expData) ? expData : []);
+        }
+
+        if (settlementsRes && settlementsRes.ok) {
+          const setData = await settlementsRes.json();
+          setSettlementsList(Array.isArray(setData) ? setData : []);
         }
       } catch (error) {
         console.error("Dashboard data loading error:", error);
@@ -240,6 +327,99 @@ export default function Home() {
   const totalStaffPending = useMemo(() => {
     return staffList.reduce((sum, s) => sum + Number(s.pending_balance || 0), 0);
   }, [staffList]);
+
+  const totalStaffWages = useMemo(() => {
+    return staffList.reduce((sum, s) => sum + Number(s.total_earnings || s.salary || 0), 0);
+  }, [staffList]);
+
+  // ==========================================================
+  // KITCHEN STAFF WAGES CALCULATION
+  // ==========================================================
+
+  const kitchenTotalWages = useMemo(() => {
+    return Number(kitchenSummary?.total_wages || 0);
+  }, [kitchenSummary]);
+
+  const kitchenPendingStaffList = useMemo(() => {
+    return kitchenStaffList
+      .filter((k) => Number(k.balance || 0) > 0)
+      .sort((a, b) => Number(b.balance || 0) - Number(a.balance || 0));
+  }, [kitchenStaffList]);
+
+  const totalKitchenPending = useMemo(() => {
+    return Number(kitchenSummary?.total_pending_balance ?? kitchenPendingStaffList.reduce((sum, k) => sum + Number(k.balance || 0), 0));
+  }, [kitchenSummary, kitchenPendingStaffList]);
+
+  // ==========================================================
+  // EXPENSES & SUPPLIER KHATA CALCULATION
+  // ==========================================================
+
+  const totalExpenses = useMemo(() => {
+    return expensesList.reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  }, [expensesList]);
+
+  const directPaidExpenses = useMemo(() => {
+    return expensesList
+      .filter((e) => (e.payment_method || "").toLowerCase() !== "credit / khata")
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  }, [expensesList]);
+
+  const supplierCreditIncurred = useMemo(() => {
+    return expensesList
+      .filter((e) => (e.payment_method || "").toLowerCase() === "credit / khata")
+      .reduce((sum, e) => sum + Number(e.amount || 0), 0);
+  }, [expensesList]);
+
+  const totalSettlementsCleared = useMemo(() => {
+    return settlementsList.reduce((sum, s) => sum + Number(s.amount || 0), 0);
+  }, [settlementsList]);
+
+  const vendorPendingList = useMemo(() => {
+    const map: Record<string, { totalCredit: number; settled: number; count: number }> = {};
+    expensesList.forEach((e) => {
+      const isCredit = (e.payment_method || "").toLowerCase() === "credit / khata";
+      const vendorName = (e.vendor || "").trim();
+      if (!vendorName) return;
+      if (!map[vendorName]) map[vendorName] = { totalCredit: 0, settled: 0, count: 0 };
+      if (isCredit) {
+        map[vendorName].totalCredit += Number(e.amount || 0);
+        map[vendorName].count += 1;
+      }
+    });
+    settlementsList.forEach((s) => {
+      const vendorName = (s.vendor || "").trim();
+      if (!vendorName) return;
+      if (!map[vendorName]) map[vendorName] = { totalCredit: 0, settled: 0, count: 0 };
+      map[vendorName].settled += Number(s.amount || 0);
+    });
+
+    return Object.entries(map)
+      .map(([name, data]) => ({
+        name,
+        vendor: name,
+        creditIncurred: data.totalCredit,
+        totalCredit: data.totalCredit,
+        settled: data.settled,
+        balance: Math.max(0, data.totalCredit - data.settled),
+        billsCount: data.count,
+      }))
+      .filter((v) => v.balance > 0)
+      .sort((a, b) => b.balance - a.balance);
+  }, [expensesList, settlementsList]);
+
+  const totalSupplierCreditPending = useMemo(() => {
+    return vendorPendingList.reduce((sum, v) => sum + v.balance, 0);
+  }, [vendorPendingList]);
+
+  // Net Estimated Business Profit
+  const netProfit = useMemo(() => {
+    return totalRevenue - totalExpenses - totalStaffWages - kitchenTotalWages;
+  }, [totalRevenue, totalExpenses, totalStaffWages, kitchenTotalWages]);
+
+  const profitMargin = useMemo(() => {
+    if (totalRevenue <= 0) return 0;
+    return Math.round((netProfit / totalRevenue) * 100);
+  }, [netProfit, totalRevenue]);
 
   // ==========================================================
   // UPCOMING EVENTS
@@ -482,7 +662,7 @@ export default function Home() {
               SUMMARY CARDS
           ================================================== */}
 
-          <section className="summary-grid">
+          <section className="summary-grid" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))" }}>
 
             {/* TOTAL REVENUE */}
 
@@ -619,6 +799,108 @@ export default function Home() {
 
             </div>
 
+            {/* KITCHEN STAFF WAGES */}
+
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setPendingTab("kitchen");
+                const el = document.getElementById("pending-balances-section");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="summary-card dashboard-link-card"
+              style={{ cursor: "pointer" }}
+            >
+
+              <div className="summary-top">
+
+                <div className="summary-icon orange" style={{ background: "#ffedd5", color: "#c2410c", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "10px", width: "36px", height: "36px", fontSize: "18px" }}>
+                  🍳
+                </div>
+
+                <span className={`trend ${totalKitchenPending > 0 ? "warning" : "positive"}`}>
+                  {kitchenPendingStaffList.length > 0 ? `${kitchenPendingStaffList.length} Unpaid` : "Settled"}
+                </span>
+
+              </div>
+
+              <span className="summary-label">
+                Kitchen Wages
+              </span>
+
+              <strong className="summary-value" style={{ color: "#1e0836" }}>
+                ₹{formatMoney(kitchenTotalWages)}
+              </strong>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
+                <span className="summary-note">
+                  {totalKitchenPending > 0
+                    ? `₹${formatMoney(totalKitchenPending)} pending`
+                    : `${kitchenSummary?.today_duties_count || 0} shifts today`}
+                </span>
+                <Link
+                  href="/kitchen"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ fontSize: "11px", color: "#c2410c", fontWeight: 700, textDecoration: "none" }}
+                >
+                  Kitchen →
+                </Link>
+              </div>
+
+            </div>
+
+            {/* TOTAL EXPENSES */}
+
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => {
+                setPendingTab("supplier");
+                const el = document.getElementById("pending-balances-section");
+                if (el) el.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="summary-card dashboard-link-card"
+              style={{ cursor: "pointer" }}
+            >
+
+              <div className="summary-top">
+
+                <div className="summary-icon red" style={{ background: "#fee2e2", color: "#b91c1c", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "10px", width: "36px", height: "36px", fontSize: "18px" }}>
+                  📉
+                </div>
+
+                <span className={`trend ${totalSupplierCreditPending > 0 ? "warning" : "positive"}`}>
+                  {vendorPendingList.length > 0 ? `${vendorPendingList.length} Khata Dues` : "Cleared"}
+                </span>
+
+              </div>
+
+              <span className="summary-label">
+                Total Expenses
+              </span>
+
+              <strong className="summary-value" style={{ color: "#b91c1c" }}>
+                ₹{formatMoney(totalExpenses)}
+              </strong>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
+                <span className="summary-note">
+                  {totalSupplierCreditPending > 0
+                    ? `₹${formatMoney(totalSupplierCreditPending)} Khata due`
+                    : `${expensesList.length} expenses recorded`}
+                </span>
+                <Link
+                  href="/expenses"
+                  onClick={(e) => e.stopPropagation()}
+                  style={{ fontSize: "11px", color: "#b91c1c", fontWeight: 700, textDecoration: "none" }}
+                >
+                  Expenses →
+                </Link>
+              </div>
+
+            </div>
+
             {/* TOTAL EVENTS */}
 
             <Link
@@ -702,6 +984,56 @@ export default function Home() {
                   Based on event quotes
                 </span>
 
+              </div>
+
+              {/* OPERATING P&L BREAKDOWN STRIP */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))",
+                  gap: "10px",
+                  padding: "12px 14px",
+                  background: "#fbf9fd",
+                  border: "1px solid #f0ebf8",
+                  borderRadius: "10px",
+                  margin: "12px 0 16px 0",
+                }}
+              >
+                <div>
+                  <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.5px", color: "#8a8490", fontWeight: 700 }}>
+                    Expenses
+                  </div>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#dc2626", marginTop: "2px" }}>
+                    −₹{formatMoney(totalExpenses)}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.5px", color: "#8a8490", fontWeight: 700 }}>
+                    Staff Wages
+                  </div>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#d97706", marginTop: "2px" }}>
+                    −₹{formatMoney(totalStaffWages)}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.5px", color: "#8a8490", fontWeight: 700 }}>
+                    Kitchen Wages
+                  </div>
+                  <div style={{ fontSize: "13px", fontWeight: 700, color: "#ea580c", marginTop: "2px" }}>
+                    −₹{formatMoney(kitchenTotalWages)}
+                  </div>
+                </div>
+
+                <div>
+                  <div style={{ fontSize: "10px", textTransform: "uppercase", letterSpacing: "0.5px", color: "#8a8490", fontWeight: 700 }}>
+                    Est. Net Margin
+                  </div>
+                  <div style={{ fontSize: "13px", fontWeight: 800, color: netProfit >= 0 ? "#16a34a" : "#dc2626", marginTop: "2px" }}>
+                    ₹{formatMoney(netProfit)} <span style={{ fontSize: "11px", fontWeight: 600 }}>({profitMargin}%)</span>
+                  </div>
+                </div>
               </div>
 
               <div className="chart">
@@ -910,6 +1242,33 @@ export default function Home() {
 
                 </Link>
 
+                <Link
+                  href="/kitchen"
+                  className="quick-item"
+                >
+
+                  <span className="quick-icon orange" style={{ background: "#ffedd5", color: "#c2410c", display: "flex", alignItems: "center", justifyContent: "center", borderRadius: "8px", width: "32px", height: "32px", fontSize: "15px" }}>
+                    🍳
+                  </span>
+
+                  <span>
+
+                    <strong>
+                      Kitchen Duty & Wages
+                    </strong>
+
+                    <small>
+                      Roster, shifts & payouts
+                    </small>
+
+                  </span>
+
+                  <b>
+                    ›
+                  </b>
+
+                </Link>
+
               </div>
 
             </div>
@@ -931,18 +1290,18 @@ export default function Home() {
                 </h2>
 
                 <p>
-                  Active ledger of customer payments due and unpaid staff wages
+                  Active ledger of customer payments due, staff wages, kitchen dues & supplier credit
                 </p>
 
               </div>
 
-              <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
 
                 <button
                   type="button"
                   onClick={() => setPendingTab("customer")}
                   style={{
-                    padding: "8px 18px",
+                    padding: "8px 16px",
                     borderRadius: "8px",
                     border: "none",
                     cursor: "pointer",
@@ -954,14 +1313,14 @@ export default function Home() {
                     transition: "all 0.15s ease",
                   }}
                 >
-                  Customer Pending ({customerPendingEvents.length})
+                  Customer Dues ({customerPendingEvents.length})
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setPendingTab("staff")}
                   style={{
-                    padding: "8px 18px",
+                    padding: "8px 16px",
                     borderRadius: "8px",
                     border: "none",
                     cursor: "pointer",
@@ -973,7 +1332,45 @@ export default function Home() {
                     transition: "all 0.15s ease",
                   }}
                 >
-                  Staff Pending ({staffPendingList.length})
+                  Event Staff ({staffPendingList.length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPendingTab("kitchen")}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    background: pendingTab === "kitchen" ? "linear-gradient(135deg, #ea580c 0%, #c2410c 100%)" : "#fff7ed",
+                    color: pendingTab === "kitchen" ? "#ffffff" : "#c2410c",
+                    boxShadow: pendingTab === "kitchen" ? "0 4px 14px rgba(234, 88, 12, 0.3)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  Kitchen Wages ({kitchenPendingStaffList.length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPendingTab("supplier")}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    background: pendingTab === "supplier" ? "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)" : "#fef2f2",
+                    color: pendingTab === "supplier" ? "#ffffff" : "#b91c1c",
+                    boxShadow: pendingTab === "supplier" ? "0 4px 14px rgba(220, 38, 38, 0.3)" : "none",
+                    transition: "all 0.15s ease",
+                  }}
+                >
+                  Supplier Khata ({vendorPendingList.length})
                 </button>
 
               </div>
@@ -1390,6 +1787,344 @@ export default function Home() {
               </div>
             )}
 
+            {/* TAB 3: KITCHEN STAFF WAGES PENDING */}
+
+            {pendingTab === "kitchen" && (
+              <div style={{ marginTop: "16px" }}>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: totalKitchenPending > 0 ? "#fff7ed" : "#f0fdf4",
+                    border: totalKitchenPending > 0 ? "1px solid #fed7aa" : "1px solid #bbf7d0",
+                    borderRadius: "10px",
+                    padding: "12px 18px",
+                    marginBottom: "16px",
+                    flexWrap: "wrap",
+                    gap: "12px",
+                  }}
+                >
+
+                  <div>
+
+                    <span style={{ fontSize: "11px", color: totalKitchenPending > 0 ? "#9a3412" : "#166534", fontWeight: 700, textTransform: "uppercase" }}>
+                      Total Kitchen Wages Pending Disbursal
+                    </span>
+
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: totalKitchenPending > 0 ? "#c2410c" : "#15803d", marginTop: "2px" }}>
+                      ₹{formatMoney(totalKitchenPending)}
+                    </div>
+
+                    <div style={{ fontSize: "11px", color: "#78716c", marginTop: "2px" }}>
+                      Total Earned: ₹{formatMoney(kitchenTotalWages)} • Total Disbursed: ₹{formatMoney(kitchenSummary?.total_paid || 0)}
+                    </div>
+
+                  </div>
+
+                  <Link
+                    href="/kitchen"
+                    style={{
+                      background: "linear-gradient(135deg, #ea580c 0%, #c2410c 100%)",
+                      color: "#ffffff",
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      textDecoration: "none",
+                      boxShadow: "0 4px 12px rgba(234, 88, 12, 0.3)",
+                    }}
+                  >
+                    Kitchen Roster & Duties →
+                  </Link>
+
+                </div>
+
+                {kitchenPendingStaffList.length === 0 ? (
+                  <div style={{ padding: "40px 20px", textAlign: "center", color: "#15803d" }}>
+
+                    <div style={{ fontSize: "36px", marginBottom: "8px" }}>✓</div>
+
+                    <h3 style={{ margin: "0 0 4px 0", color: "#15803d" }}>All Kitchen Staff Wages Settled</h3>
+
+                    <p style={{ margin: 0, fontSize: "13px", color: "#166534" }}>
+                      No kitchen staff members currently have unpaid wage balances.
+                    </p>
+
+                  </div>
+                ) : (
+                  <div className="events-table-wrapper">
+
+                    <table className="events-table">
+
+                      <thead>
+
+                        <tr>
+
+                          <th>KITCHEN STAFF</th>
+                          <th>ROLE</th>
+                          <th>MOBILE</th>
+                          <th>RATE & TYPE</th>
+                          <th style={{ textAlign: "center" }}>SHIFTS / DUTIES</th>
+                          <th style={{ textAlign: "right" }}>TOTAL EARNED</th>
+                          <th style={{ textAlign: "right" }}>PAID</th>
+                          <th style={{ textAlign: "right" }}>PENDING WAGE</th>
+                          <th style={{ textAlign: "center" }}>ACTION</th>
+
+                        </tr>
+
+                      </thead>
+
+                      <tbody>
+
+                        {kitchenPendingStaffList.map((s) => (
+                          <tr key={s.id}>
+
+                            <td>
+                              <strong>{s.name}</strong>
+                            </td>
+
+                            <td>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "3px 8px",
+                                  borderRadius: "10px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "#ffedd5",
+                                  color: "#9a3412",
+                                }}
+                              >
+                                {s.kitchen_role || "Kitchen Crew"}
+                              </span>
+                            </td>
+
+                            <td>{s.mobile || "—"}</td>
+
+                            <td>
+                              <span style={{ fontSize: "12px", fontWeight: 600 }}>
+                                ₹{formatMoney(s.wage_rate || 0)}
+                                <small style={{ color: "#78716c", marginLeft: "4px" }}>
+                                  ({s.wage_type === "monthly" ? "Monthly" : "Per Shift"})
+                                </small>
+                              </span>
+                            </td>
+
+                            <td style={{ textAlign: "center" }}>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "3px 8px",
+                                  borderRadius: "10px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "#fef3c7",
+                                  color: "#92400e",
+                                }}
+                              >
+                                {s.duties_count || 0} shifts
+                              </span>
+                            </td>
+
+                            <td style={{ textAlign: "right", fontWeight: 600 }}>
+                              ₹{formatMoney(s.total_wages || 0)}
+                            </td>
+
+                            <td style={{ textAlign: "right", fontWeight: 600, color: "#166534" }}>
+                              ₹{formatMoney(s.total_paid || 0)}
+                            </td>
+
+                            <td style={{ textAlign: "right", fontWeight: 800, color: "#c2410c" }}>
+                              ₹{formatMoney(s.balance || 0)}
+                            </td>
+
+                            <td style={{ textAlign: "center" }}>
+                              <Link
+                                href="/kitchen"
+                                style={{
+                                  padding: "6px 12px",
+                                  borderRadius: "6px",
+                                  background: "linear-gradient(135deg, #ea580c 0%, #c2410c 100%)",
+                                  color: "#ffffff",
+                                  fontWeight: 700,
+                                  fontSize: "11px",
+                                  textDecoration: "none",
+                                  boxShadow: "0 2px 8px rgba(234, 88, 12, 0.25)",
+                                }}
+                              >
+                                Pay / Roster
+                              </Link>
+                            </td>
+
+                          </tr>
+                        ))}
+
+                      </tbody>
+
+                    </table>
+
+                  </div>
+                )}
+
+              </div>
+            )}
+
+            {/* TAB 4: SUPPLIER KHATA CREDIT PENDING */}
+
+            {pendingTab === "supplier" && (
+              <div style={{ marginTop: "16px" }}>
+
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    background: totalSupplierCreditPending > 0 ? "#fef2f2" : "#f0fdf4",
+                    border: totalSupplierCreditPending > 0 ? "1px solid #fecaca" : "1px solid #bbf7d0",
+                    borderRadius: "10px",
+                    padding: "12px 18px",
+                    marginBottom: "16px",
+                    flexWrap: "wrap",
+                    gap: "12px",
+                  }}
+                >
+
+                  <div>
+
+                    <span style={{ fontSize: "11px", color: totalSupplierCreditPending > 0 ? "#991b1b" : "#166534", fontWeight: 700, textTransform: "uppercase" }}>
+                      Total Supplier Khata Credit Balance Due
+                    </span>
+
+                    <div style={{ fontSize: "20px", fontWeight: 800, color: totalSupplierCreditPending > 0 ? "#b91c1c" : "#15803d", marginTop: "2px" }}>
+                      ₹{formatMoney(totalSupplierCreditPending)}
+                    </div>
+
+                    <div style={{ fontSize: "11px", color: "#78716c", marginTop: "2px" }}>
+                      Credit Purchases: ₹{formatMoney(supplierCreditIncurred)} • Cleared / Settled: ₹{formatMoney(totalSettlementsCleared)}
+                    </div>
+
+                  </div>
+
+                  <Link
+                    href="/expenses"
+                    style={{
+                      background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+                      color: "#ffffff",
+                      padding: "8px 16px",
+                      borderRadius: "8px",
+                      fontSize: "12px",
+                      fontWeight: 700,
+                      textDecoration: "none",
+                      boxShadow: "0 4px 12px rgba(220, 38, 38, 0.3)",
+                    }}
+                  >
+                    Expenses & Khata Ledger →
+                  </Link>
+
+                </div>
+
+                {vendorPendingList.length === 0 ? (
+                  <div style={{ padding: "40px 20px", textAlign: "center", color: "#15803d" }}>
+
+                    <div style={{ fontSize: "36px", marginBottom: "8px" }}>✓</div>
+
+                    <h3 style={{ margin: "0 0 4px 0", color: "#15803d" }}>Zero Outstanding Supplier Khata</h3>
+
+                    <p style={{ margin: 0, fontSize: "13px", color: "#166534" }}>
+                      All vendor invoices and credit bills have been fully settled.
+                    </p>
+
+                  </div>
+                ) : (
+                  <div className="events-table-wrapper">
+
+                    <table className="events-table">
+
+                      <thead>
+
+                        <tr>
+
+                          <th>SUPPLIER / VENDOR</th>
+                          <th style={{ textAlign: "center" }}>CREDIT BILLS</th>
+                          <th style={{ textAlign: "right" }}>TOTAL CREDIT</th>
+                          <th style={{ textAlign: "right" }}>SETTLED / PAID</th>
+                          <th style={{ textAlign: "right" }}>OUTSTANDING KHATA</th>
+                          <th style={{ textAlign: "center" }}>ACTION</th>
+
+                        </tr>
+
+                      </thead>
+
+                      <tbody>
+
+                        {vendorPendingList.map((v) => (
+                          <tr key={v.vendor}>
+
+                            <td>
+                              <strong>{v.vendor}</strong>
+                            </td>
+
+                            <td style={{ textAlign: "center" }}>
+                              <span
+                                style={{
+                                  display: "inline-block",
+                                  padding: "3px 8px",
+                                  borderRadius: "10px",
+                                  fontSize: "11px",
+                                  fontWeight: 700,
+                                  background: "#fee2e2",
+                                  color: "#991b1b",
+                                }}
+                              >
+                                {v.billsCount} bills
+                              </span>
+                            </td>
+
+                            <td style={{ textAlign: "right", fontWeight: 600 }}>
+                              ₹{formatMoney(v.totalCredit)}
+                            </td>
+
+                            <td style={{ textAlign: "right", fontWeight: 600, color: "#166534" }}>
+                              ₹{formatMoney(v.settled)}
+                            </td>
+
+                            <td style={{ textAlign: "right", fontWeight: 800, color: "#b91c1c" }}>
+                              ₹{formatMoney(v.balance)}
+                            </td>
+
+                            <td style={{ textAlign: "center" }}>
+                              <Link
+                                href="/expenses"
+                                style={{
+                                  padding: "6px 12px",
+                                  borderRadius: "6px",
+                                  background: "linear-gradient(135deg, #dc2626 0%, #b91c1c 100%)",
+                                  color: "#ffffff",
+                                  fontWeight: 700,
+                                  fontSize: "11px",
+                                  textDecoration: "none",
+                                  boxShadow: "0 2px 8px rgba(220, 38, 38, 0.25)",
+                                }}
+                              >
+                                Settle Khata
+                              </Link>
+                            </td>
+
+                          </tr>
+                        ))}
+
+                      </tbody>
+
+                    </table>
+
+                  </div>
+                )}
+
+              </div>
+            )}
+
           </section>
 
           {/* ==================================================
@@ -1576,6 +2311,200 @@ export default function Home() {
               </table>
 
             </div>
+
+          </section>
+
+          {/* ==================================================
+              RECENT EXPENSES & SUPPLIER KHATA LEDGER
+          ================================================== */}
+
+          <section className="dashboard-panel" style={{ marginTop: "24px", marginBottom: "24px" }}>
+
+            <div className="panel-heading" style={{ flexWrap: "wrap", gap: "12px", borderBottom: "1px solid #e9e5f0", paddingBottom: "16px" }}>
+
+              <div>
+
+                <h2>
+                  Recent Expenses & Vendor Transactions
+                </h2>
+
+                <p>
+                  Latest operational expenses, raw materials & supplier bills
+                </p>
+
+              </div>
+
+              <div style={{ display: "flex", gap: "10px", alignItems: "center" }}>
+
+                <Link
+                  href="/expenses"
+                  style={{
+                    background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                    color: "#ffffff",
+                    padding: "8px 16px",
+                    borderRadius: "8px",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    textDecoration: "none",
+                    boxShadow: "0 4px 12px rgba(124, 58, 237, 0.25)",
+                  }}
+                >
+                  ＋ Add / View All Expenses
+                </Link>
+
+              </div>
+
+            </div>
+
+            {expensesList.length === 0 ? (
+              <div style={{ padding: "35px 20px", textAlign: "center", color: "#64748b" }}>
+                <p style={{ margin: 0, fontSize: "14px" }}>No expenses recorded yet.</p>
+              </div>
+            ) : (
+              <>
+                <div className="events-table-wrapper">
+
+                  <table className="events-table">
+
+                    <thead>
+
+                      <tr>
+
+                        <th>DATE</th>
+                        <th>EXPENSE TITLE</th>
+                        <th>CATEGORY</th>
+                        <th>VENDOR / SUPPLIER</th>
+                        <th>PAYMENT METHOD</th>
+                        <th style={{ textAlign: "right" }}>AMOUNT</th>
+                        <th style={{ textAlign: "center" }}>ACTION</th>
+
+                      </tr>
+
+                    </thead>
+
+                    <tbody>
+
+                      {expensesList.slice(0, 6).map((exp) => (
+                        <tr key={exp.id}>
+
+                          <td style={{ whiteSpace: "nowrap" }}>
+                            {formatDate(exp.expense_date)}
+                          </td>
+
+                          <td>
+                            <strong>{exp.title}</strong>
+                            {exp.bill_number && (
+                              <small style={{ display: "block", color: "#8a8490", fontSize: "11px" }}>
+                                Bill #{exp.bill_number}
+                              </small>
+                            )}
+                          </td>
+
+                          <td>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                borderRadius: "10px",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                background: "#f3e8ff",
+                                color: "#7e22ce",
+                              }}
+                            >
+                              {exp.category}
+                            </span>
+                          </td>
+
+                          <td>{exp.vendor || "—"}</td>
+
+                          <td>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "3px 8px",
+                                borderRadius: "10px",
+                                fontSize: "11px",
+                                fontWeight: 700,
+                                background: exp.payment_method?.toLowerCase().includes("khata") || exp.payment_method?.toLowerCase().includes("credit")
+                                  ? "#fee2e2"
+                                  : "#dcfce7",
+                                color: exp.payment_method?.toLowerCase().includes("khata") || exp.payment_method?.toLowerCase().includes("credit")
+                                  ? "#991b1b"
+                                  : "#15803d",
+                              }}
+                            >
+                              {exp.payment_method || "Paid"}
+                            </span>
+                          </td>
+
+                          <td style={{ textAlign: "right", fontWeight: 700, color: "#1e0836" }}>
+                            ₹{formatMoney(exp.amount)}
+                          </td>
+
+                          <td style={{ textAlign: "center" }}>
+                            <Link
+                              href="/expenses"
+                              style={{
+                                padding: "5px 10px",
+                                borderRadius: "6px",
+                                background: "#f5f3ff",
+                                color: "#6d28d9",
+                                fontWeight: 700,
+                                fontSize: "11px",
+                                textDecoration: "none",
+                                border: "1px solid #ddd6fe",
+                              }}
+                            >
+                              View
+                            </Link>
+                          </td>
+
+                        </tr>
+                      ))}
+
+                    </tbody>
+
+                  </table>
+
+                </div>
+
+                {/* EXPENSES FOOTER SUMMARY STRIP */}
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "12px",
+                    padding: "12px 18px",
+                    background: "#faf8fd",
+                    borderTop: "1px solid #e9e5f0",
+                    marginTop: "8px",
+                    borderRadius: "0 0 10px 10px",
+                  }}
+                >
+                  <div style={{ display: "flex", gap: "20px", flexWrap: "wrap" }}>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                      Total Recorded: <strong style={{ color: "#1e0836" }}>₹{formatMoney(totalExpenses)}</strong>
+                    </span>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                      Direct Paid: <strong style={{ color: "#15803d" }}>₹{formatMoney(directPaidExpenses)}</strong>
+                    </span>
+                    <span style={{ fontSize: "12px", color: "#64748b" }}>
+                      Khata Credit Pending: <strong style={{ color: "#b91c1c" }}>₹{formatMoney(totalSupplierCreditPending)}</strong>
+                    </span>
+                  </div>
+
+                  <Link
+                    href="/expenses"
+                    style={{ fontSize: "12px", color: "#7c3aed", fontWeight: 700, textDecoration: "none" }}
+                  >
+                    All {expensesList.length} expenses ledger →
+                  </Link>
+                </div>
+              </>
+            )}
 
           </section>
 
