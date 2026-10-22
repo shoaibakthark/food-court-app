@@ -402,6 +402,9 @@ export default function ExpensesPage() {
       creditIncurred: number;
       creditCleared: number;
       runningCreditBalance: number;
+      allocatedPaid: number;
+      remainingDue: number;
+      isFullySettled: boolean;
       note?: string | null;
       rawExpense?: ExpenseRecord;
       rawSettlement?: ExpenseSettlementRecord;
@@ -423,6 +426,9 @@ export default function ExpensesPage() {
         creditIncurred: isCredit ? amt : 0,
         creditCleared: 0,
         runningCreditBalance: 0,
+        allocatedPaid: 0,
+        remainingDue: isCredit ? amt : 0,
+        isFullySettled: !isCredit,
         note: e.note,
         rawExpense: e,
       });
@@ -443,23 +449,51 @@ export default function ExpensesPage() {
         creditIncurred: 0,
         creditCleared: amt,
         runningCreditBalance: 0,
+        allocatedPaid: 0,
+        remainingDue: 0,
+        isFullySettled: true,
         note: s.note,
         rawSettlement: s,
       });
     });
 
-    // Sort chronologically
+    // Sort chronologically (earliest to latest)
     allVendorItems.sort((a, b) => {
       if (a.date !== b.date) return a.date.localeCompare(b.date);
       return a.kind === "clearance" ? 1 : -1;
     });
 
     let running = 0;
+    let availableClearance = vendorObj.totalCleared;
+
     const computed = allVendorItems.map((item) => {
       running += item.creditIncurred - item.creditCleared;
+
+      let allocatedPaid = 0;
+      let remainingDue = 0;
+      let isFullySettled = false;
+
+      if (item.kind === "credit_bill") {
+        if (vendorObj.pendingBalance <= 0) {
+          allocatedPaid = item.creditIncurred;
+          remainingDue = 0;
+          isFullySettled = true;
+        } else {
+          allocatedPaid = Math.min(item.creditIncurred, availableClearance);
+          availableClearance = Math.max(0, availableClearance - allocatedPaid);
+          remainingDue = Math.max(0, item.creditIncurred - allocatedPaid);
+          isFullySettled = remainingDue <= 0;
+        }
+      } else {
+        isFullySettled = true;
+      }
+
       return {
         ...item,
         runningCreditBalance: Math.max(0, running),
+        allocatedPaid,
+        remainingDue,
+        isFullySettled,
       };
     });
 
@@ -989,8 +1023,14 @@ export default function ExpensesPage() {
     }
 
     let amountToSet = "";
-    if (presetAmount !== undefined && presetAmount > 0) {
-      amountToSet = String(presetAmount);
+    if (vendorData && vendorData.pendingBalance <= 0) {
+      amountToSet = "";
+    } else if (presetAmount !== undefined && presetAmount > 0) {
+      if (vendorData && vendorData.pendingBalance > 0) {
+        amountToSet = String(Math.min(presetAmount, vendorData.pendingBalance));
+      } else {
+        amountToSet = String(presetAmount);
+      }
     } else if (vendorData && vendorData.pendingBalance > 0) {
       amountToSet = String(vendorData.pendingBalance);
     }
@@ -2060,22 +2100,48 @@ export default function ExpensesPage() {
                               {/* Payment Status Badge */}
                               <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
                                 {isCredit ? (
-                                  <span
-                                    style={{
-                                      display: "inline-flex",
-                                      alignItems: "center",
-                                      gap: "4px",
-                                      fontSize: "11px",
-                                      fontWeight: 800,
-                                      padding: "4px 8px",
-                                      borderRadius: "6px",
-                                      background: "#fef2f2",
-                                      color: "#dc2626",
-                                      border: "1px solid #fecaca",
-                                    }}
-                                  >
-                                    <span>🔴</span> Khata Credit
-                                  </span>
+                                  (() => {
+                                    const vAcc = row.vendor ? vendorAccounts.find((v) => v.name.toLowerCase() === row.vendor.toLowerCase()) : null;
+                                    const isCleared = vAcc ? vAcc.pendingBalance <= 0 : false;
+                                    if (isCleared) {
+                                      return (
+                                        <span
+                                          style={{
+                                            display: "inline-flex",
+                                            alignItems: "center",
+                                            gap: "4px",
+                                            fontSize: "11px",
+                                            fontWeight: 700,
+                                            padding: "4px 8px",
+                                            borderRadius: "6px",
+                                            background: "#f0fdf4",
+                                            color: "#059669",
+                                            border: "1px solid #bbf7d0",
+                                          }}
+                                        >
+                                          <span>✓</span> Credit Settled
+                                        </span>
+                                      );
+                                    }
+                                    return (
+                                      <span
+                                        style={{
+                                          display: "inline-flex",
+                                          alignItems: "center",
+                                          gap: "4px",
+                                          fontSize: "11px",
+                                          fontWeight: 800,
+                                          padding: "4px 8px",
+                                          borderRadius: "6px",
+                                          background: "#fef2f2",
+                                          color: "#dc2626",
+                                          border: "1px solid #fecaca",
+                                        }}
+                                      >
+                                        <span>🔴</span> Khata Credit (Due)
+                                      </span>
+                                    );
+                                  })()
                                 ) : (
                                   <span
                                     style={{
@@ -2116,28 +2182,52 @@ export default function ExpensesPage() {
                                   {!isOwner && row.rawExpense && (
                                     <>
                                       {isCredit && (
-                                        <button
-                                          type="button"
-                                          onClick={() => openClearSettlementModal(row.vendor, row.totalAmount)}
-                                          title="Settle this vendor Khata balance"
-                                          style={{
-                                            padding: "5px 10px",
-                                            borderRadius: "6px",
-                                            background: "#059669",
-                                            color: "#ffffff",
-                                            border: "none",
-                                            fontSize: "12px",
-                                            fontWeight: 800,
-                                            cursor: "pointer",
-                                            display: "inline-flex",
-                                            alignItems: "center",
-                                            gap: "4px",
-                                            boxShadow: "0 1px 3px rgba(5, 150, 105, 0.3)",
-                                            whiteSpace: "nowrap",
-                                          }}
-                                        >
-                                          <span>🤝</span> Settle
-                                        </button>
+                                        (() => {
+                                          const vAcc = row.vendor ? vendorAccounts.find((v) => v.name.toLowerCase() === row.vendor.toLowerCase()) : null;
+                                          const pending = vAcc ? vAcc.pendingBalance : 0;
+                                          if (pending <= 0) {
+                                            return (
+                                              <span
+                                                style={{
+                                                  fontSize: "11px",
+                                                  color: "#059669",
+                                                  fontWeight: 700,
+                                                  background: "#f0fdf4",
+                                                  padding: "4px 8px",
+                                                  borderRadius: "6px",
+                                                  border: "1px solid #bbf7d0",
+                                                  whiteSpace: "nowrap",
+                                                }}
+                                              >
+                                                ✓ Settled
+                                              </span>
+                                            );
+                                          }
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => openClearSettlementModal(row.vendor, Math.min(row.totalAmount, pending))}
+                                              title="Settle this vendor Khata balance"
+                                              style={{
+                                                padding: "5px 10px",
+                                                borderRadius: "6px",
+                                                background: "#059669",
+                                                color: "#ffffff",
+                                                border: "none",
+                                                fontSize: "12px",
+                                                fontWeight: 800,
+                                                cursor: "pointer",
+                                                display: "inline-flex",
+                                                alignItems: "center",
+                                                gap: "4px",
+                                                boxShadow: "0 1px 3px rgba(5, 150, 105, 0.3)",
+                                                whiteSpace: "nowrap",
+                                              }}
+                                            >
+                                              <span>🤝</span> Settle
+                                            </button>
+                                          );
+                                        })()
                                       )}
                                       <button
                                         type="button"
@@ -2305,8 +2395,8 @@ export default function ExpensesPage() {
                         </div>
                       </div>
 
-                      <div className="no-print" style={{ display: "flex", gap: "8px" }}>
-                        {!isOwner && selectedVendorData.pendingBalance > 0 && (
+                      <div className="no-print" style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                        {!isOwner && selectedVendorData.pendingBalance > 0 ? (
                           <button
                             type="button"
                             onClick={() => openClearSettlementModal(selectedVendorData.name, selectedVendorData.pendingBalance)}
@@ -2319,29 +2409,31 @@ export default function ExpensesPage() {
                               fontWeight: 700,
                               fontSize: "12px",
                               cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
+                              boxShadow: "0 1px 3px rgba(5, 150, 105, 0.3)",
                             }}
                           >
-                            🤝 Clear Due Balance
+                            🤝 Clear Due (₹{formatMoney(selectedVendorData.pendingBalance)})
                           </button>
-                        )}
-
-                        {!isOwner && (
-                          <button
-                            type="button"
-                            onClick={() => openAddModal(undefined, selectedVendorData.name, "credit")}
+                        ) : (
+                          <span
                             style={{
-                              padding: "8px 14px",
+                              padding: "6px 12px",
                               borderRadius: "8px",
-                              border: "none",
-                              background: "#dc2626",
-                              color: "#fff",
+                              background: "#f0fdf4",
+                              border: "1px solid #bbf7d0",
+                              color: "#059669",
                               fontWeight: 700,
                               fontSize: "12px",
-                              cursor: "pointer",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "4px",
                             }}
                           >
-                            + Add Credit Bill
-                          </button>
+                            ✓ All Dues Settled
+                          </span>
                         )}
 
                         <button
@@ -2408,9 +2500,15 @@ export default function ExpensesPage() {
                                 </td>
                                 <td style={{ padding: "12px 16px" }}>
                                   {isCredit ? (
-                                    <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "6px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", fontSize: "11px", fontWeight: 800 }}>
-                                      🔴 Unpaid Credit
-                                    </span>
+                                    entry.isFullySettled ? (
+                                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "6px", background: "#f0fdf4", color: "#059669", border: "1px solid #bbf7d0", fontSize: "11px", fontWeight: 700 }}>
+                                        ✓ Settled (Cleared)
+                                      </span>
+                                    ) : (
+                                      <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "6px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", fontSize: "11px", fontWeight: 800 }}>
+                                        🔴 Due: ₹{formatMoney(entry.remainingDue)}
+                                      </span>
+                                    )
                                   ) : isClearance ? (
                                     <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "3px 8px", borderRadius: "6px", background: "#f0fdf4", color: "#059669", border: "1px solid #bbf7d0", fontSize: "11px", fontWeight: 700 }}>
                                       🟢 Cleared ({entry.paymentMode})
@@ -2432,11 +2530,11 @@ export default function ExpensesPage() {
                                 </td>
                                 <td className="no-print" style={{ padding: "12px 16px", textAlign: "center" }}>
                                   <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "6px" }}>
-                                    {!isOwner && isCredit && entry.rawExpense && (
+                                    {!isOwner && isCredit && !entry.isFullySettled && entry.remainingDue > 0 && (
                                       <button
                                         type="button"
-                                        onClick={() => openMarkPaidModal(entry.rawExpense!)}
-                                        title="Mark this credit bill as Paid"
+                                        onClick={() => openClearSettlementModal(selectedVendorData.name, entry.remainingDue)}
+                                        title="Clear due balance for this bill"
                                         style={{
                                           padding: "4px 10px",
                                           borderRadius: "6px",
@@ -2452,7 +2550,7 @@ export default function ExpensesPage() {
                                           boxShadow: "0 1px 2px rgba(22, 163, 74, 0.3)",
                                         }}
                                       >
-                                        <span>💵</span> Mark Paid
+                                        <span>🤝</span> Settle Due
                                       </button>
                                     )}
                                     {!isOwner && entry.rawExpense && (
@@ -3545,6 +3643,32 @@ export default function ExpensesPage() {
                       }}
                     >
                       {activeModalVendorAccount.pendingBalance > 0 ? `₹${formatMoney(activeModalVendorAccount.pendingBalance)}` : "Fully Settled ✓"}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {activeModalVendorAccount && activeModalVendorAccount.pendingBalance <= 0 && (
+                <div
+                  style={{
+                    background: "#eff6ff",
+                    border: "1px solid #bfdbfe",
+                    color: "#1e40af",
+                    fontSize: "12px",
+                    padding: "10px 14px",
+                    borderRadius: "8px",
+                    marginBottom: "16px",
+                    lineHeight: "1.4",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "8px",
+                  }}
+                >
+                  <span style={{ fontSize: "16px" }}>ℹ️</span>
+                  <div>
+                    <strong>All credit dues are already settled</strong> for {activeModalVendorAccount.name} (Balance: ₹0.00).
+                    <div style={{ fontSize: "11px", color: "#3b82f6", marginTop: "2px" }}>
+                      Any additional payment recorded here will create an advance payment credit.
                     </div>
                   </div>
                 </div>
