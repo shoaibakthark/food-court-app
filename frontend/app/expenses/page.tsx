@@ -178,6 +178,11 @@ export default function ExpensesPage() {
   const [statusFilter, setStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
   const [dateFilter, setDateFilter] = useState<"this_month" | "all" | "today">("this_month");
 
+  // --- SUPPLIER TAB FILTERS & VIEW MODE ---
+  const [supplierViewMode, setSupplierViewMode] = useState<"cards" | "table">("cards");
+  const [supplierFilter, setSupplierFilter] = useState<"all" | "due" | "cleared">("all");
+  const [supplierSearch, setSupplierSearch] = useState("");
+
   // --- MODAL: ADD / EDIT EXPENSE ---
   const [expenseModalOpen, setExpenseModalOpen] = useState(false);
   const [editingExpenseId, setEditingExpenseId] = useState<number | null>(null);
@@ -347,6 +352,19 @@ export default function ExpensesPage() {
   const totalOutstandingDue = useMemo(() => {
     return dueVendors.reduce((sum, v) => sum + v.pendingBalance, 0);
   }, [dueVendors]);
+
+  // Displayed vendors for the Khata tab based on search and status filter
+  const displayedVendors = useMemo(() => {
+    return vendorAccounts.filter((v) => {
+      if (supplierSearch.trim()) {
+        const q = supplierSearch.toLowerCase().trim();
+        if (!v.name.toLowerCase().includes(q)) return false;
+      }
+      if (supplierFilter === "due" && v.pendingBalance <= 0) return false;
+      if (supplierFilter === "cleared" && v.pendingBalance > 0) return false;
+      return true;
+    });
+  }, [vendorAccounts, supplierSearch, supplierFilter]);
 
   // Unpaid credit bills count & total
   const unpaidCreditBills = useMemo(() => {
@@ -1647,109 +1665,382 @@ export default function ExpensesPage() {
                 </div>
               ) : null}
 
-              {/* SUPPLIERS AWAITING PAYMENT (CARDS) */}
-              <div style={{ marginBottom: "28px" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
-                  <div>
-                    <h2 style={{ margin: 0, fontSize: "17px", fontWeight: 800, color: "#0f172a" }}>
-                      🔴 Suppliers Awaiting Payment ({dueVendors.length})
-                    </h2>
-                    <span style={{ fontSize: "13px", color: "#64748b" }}>
-                      Suppliers with outstanding balances that need settlement
-                    </span>
+              {/* TOP SUMMARY / ALERT IF DUES EXIST */}
+              {dueVendors.length > 0 && (
+                <div
+                  style={{
+                    background: "linear-gradient(135deg, #fef2f2 0%, #fff1f2 100%)",
+                    border: "1px solid #fecaca",
+                    borderRadius: "12px",
+                    padding: "16px 20px",
+                    marginBottom: "20px",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    flexWrap: "wrap",
+                    gap: "12px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <span style={{ fontSize: "24px" }}>⚠️</span>
+                    <div>
+                      <div style={{ fontWeight: 800, color: "#991b1b", fontSize: "15px" }}>
+                        {dueVendors.length} Supplier{dueVendors.length > 1 ? "s" : ""} Awaiting Payment • Total Due: ₹{formatMoney(totalOutstandingDue)}
+                      </div>
+                      <div style={{ fontSize: "12px", color: "#b91c1c", marginTop: "2px" }}>
+                        {dueVendors.map((d) => `${d.name} (₹${formatMoney(d.pendingBalance)})`).join(", ")}
+                      </div>
+                    </div>
                   </div>
-                  {dueVendors.length > 0 && !isOwner && (
+
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    {supplierFilter !== "due" && (
+                      <button
+                        type="button"
+                        onClick={() => setSupplierFilter("due")}
+                        style={{
+                          background: "#ffffff",
+                          border: "1px solid #fca5a5",
+                          color: "#dc2626",
+                          padding: "8px 14px",
+                          borderRadius: "8px",
+                          fontWeight: 700,
+                          fontSize: "12px",
+                          cursor: "pointer",
+                        }}
+                      >
+                        🔴 Show Dues Only ({dueVendors.length})
+                      </button>
+                    )}
+                    {!isOwner && (
+                      <button
+                        type="button"
+                        onClick={() => openSettleModal()}
+                        style={{
+                          background: "#059669",
+                          border: "none",
+                          color: "#ffffff",
+                          padding: "8px 16px",
+                          borderRadius: "8px",
+                          fontWeight: 800,
+                          fontSize: "12px",
+                          cursor: "pointer",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          boxShadow: "0 2px 4px rgba(5, 150, 105, 0.25)",
+                        }}
+                      >
+                        <span>🤝</span> Settle Supplier Due
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* SUPPLIER ACCOUNTS HEADER & TOOLBAR */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  padding: "16px 20px",
+                  borderRadius: "12px",
+                  border: "1px solid #e2e8f0",
+                  marginBottom: "20px",
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: "14px",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                }}
+              >
+                {/* Left: Filter Pills */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                  <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "8px", padding: "3px" }}>
                     <button
                       type="button"
-                      onClick={() => openSettleModal()}
+                      onClick={() => setSupplierFilter("all")}
                       style={{
-                        background: "#059669",
-                        color: "#ffffff",
+                        padding: "6px 12px",
+                        borderRadius: "6px",
                         border: "none",
-                        padding: "8px 14px",
-                        borderRadius: "8px",
-                        fontWeight: 700,
-                        fontSize: "13px",
+                        background: supplierFilter === "all" ? "#ffffff" : "transparent",
+                        color: supplierFilter === "all" ? "#0f172a" : "#64748b",
+                        fontWeight: supplierFilter === "all" ? 800 : 600,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        boxShadow: supplierFilter === "all" ? "0 1px 3px rgba(0,0,0,0.1)" : "none",
+                      }}
+                    >
+                      All ({vendorAccounts.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSupplierFilter("due")}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: supplierFilter === "due" ? "#dc2626" : "transparent",
+                        color: supplierFilter === "due" ? "#ffffff" : "#dc2626",
+                        fontWeight: supplierFilter === "due" ? 800 : 700,
+                        fontSize: "12px",
                         cursor: "pointer",
                       }}
                     >
-                      🤝 Settle Any Supplier
+                      🔴 Has Due ({dueVendors.length})
                     </button>
-                  )}
+                    <button
+                      type="button"
+                      onClick={() => setSupplierFilter("cleared")}
+                      style={{
+                        padding: "6px 12px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: supplierFilter === "cleared" ? "#059669" : "transparent",
+                        color: supplierFilter === "cleared" ? "#ffffff" : "#059669",
+                        fontWeight: supplierFilter === "cleared" ? 800 : 700,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                      }}
+                    >
+                      ✓ Cleared ({vendorAccounts.length - dueVendors.length})
+                    </button>
+                  </div>
+
+                  {/* Search Supplier */}
+                  <div
+                    style={{
+                      height: "36px",
+                      background: "#f8fafc",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "8px",
+                      display: "flex",
+                      alignItems: "center",
+                      padding: "0 10px",
+                      gap: "6px",
+                      width: "200px",
+                    }}
+                  >
+                    <span style={{ fontSize: "13px", color: "#94a3b8" }}>🔍</span>
+                    <input
+                      type="text"
+                      placeholder="Search supplier..."
+                      value={supplierSearch}
+                      onChange={(e) => setSupplierSearch(e.target.value)}
+                      style={{
+                        border: "none",
+                        background: "transparent",
+                        outline: "none",
+                        fontSize: "12px",
+                        width: "100%",
+                      }}
+                    />
+                    {supplierSearch && (
+                      <button
+                        type="button"
+                        onClick={() => setSupplierSearch("")}
+                        style={{ border: "none", background: "transparent", cursor: "pointer", color: "#94a3b8", fontSize: "12px" }}
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                {dueVendors.length === 0 ? (
-                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "12px", padding: "24px", textAlign: "center", color: "#065f46" }}>
-                    <div style={{ fontSize: "28px", marginBottom: "6px" }}>🎉</div>
-                    <div style={{ fontWeight: 800, fontSize: "16px" }}>All Supplier Accounts Are Settled!</div>
-                    <div style={{ fontSize: "13px", color: "#047857", marginTop: "2px" }}>
-                      You currently owe ₹0.00 to all suppliers.
+                {/* Right: View Toggle (Cards vs Table) */}
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <div style={{ display: "flex", background: "#f1f5f9", borderRadius: "8px", padding: "3px" }}>
+                    <button
+                      type="button"
+                      onClick={() => setSupplierViewMode("cards")}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: supplierViewMode === "cards" ? "#2563eb" : "transparent",
+                        color: supplierViewMode === "cards" ? "#ffffff" : "#64748b",
+                        fontWeight: 800,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        boxShadow: supplierViewMode === "cards" ? "0 1px 3px rgba(37, 99, 235, 0.25)" : "none",
+                      }}
+                    >
+                      <span>🗂️</span> Cards View
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSupplierViewMode("table")}
+                      style={{
+                        padding: "6px 14px",
+                        borderRadius: "6px",
+                        border: "none",
+                        background: supplierViewMode === "table" ? "#2563eb" : "transparent",
+                        color: supplierViewMode === "table" ? "#ffffff" : "#64748b",
+                        fontWeight: 800,
+                        fontSize: "12px",
+                        cursor: "pointer",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        gap: "6px",
+                        boxShadow: supplierViewMode === "table" ? "0 1px 3px rgba(37, 99, 235, 0.25)" : "none",
+                      }}
+                    >
+                      <span>📋</span> Table View
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* VIEW 1: CARDS VIEW (DEFAULT & HIGHLY REQUESTED) */}
+              {supplierViewMode === "cards" ? (
+                displayedVendors.length === 0 ? (
+                  <div style={{ background: "#ffffff", borderRadius: "12px", border: "1px solid #e2e8f0", padding: "40px", textAlign: "center", color: "#64748b" }}>
+                    <div style={{ fontSize: "32px", marginBottom: "8px" }}>🏪</div>
+                    <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "16px" }}>No supplier accounts match your filter</div>
+                    <div style={{ fontSize: "13px", color: "#64748b", marginTop: "4px" }}>
+                      Try clearing your search or status filter.
                     </div>
                   </div>
                 ) : (
-                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "16px" }}>
-                    {dueVendors.map((vendor) => (
-                      <div
-                        key={vendor.name}
-                        style={{
-                          background: "#ffffff",
-                          borderRadius: "12px",
-                          border: "1px solid #fecaca",
-                          boxShadow: "0 2px 8px rgba(220, 38, 38, 0.05)",
-                          padding: "18px 20px",
-                          display: "flex",
-                          flexDirection: "column",
-                          justifyContent: "space-between",
-                        }}
-                      >
-                        <div>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                            <div>
-                              <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 900, color: "#0f172a" }}>
-                                🏪 {vendor.name}
-                              </h3>
-                              <span style={{ fontSize: "12px", color: "#64748b" }}>
-                                {vendor.creditBillCount} credit bills • Last: {formatDate(vendor.lastDate)}
-                              </span>
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "repeat(auto-fill, minmax(330px, 1fr))",
+                      gap: "16px",
+                    }}
+                  >
+                    {displayedVendors.map((vendor) => {
+                      const isDue = vendor.pendingBalance > 0;
+                      return (
+                        <div
+                          key={vendor.name}
+                          style={{
+                            background: "#ffffff",
+                            borderRadius: "14px",
+                            border: isDue ? "1.5px solid #fca5a5" : "1px solid #e2e8f0",
+                            boxShadow: isDue ? "0 4px 14px rgba(220, 38, 38, 0.08)" : "0 2px 6px rgba(0, 0, 0, 0.03)",
+                            padding: "18px 20px",
+                            display: "flex",
+                            flexDirection: "column",
+                            justifyContent: "space-between",
+                            transition: "all 0.2s ease",
+                          }}
+                        >
+                          <div>
+                            {/* Card Top: Store Icon, Name, and Status Badge */}
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px" }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                                  <span style={{ fontSize: "20px" }}>🏪</span>
+                                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                                    {vendor.name}
+                                  </h3>
+                                </div>
+                                <div style={{ fontSize: "12px", color: "#64748b", marginTop: "3px" }}>
+                                  {vendor.creditBillCount > 0 ? `${vendor.creditBillCount} credit bills` : `${vendor.billCount} bills`}
+                                  {vendor.lastDate ? ` • Last: ${formatDate(vendor.lastDate)}` : ""}
+                                </div>
+                              </div>
+
+                              {isDue ? (
+                                <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 800, whiteSpace: "nowrap" }}>
+                                  🔴 DUE
+                                </span>
+                              ) : (
+                                <span style={{ background: "#f0fdf4", color: "#059669", border: "1px solid #bbf7d0", padding: "4px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 700, whiteSpace: "nowrap" }}>
+                                  ✓ CLEAR
+                                </span>
+                              )}
                             </div>
-                            <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 800 }}>
-                              PAYMENT DUE
-                            </span>
+
+                            {/* Card Stats Grid: Purchases, Credit, Cleared, Current Due */}
+                            <div
+                              style={{
+                                display: "grid",
+                                gridTemplateColumns: "1fr 1fr",
+                                gap: "10px",
+                                background: isDue ? "#fffafb" : "#f8fafc",
+                                border: isDue ? "1px solid #fee2e2" : "1px solid #f1f5f9",
+                                padding: "12px 14px",
+                                borderRadius: "10px",
+                                margin: "14px 0",
+                                fontSize: "12px",
+                              }}
+                            >
+                              <div>
+                                <span style={{ color: "#64748b", fontSize: "11px", fontWeight: 600, display: "block" }}>Total Purchases</span>
+                                <div style={{ fontWeight: 800, color: "#0f172a", fontSize: "14px", marginTop: "2px" }}>
+                                  ₹{formatMoney(vendor.totalBilled)}
+                                </div>
+                              </div>
+
+                              <div>
+                                <span style={{ color: "#64748b", fontSize: "11px", fontWeight: 600, display: "block" }}>Credit Taken</span>
+                                <div style={{ fontWeight: 800, color: "#dc2626", fontSize: "14px", marginTop: "2px" }}>
+                                  ₹{formatMoney(vendor.totalCredit)}
+                                </div>
+                              </div>
+
+                              <div>
+                                <span style={{ color: "#64748b", fontSize: "11px", fontWeight: 600, display: "block" }}>Amount Cleared</span>
+                                <div style={{ fontWeight: 800, color: "#059669", fontSize: "14px", marginTop: "2px" }}>
+                                  ₹{formatMoney(vendor.totalCleared)}
+                                </div>
+                              </div>
+
+                              <div>
+                                <span style={{ color: isDue ? "#dc2626" : "#059669", fontSize: "11px", fontWeight: 700, display: "block" }}>
+                                  {isDue ? "Current Due" : "Balance Due"}
+                                </span>
+                                <div style={{ fontWeight: 900, color: isDue ? "#dc2626" : "#059669", fontSize: "16px", marginTop: "2px" }}>
+                                  ₹{formatMoney(vendor.pendingBalance)}
+                                </div>
+                              </div>
+                            </div>
                           </div>
 
-                          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", background: "#f8fafc", padding: "10px 12px", borderRadius: "8px", margin: "14px 0", fontSize: "12px" }}>
-                            <div>
-                              <span style={{ color: "#64748b" }}>Total Credit:</span>
-                              <div style={{ fontWeight: 700, color: "#0f172a" }}>₹{formatMoney(vendor.totalCredit)}</div>
-                            </div>
-                            <div>
-                              <span style={{ color: "#059669" }}>Paid So Far:</span>
-                              <div style={{ fontWeight: 700, color: "#059669" }}>₹{formatMoney(vendor.totalCleared)}</div>
-                            </div>
-                          </div>
+                          {/* Card Footer: Action Buttons */}
+                          <div style={{ display: "flex", gap: "8px", marginTop: "6px" }}>
+                            {isDue && !isOwner && (
+                              <button
+                                type="button"
+                                onClick={() => openSettleModal(vendor.name, vendor.pendingBalance)}
+                                style={{
+                                  flex: 1,
+                                  background: "#059669",
+                                  color: "#ffffff",
+                                  border: "none",
+                                  padding: "9px 12px",
+                                  borderRadius: "8px",
+                                  fontWeight: 800,
+                                  fontSize: "12px",
+                                  cursor: "pointer",
+                                  display: "inline-flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  gap: "5px",
+                                  boxShadow: "0 2px 4px rgba(5, 150, 105, 0.2)",
+                                }}
+                              >
+                                <span>🤝</span> Settle Due (₹{formatMoney(vendor.pendingBalance)})
+                              </button>
+                            )}
 
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "16px" }}>
-                            <span style={{ fontSize: "13px", fontWeight: 700, color: "#dc2626" }}>Current Balance Due:</span>
-                            <span style={{ fontSize: "22px", fontWeight: 900, color: "#dc2626" }}>
-                              ₹{formatMoney(vendor.pendingBalance)}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div style={{ display: "flex", gap: "8px" }}>
-                          {!isOwner && (
                             <button
                               type="button"
-                              onClick={() => openSettleModal(vendor.name, vendor.pendingBalance)}
+                              onClick={() => setStatementVendor(vendor.name)}
                               style={{
-                                flex: 1,
-                                background: "#059669",
-                                color: "#ffffff",
-                                border: "none",
-                                padding: "10px 14px",
+                                flex: isDue && !isOwner ? "0 0 auto" : 1,
+                                border: "1px solid #cbd5e1",
+                                background: "#ffffff",
+                                color: "#334155",
+                                padding: "9px 14px",
                                 borderRadius: "8px",
-                                fontWeight: 800,
-                                fontSize: "13px",
+                                fontWeight: 700,
+                                fontSize: "12px",
                                 cursor: "pointer",
                                 display: "inline-flex",
                                 alignItems: "center",
@@ -1757,125 +2048,117 @@ export default function ExpensesPage() {
                                 gap: "4px",
                               }}
                             >
-                              <span>🤝</span> Settle Due (₹{formatMoney(vendor.pendingBalance)})
+                              <span>📋</span> View Statement
                             </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => setStatementVendor(vendor.name)}
-                            style={{
-                              border: "1px solid #cbd5e1",
-                              background: "#ffffff",
-                              color: "#475569",
-                              padding: "10px 12px",
-                              borderRadius: "8px",
-                              fontWeight: 700,
-                              fontSize: "12px",
-                              cursor: "pointer",
-                            }}
-                          >
-                            View Statement
-                          </button>
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
-                )}
-              </div>
-
-              {/* ALL SUPPLIERS OVERVIEW */}
-              <div style={{ background: "#ffffff", borderRadius: "12px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
-                <div style={{ padding: "16px 20px", borderBottom: "1px solid #e2e8f0" }}>
-                  <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0f172a" }}>
-                    📋 All Supplier Accounts ({vendorAccounts.length})
-                  </h3>
-                </div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
-                    <thead>
-                      <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0", color: "#475569", fontWeight: 700 }}>
-                        <th style={{ padding: "12px 16px" }}>Supplier Name</th>
-                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Total Purchases</th>
-                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Taken</th>
-                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Amount Cleared</th>
-                        <th style={{ padding: "12px 16px", textAlign: "right" }}>Current Due</th>
-                        <th style={{ padding: "12px 16px", textAlign: "center" }}>Status</th>
-                        <th style={{ padding: "12px 16px", textAlign: "center" }}>Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {vendorAccounts.map((v) => (
-                        <tr key={v.name} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                          <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0f172a" }}>
-                            🏪 {v.name}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600 }}>
-                            ₹{formatMoney(v.totalBilled)}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: "#dc2626" }}>
-                            ₹{formatMoney(v.totalCredit)}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: "#059669" }}>
-                            ₹{formatMoney(v.totalCleared)}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 900, color: v.pendingBalance > 0 ? "#dc2626" : "#059669", fontSize: "14px" }}>
-                            ₹{formatMoney(v.pendingBalance)}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                            {v.pendingBalance > 0 ? (
-                              <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 800 }}>
-                                🔴 Due (₹{formatMoney(v.pendingBalance)})
-                              </span>
-                            ) : (
-                              <span style={{ background: "#f0fdf4", color: "#059669", border: "1px solid #bbf7d0", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 700 }}>
-                                ✓ Clear
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ padding: "12px 16px", textAlign: "center" }}>
-                            <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
-                              {v.pendingBalance > 0 && !isOwner && (
-                                <button
-                                  type="button"
-                                  onClick={() => openSettleModal(v.name, v.pendingBalance)}
-                                  style={{
-                                    padding: "4px 8px",
-                                    borderRadius: "6px",
-                                    background: "#059669",
-                                    color: "#ffffff",
-                                    border: "none",
-                                    fontSize: "11px",
-                                    fontWeight: 800,
-                                    cursor: "pointer",
-                                  }}
-                                >
-                                  🤝 Settle
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                onClick={() => setStatementVendor(v.name)}
-                                style={{
-                                  padding: "4px 8px",
-                                  borderRadius: "6px",
-                                  border: "1px solid #cbd5e1",
-                                  background: "#ffffff",
-                                  color: "#475569",
-                                  fontSize: "11px",
-                                  fontWeight: 600,
-                                  cursor: "pointer",
-                                }}
-                              >
-                                Statement
-                              </button>
-                            </div>
-                          </td>
+                )
+              ) : (
+                /* VIEW 2: TABLE VIEW */
+                <div style={{ background: "#ffffff", borderRadius: "12px", border: "1px solid #e2e8f0", overflow: "hidden" }}>
+                  <div style={{ padding: "16px 20px", borderBottom: "1px solid #e2e8f0" }}>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 800, color: "#0f172a" }}>
+                      📋 Supplier Accounts Table ({displayedVendors.length})
+                    </h3>
+                  </div>
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px", textAlign: "left" }}>
+                      <thead>
+                        <tr style={{ background: "#f8fafc", borderBottom: "2px solid #e2e8f0", color: "#475569", fontWeight: 700 }}>
+                          <th style={{ padding: "12px 16px" }}>Supplier Name</th>
+                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Total Purchases</th>
+                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Credit Taken</th>
+                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Amount Cleared</th>
+                          <th style={{ padding: "12px 16px", textAlign: "right" }}>Current Due</th>
+                          <th style={{ padding: "12px 16px", textAlign: "center" }}>Status</th>
+                          <th style={{ padding: "12px 16px", textAlign: "center" }}>Actions</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {displayedVendors.length === 0 ? (
+                          <tr>
+                            <td colSpan={7} style={{ padding: "30px", textAlign: "center", color: "#64748b" }}>
+                              No suppliers found matching filter.
+                            </td>
+                          </tr>
+                        ) : (
+                          displayedVendors.map((v) => (
+                            <tr key={v.name} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                              <td style={{ padding: "12px 16px", fontWeight: 700, color: "#0f172a" }}>
+                                🏪 {v.name}
+                              </td>
+                              <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600 }}>
+                                ₹{formatMoney(v.totalBilled)}
+                              </td>
+                              <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: "#dc2626" }}>
+                                ₹{formatMoney(v.totalCredit)}
+                              </td>
+                              <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 600, color: "#059669" }}>
+                                ₹{formatMoney(v.totalCleared)}
+                              </td>
+                              <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 900, color: v.pendingBalance > 0 ? "#dc2626" : "#059669", fontSize: "14px" }}>
+                                ₹{formatMoney(v.pendingBalance)}
+                              </td>
+                              <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                                {v.pendingBalance > 0 ? (
+                                  <span style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 800 }}>
+                                    🔴 Due (₹{formatMoney(v.pendingBalance)})
+                                  </span>
+                                ) : (
+                                  <span style={{ background: "#f0fdf4", color: "#059669", border: "1px solid #bbf7d0", padding: "3px 8px", borderRadius: "6px", fontSize: "11px", fontWeight: 700 }}>
+                                    ✓ Clear
+                                  </span>
+                                )}
+                              </td>
+                              <td style={{ padding: "12px 16px", textAlign: "center" }}>
+                                <div style={{ display: "flex", justifyContent: "center", gap: "6px" }}>
+                                  {v.pendingBalance > 0 && !isOwner && (
+                                    <button
+                                      type="button"
+                                      onClick={() => openSettleModal(v.name, v.pendingBalance)}
+                                      style={{
+                                        padding: "4px 8px",
+                                        borderRadius: "6px",
+                                        background: "#059669",
+                                        color: "#ffffff",
+                                        border: "none",
+                                        fontSize: "11px",
+                                        fontWeight: 800,
+                                        cursor: "pointer",
+                                      }}
+                                    >
+                                      🤝 Settle
+                                    </button>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={() => setStatementVendor(v.name)}
+                                    style={{
+                                      padding: "4px 8px",
+                                      borderRadius: "6px",
+                                      border: "1px solid #cbd5e1",
+                                      background: "#ffffff",
+                                      color: "#475569",
+                                      fontSize: "11px",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                    }}
+                                  >
+                                    Statement
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           )}
 
