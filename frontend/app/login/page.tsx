@@ -299,6 +299,101 @@ export default function LoginPage() {
             </button>
           </form>
 
+          {/* Quick Fill Demo Roles */}
+          <div
+            style={{
+              marginTop: "20px",
+              background: "#faf8fe",
+              borderRadius: "10px",
+              padding: "12px 14px",
+              border: "1px dashed #d8cce8",
+            }}
+          >
+            <div
+              style={{
+                fontSize: "11px",
+                fontWeight: 700,
+                color: "#6b5b82",
+                textTransform: "uppercase",
+                letterSpacing: "0.5px",
+                marginBottom: "8px",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span>⚡ Quick Sign-In Profiles</span>
+              <span style={{ fontSize: "10px", color: "#8b7a9f", fontWeight: 500 }}>Click to fill</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "6px" }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername("admin");
+                  setPassword("admin123");
+                  setError(null);
+                }}
+                style={{
+                  background: username === "admin" ? "#eedffc" : "#ffffff",
+                  border: username === "admin" ? "1.5px solid #7c3aed" : "1px solid #e0d7ec",
+                  borderRadius: "6px",
+                  padding: "7px 6px",
+                  cursor: "pointer",
+                  textAlign: "center",
+                  transition: "all 0.15s ease",
+                }}
+                title="Autofill Administrator (Full Access)"
+              >
+                <div style={{ fontSize: "11px", fontWeight: 800, color: "#4c1d95" }}>👑 Admin</div>
+                <div style={{ fontSize: "9.5px", color: "#6d5d85", marginTop: "2px" }}>Full Access</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername("owner");
+                  setPassword("owner123");
+                  setError(null);
+                }}
+                style={{
+                  background: username === "owner" ? "#fef3c7" : "#ffffff",
+                  border: username === "owner" ? "1.5px solid #f59e0b" : "1px solid #e0d7ec",
+                  borderRadius: "6px",
+                  padding: "7px 6px",
+                  cursor: "pointer",
+                  textAlign: "center",
+                  transition: "all 0.15s ease",
+                }}
+                title="Autofill Owner (Read-Only)"
+              >
+                <div style={{ fontSize: "11px", fontWeight: 800, color: "#92400e" }}>👁️ Owner</div>
+                <div style={{ fontSize: "9.5px", color: "#6d5d85", marginTop: "2px" }}>Read-Only</div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUsername("manager");
+                  setPassword("manager123");
+                  setError(null);
+                }}
+                style={{
+                  background: username === "manager" ? "#dbeafe" : "#ffffff",
+                  border: username === "manager" ? "1.5px solid #3b82f6" : "1px solid #e0d7ec",
+                  borderRadius: "6px",
+                  padding: "7px 6px",
+                  cursor: "pointer",
+                  textAlign: "center",
+                  transition: "all 0.15s ease",
+                }}
+                title="Autofill Manager (Staff / Kitchen)"
+              >
+                <div style={{ fontSize: "11px", fontWeight: 800, color: "#1e40af" }}>💼 Manager</div>
+                <div style={{ fontSize: "9.5px", color: "#6d5d85", marginTop: "2px" }}>Staff/Kitchen</div>
+              </button>
+            </div>
+          </div>
+
           {/* Security Footer Notice */}
           <div
             style={{

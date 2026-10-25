@@ -196,6 +196,113 @@ def get_auth_roles():
     ]
 
 
+class CreateUserPayload(BaseModel):
+    username: str
+    name: str
+    password: str
+    role: str = "manager"
+
+
+class UpdateUserPayload(BaseModel):
+    name: Optional[str] = None
+    password: Optional[str] = None
+    role: Optional[str] = None
+
+
+@app.post("/auth/users")
+def create_auth_user(payload: CreateUserPayload, db: Session = Depends(get_db)):
+    username = payload.username.strip()
+    name = payload.name.strip()
+    password = payload.password.strip()
+    role = (payload.role or "manager").strip().lower()
+
+    if not username or len(username) < 3:
+        raise HTTPException(status_code=400, detail="Username must be at least 3 characters.")
+    if not name:
+        raise HTTPException(status_code=400, detail="Full Name is required.")
+    if not password or len(password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
+    if role not in ["admin", "owner", "manager"]:
+        raise HTTPException(status_code=400, detail="Invalid role. Must be 'admin', 'owner', or 'manager'.")
+
+    existing = db.query(models.User).filter(func.lower(models.User.username) == username.lower()).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Username '{username}' is already taken.")
+
+    hashed_pw = security.get_password_hash(password)
+    user = models.User(
+        username=username,
+        name=name,
+        password=hashed_pw,
+        role=role,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "name": user.name,
+        "role": user.role,
+        "message": f"User '{user.username}' created successfully.",
+    }
+
+
+@app.put("/auth/users/{user_id}")
+def update_auth_user(user_id: int, payload: UpdateUserPayload, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if payload.name is not None and payload.name.strip():
+        user.name = payload.name.strip()
+
+    if payload.password is not None and payload.password.strip():
+        pw = payload.password.strip()
+        if len(pw) < 4:
+            raise HTTPException(status_code=400, detail="Password must be at least 4 characters.")
+        user.password = security.get_password_hash(pw)
+
+    if payload.role is not None and payload.role.strip():
+        role = payload.role.strip().lower()
+        if role not in ["admin", "owner", "manager"]:
+            raise HTTPException(status_code=400, detail="Invalid role. Must be 'admin', 'owner', or 'manager'.")
+        if user.username.lower() == "admin" and role != "admin":
+            raise HTTPException(status_code=400, detail="Cannot change role of primary 'admin' account.")
+        user.role = role
+
+    db.commit()
+    db.refresh(user)
+
+    return {
+        "id": user.id,
+        "username": user.username,
+        "name": user.name,
+        "role": user.role,
+        "message": f"User '{user.username}' updated successfully.",
+    }
+
+
+@app.delete("/auth/users/{user_id}")
+def delete_auth_user(user_id: int, db: Session = Depends(get_db)):
+    user = db.query(models.User).filter(models.User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+
+    if user.username.lower() == "admin":
+        raise HTTPException(status_code=400, detail="The primary 'admin' account cannot be deleted.")
+
+    username = user.username
+    db.delete(user)
+    db.commit()
+
+    return {
+        "success": True,
+        "message": f"User '{username}' deleted successfully.",
+    }
+
+
 # ============================================================
 # LOCAL DATABASE BACKUP ENDPOINTS (PERMANENT DRIVE)
 # ============================================================

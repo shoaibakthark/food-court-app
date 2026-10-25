@@ -83,24 +83,44 @@ export function SidebarUserCard() {
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={logout}
-          title="Sign Out / Switch Role"
-          style={{
-            background: "rgba(255, 255, 255, 0.12)",
-            border: "none",
-            color: "#ffffff",
-            borderRadius: "6px",
-            padding: "5px 8px",
-            fontSize: "11px",
-            fontWeight: 600,
-            cursor: "pointer",
-            transition: "all 0.15s ease",
-          }}
-        >
-          Logout
-        </button>
+        <div style={{ display: "flex", gap: "5px" }}>
+          <button
+            type="button"
+            onClick={logout}
+            title="Switch User / Sign In as another role"
+            style={{
+              background: "rgba(255, 255, 255, 0.12)",
+              border: "1px solid rgba(255, 255, 255, 0.2)",
+              color: "#ffffff",
+              borderRadius: "6px",
+              padding: "5px 7px",
+              fontSize: "11px",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            Switch
+          </button>
+          <button
+            type="button"
+            onClick={logout}
+            title="Sign Out"
+            style={{
+              background: "rgba(239, 68, 68, 0.22)",
+              border: "1px solid rgba(239, 68, 68, 0.35)",
+              color: "#fca5a5",
+              borderRadius: "6px",
+              padding: "5px 7px",
+              fontSize: "11px",
+              fontWeight: 600,
+              cursor: "pointer",
+              transition: "all 0.15s ease",
+            }}
+          >
+            Logout
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -198,7 +218,28 @@ export function NavLink({
 
 export function TopbarUserBadge() {
   const { user, logout, isOwner } = useAuth();
-  if (!user) return null;
+  if (!user) {
+    return (
+      <Link
+        href="/login"
+        style={{
+          background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+          color: "#ffffff",
+          borderRadius: "8px",
+          padding: "7px 14px",
+          fontSize: "12px",
+          fontWeight: 700,
+          textDecoration: "none",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "5px",
+          boxShadow: "0 2px 8px rgba(124, 58, 237, 0.3)",
+        }}
+      >
+        🔐 Sign In
+      </Link>
+    );
+  }
 
   const roleMeta = ROLE_INFO[user.role] || ROLE_INFO.admin;
 
@@ -246,20 +287,46 @@ export function TopbarUserBadge() {
       <button
         type="button"
         onClick={logout}
-        title="Sign Out"
+        title="Switch User / Sign In as another account"
         style={{
           background: "#f5f3ff",
           border: "1px solid #ddd6fe",
           color: "#6d28d9",
           borderRadius: "8px",
-          padding: "6px 12px",
+          padding: "6px 11px",
           fontSize: "12px",
           cursor: "pointer",
           fontWeight: 700,
           transition: "all 0.15s ease",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "4px",
         }}
       >
-        🚪 Logout
+        <span>🔄</span>
+        <span>Switch</span>
+      </button>
+      <button
+        type="button"
+        onClick={logout}
+        title="Sign Out"
+        style={{
+          background: "#fef2f2",
+          border: "1px solid #fecaca",
+          color: "#b91c1c",
+          borderRadius: "8px",
+          padding: "6px 11px",
+          fontSize: "12px",
+          cursor: "pointer",
+          fontWeight: 700,
+          transition: "all 0.15s ease",
+          display: "inline-flex",
+          alignItems: "center",
+          gap: "4px",
+        }}
+      >
+        <span>🚪</span>
+        <span>Logout</span>
       </button>
     </div>
   );

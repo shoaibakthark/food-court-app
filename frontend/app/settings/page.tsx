@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuth } from "../lib/auth";
+import { useAuth, ROLE_INFO } from "../lib/auth";
 import { SidebarUserCard, OwnerBanner, NavLink, TopbarUserBadge, AppSidebar, MobileMenuButton } from "../components/AuthBar";
 import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
 import { GoogleDriveBackupModal } from "../components/GoogleDriveBackupModal";
@@ -40,8 +40,155 @@ export default function SettingsPage() {
   const { user, isOwner, isManager } = useAuth();
 
   const [profile, setProfile] = useState<BusinessProfile>(DEFAULT_PROFILE);
-  const [activeTab, setActiveTab] = useState<"profile" | "operations" | "diagnostics">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "operations" | "diagnostics" | "users">("profile");
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  // User Accounts & Logins state
+  type AuthUserRecord = {
+    id: number;
+    username: string;
+    name: string;
+    role: "admin" | "owner" | "manager";
+  };
+
+  const [authUsers, setAuthUsers] = useState<AuthUserRecord[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [userModalOpen, setUserModalOpen] = useState(false);
+  const [editUserModalOpen, setEditUserModalOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState<AuthUserRecord | null>(null);
+
+  // Add User Form State
+  const [newUsername, setNewUsername] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole] = useState<"admin" | "owner" | "manager">("manager");
+  const [userFormError, setUserFormError] = useState<string | null>(null);
+  const [userFormSubmitting, setUserFormSubmitting] = useState(false);
+
+  // Edit/Reset Password Form State
+  const [editName, setEditName] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [editRole, setEditRole] = useState<"admin" | "owner" | "manager">("manager");
+  const [editUserError, setEditUserError] = useState<string | null>(null);
+  const [editUserSubmitting, setEditUserSubmitting] = useState(false);
+
+  const fetchUsers = async () => {
+    try {
+      setLoadingUsers(true);
+      const res = await fetch(`${API_URL}/auth/users`);
+      if (res.ok) {
+        const data = await res.json();
+        setAuthUsers(Array.isArray(data) ? data : []);
+      }
+    } catch (err) {
+      console.error("Failed to load users", err);
+    } finally {
+      setLoadingUsers(false);
+    }
+  };
+
+  const handleCreateUser = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!newUsername.trim() || !newName.trim() || !newPassword.trim()) {
+      setUserFormError("All fields are required.");
+      return;
+    }
+    try {
+      setUserFormSubmitting(true);
+      setUserFormError(null);
+      const res = await fetch(`${API_URL}/auth/users`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: newUsername.trim(),
+          name: newName.trim(),
+          password: newPassword.trim(),
+          role: newRole,
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || "Failed to create user.");
+      }
+      setSuccessMsg(`✓ User "${newUsername.trim()}" created successfully!`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+      setUserModalOpen(false);
+      setNewUsername("");
+      setNewName("");
+      setNewPassword("");
+      setNewRole("manager");
+      fetchUsers();
+    } catch (err: any) {
+      setUserFormError(err.message || "Failed to create user.");
+    } finally {
+      setUserFormSubmitting(false);
+    }
+  };
+
+  const handleOpenEditUser = (u: AuthUserRecord) => {
+    setEditingUser(u);
+    setEditName(u.name);
+    setEditRole(u.role);
+    setEditPassword("");
+    setEditUserError(null);
+    setEditUserModalOpen(true);
+  };
+
+  const handleUpdateUser = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!editingUser) return;
+    try {
+      setEditUserSubmitting(true);
+      setEditUserError(null);
+      const body: any = {
+        name: editName.trim(),
+        role: editRole,
+      };
+      if (editPassword.trim()) {
+        body.password = editPassword.trim();
+      }
+      const res = await fetch(`${API_URL}/auth/users/${editingUser.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || "Failed to update user.");
+      }
+      setSuccessMsg(`✓ User "${editingUser.username}" updated successfully!`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+      setEditUserModalOpen(false);
+      setEditingUser(null);
+      setEditPassword("");
+      fetchUsers();
+    } catch (err: any) {
+      setEditUserError(err.message || "Failed to update user.");
+    } finally {
+      setEditUserSubmitting(false);
+    }
+  };
+
+  const handleDeleteUser = async (u: AuthUserRecord) => {
+    if (u.username.toLowerCase() === "admin") {
+      alert("The primary admin account cannot be deleted.");
+      return;
+    }
+    const ok = window.confirm(`Are you sure you want to delete user "${u.username}" (${u.name})?`);
+    if (!ok) return;
+    try {
+      const res = await fetch(`${API_URL}/auth/users/${u.id}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.detail || "Failed to delete user.");
+      }
+      setSuccessMsg(`✓ User "${u.username}" deleted successfully.`);
+      setTimeout(() => setSuccessMsg(null), 5000);
+      fetchUsers();
+    } catch (err: any) {
+      alert("Error deleting user: " + err.message);
+    }
+  };
 
   // System Health States
   const [apiOnline, setApiOnline] = useState<boolean | null>(null);
@@ -210,6 +357,7 @@ export default function SettingsPage() {
         setApiOnline(false);
       }
       fetchBackupStatus();
+      fetchUsers();
     }
     checkHealth();
   }, []);
@@ -475,6 +623,29 @@ export default function SettingsPage() {
               }}
             >
               System Diagnostics & Data Backup
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveTab("users");
+                fetchUsers();
+              }}
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom: activeTab === "users" ? "3px solid #7c3aed" : "3px solid transparent",
+                padding: "12px 6px",
+                fontSize: "14px",
+                fontWeight: activeTab === "users" ? 700 : 500,
+                color: activeTab === "users" ? "#7c3aed" : "#6c5e7e",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+              }}
+            >
+              <span>🔐</span>
+              <span>User Accounts & Login</span>
             </button>
           </div>
 
@@ -1046,8 +1217,856 @@ export default function SettingsPage() {
               </div>
             </div>
           )}
+
+          {/* TAB 4: USER ACCOUNTS & LOGIN MANAGEMENT */}
+          {activeTab === "users" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              {/* Header Banner & Action Bar */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #e9e5f0",
+                  padding: "24px 28px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  flexWrap: "wrap",
+                  gap: "16px",
+                  boxShadow: "0 2px 10px rgba(36, 16, 63, 0.03)",
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "4px" }}>
+                    <span style={{ fontSize: "22px" }}>🔐</span>
+                    <h2 style={{ margin: 0, fontSize: "19px", fontWeight: 700, color: "#1e0836" }}>
+                      User Accounts & Login Management
+                    </h2>
+                  </div>
+                  <p style={{ margin: 0, fontSize: "13px", color: "#6c5e7e" }}>
+                    Manage login credentials, role-based privileges, and staff access accounts.
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                  <button
+                    type="button"
+                    onClick={fetchUsers}
+                    style={{
+                      background: "#f8f6fc",
+                      border: "1px solid #dcd2ea",
+                      borderRadius: "8px",
+                      padding: "9px 14px",
+                      fontSize: "12.5px",
+                      fontWeight: 600,
+                      color: "#5b4a73",
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>🔄</span>
+                    <span>Refresh</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewUsername("");
+                      setNewName("");
+                      setNewPassword("");
+                      setNewRole("manager");
+                      setUserFormError(null);
+                      setUserModalOpen(true);
+                    }}
+                    style={{
+                      background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                      color: "#ffffff",
+                      border: "none",
+                      borderRadius: "8px",
+                      padding: "9px 16px",
+                      fontSize: "13px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      boxShadow: "0 3px 12px rgba(124, 58, 237, 0.35)",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>＋</span>
+                    <span>Add Login User</span>
+                  </button>
+
+                  <Link
+                    href="/login"
+                    style={{
+                      background: "#f1f5f9",
+                      border: "1px solid #cbd5e1",
+                      borderRadius: "8px",
+                      padding: "9px 14px",
+                      fontSize: "12.5px",
+                      fontWeight: 700,
+                      color: "#334155",
+                      textDecoration: "none",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: "6px",
+                    }}
+                  >
+                    <span>🚪</span>
+                    <span>Switch User</span>
+                  </Link>
+                </div>
+              </div>
+
+              {/* System Roles Quick Reference Cards */}
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))",
+                  gap: "16px",
+                }}
+              >
+                {/* Admin Card */}
+                <div
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "12px",
+                    border: "1px solid #e9e5f0",
+                    borderTop: "3px solid #7c3aed",
+                    padding: "18px 20px",
+                    boxShadow: "0 2px 8px rgba(36, 16, 63, 0.03)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "18px" }}>👑</span>
+                      <strong style={{ fontSize: "14px", color: "#1e0836" }}>Administrator</strong>
+                    </div>
+                    <span
+                      style={{
+                        background: "#f3e8ff",
+                        color: "#6b21a8",
+                        padding: "3px 8px",
+                        borderRadius: "12px",
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Full Access
+                    </span>
+                  </div>
+                  <p style={{ margin: "0 0 10px 0", fontSize: "12px", color: "#6c5e7e", lineHeight: 1.4 }}>
+                    Complete read, create, update, and deletion authority across all modules, accounting, and system configurations.
+                  </p>
+                  <div
+                    style={{
+                      background: "#faf8fd",
+                      border: "1px dashed #dcd2ea",
+                      borderRadius: "6px",
+                      padding: "7px 10px",
+                      fontSize: "11px",
+                      color: "#4a3c60",
+                      display: "flex",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <span>Default Login:</span>
+                    <strong>admin / admin123</strong>
+                  </div>
+                </div>
+
+                {/* Owner Card */}
+                <div
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "12px",
+                    border: "1px solid #e9e5f0",
+                    borderTop: "3px solid #f59e0b",
+                    padding: "18px 20px",
+                    boxShadow: "0 2px 8px rgba(36, 16, 63, 0.03)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "18px" }}>👁️</span>
+                      <strong style={{ fontSize: "14px", color: "#1e0836" }}>Business Owner</strong>
+                    </div>
+                    <span
+                      style={{
+                        background: "#fef3c7",
+                        color: "#92400e",
+                        padding: "3px 8px",
+                        borderRadius: "12px",
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Read Only
+                    </span>
+                  </div>
+                  <p style={{ margin: "0 0 10px 0", fontSize: "12px", color: "#6c5e7e", lineHeight: 1.4 }}>
+                    Executive view of all events, reports, and financial balances. Add, edit, and delete operations are safely disabled.
+                  </p>
+                  <div
+                    style={{
+                      background: "#fffbeb",
+                      border: "1px dashed #fde68a",
+                      borderRadius: "6px",
+                      padding: "7px 10px",
+                      fontSize: "11px",
+                      color: "#78350f",
+                      display: "flex",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <span>Default Login:</span>
+                    <strong>owner / owner123</strong>
+                  </div>
+                </div>
+
+                {/* Manager Card */}
+                <div
+                  style={{
+                    background: "#ffffff",
+                    borderRadius: "12px",
+                    border: "1px solid #e9e5f0",
+                    borderTop: "3px solid #3b82f6",
+                    padding: "18px 20px",
+                    boxShadow: "0 2px 8px rgba(36, 16, 63, 0.03)",
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                      <span style={{ fontSize: "18px" }}>💼</span>
+                      <strong style={{ fontSize: "14px", color: "#1e0836" }}>Staff Wage Manager</strong>
+                    </div>
+                    <span
+                      style={{
+                        background: "#dbeafe",
+                        color: "#1e40af",
+                        padding: "3px 8px",
+                        borderRadius: "12px",
+                        fontSize: "10.5px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      Staff / Wages
+                    </span>
+                  </div>
+                  <p style={{ margin: "0 0 10px 0", fontSize: "12px", color: "#6c5e7e", lineHeight: 1.4 }}>
+                    Operational portal focused exclusively on staff roster management and wage payment disbursements.
+                  </p>
+                  <div
+                    style={{
+                      background: "#eff6ff",
+                      border: "1px dashed #bfdbfe",
+                      borderRadius: "6px",
+                      padding: "7px 10px",
+                      fontSize: "11px",
+                      color: "#1e3a8a",
+                      display: "flex",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    <span>Default Login:</span>
+                    <strong>manager / manager123</strong>
+                  </div>
+                </div>
+              </div>
+
+              {/* Accounts Table Card */}
+              <div
+                style={{
+                  background: "#ffffff",
+                  borderRadius: "14px",
+                  border: "1px solid #e9e5f0",
+                  padding: "24px 28px",
+                  boxShadow: "0 2px 10px rgba(36, 16, 63, 0.03)",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px" }}>
+                  <div>
+                    <h3 style={{ margin: 0, fontSize: "16px", fontWeight: 700, color: "#1e0836" }}>
+                      Active Login Accounts ({authUsers.length})
+                    </h3>
+                    <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#6c5e7e" }}>
+                      Users with authorized access to log in to this portal.
+                    </p>
+                  </div>
+                </div>
+
+                {loadingUsers ? (
+                  <div style={{ padding: "40px", textAlign: "center", color: "#8b7a9f", fontSize: "13.5px" }}>
+                    Loading user accounts...
+                  </div>
+                ) : authUsers.length === 0 ? (
+                  <div style={{ padding: "40px", textAlign: "center", color: "#8b7a9f", fontSize: "13.5px" }}>
+                    No user accounts found. Click <strong>"Add Login User"</strong> above to register an account.
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "13px" }}>
+                      <thead>
+                        <tr style={{ background: "#faf8fd", borderBottom: "1px solid #e9e5f0", textAlign: "left" }}>
+                          <th style={{ padding: "12px 16px", fontWeight: 700, color: "#4a3c60", borderRadius: "8px 0 0 8px" }}>User</th>
+                          <th style={{ padding: "12px 16px", fontWeight: 700, color: "#4a3c60" }}>Username</th>
+                          <th style={{ padding: "12px 16px", fontWeight: 700, color: "#4a3c60" }}>Assigned Role</th>
+                          <th style={{ padding: "12px 16px", fontWeight: 700, color: "#4a3c60", textAlign: "right", borderRadius: "0 8px 8px 0" }}>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {authUsers.map((u) => {
+                          const roleMeta = ROLE_INFO[u.role] || ROLE_INFO.admin;
+                          const isPrimaryAdmin = u.username.toLowerCase() === "admin";
+                          return (
+                            <tr key={u.id} style={{ borderBottom: "1px solid #f3eff8" }}>
+                              <td style={{ padding: "14px 16px" }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                                  <div
+                                    style={{
+                                      width: "36px",
+                                      height: "36px",
+                                      borderRadius: "9px",
+                                      background: roleMeta.bg,
+                                      color: roleMeta.color,
+                                      display: "flex",
+                                      alignItems: "center",
+                                      justifyContent: "center",
+                                      fontWeight: 800,
+                                      fontSize: "13px",
+                                      flexShrink: 0,
+                                    }}
+                                  >
+                                    {u.name.charAt(0).toUpperCase()}
+                                  </div>
+                                  <div>
+                                    <strong style={{ color: "#1e0836", fontSize: "13px", display: "block" }}>{u.name}</strong>
+                                    {isPrimaryAdmin && (
+                                      <span style={{ fontSize: "10.5px", color: "#7c3aed", fontWeight: 600 }}>Primary System Admin</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+
+                              <td style={{ padding: "14px 16px" }}>
+                                <code
+                                  style={{
+                                    background: "#f3eff8",
+                                    color: "#5b21b6",
+                                    padding: "3px 8px",
+                                    borderRadius: "6px",
+                                    fontSize: "12px",
+                                    fontFamily: "monospace",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  @{u.username}
+                                </code>
+                              </td>
+
+                              <td style={{ padding: "14px 16px" }}>
+                                <span
+                                  style={{
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "5px",
+                                    background: roleMeta.bg,
+                                    color: roleMeta.color,
+                                    padding: "4px 10px",
+                                    borderRadius: "8px",
+                                    fontSize: "11.5px",
+                                    fontWeight: 700,
+                                  }}
+                                >
+                                  <span>{u.role === "admin" ? "👑" : u.role === "owner" ? "👁️" : "💼"}</span>
+                                  <span>{roleMeta.title} ({roleMeta.badge})</span>
+                                </span>
+                              </td>
+
+                              <td style={{ padding: "14px 16px", textAlign: "right" }}>
+                                <div style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditUser(u)}
+                                    style={{
+                                      background: "#f5f3ff",
+                                      border: "1px solid #ddd6fe",
+                                      color: "#6d28d9",
+                                      borderRadius: "6px",
+                                      padding: "6px 11px",
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      cursor: "pointer",
+                                    }}
+                                    title="Edit user info or reset password"
+                                  >
+                                    ✏️ Edit / Password
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteUser(u)}
+                                    disabled={isPrimaryAdmin}
+                                    style={{
+                                      background: isPrimaryAdmin ? "#f8fafc" : "#fef2f2",
+                                      border: isPrimaryAdmin ? "1px solid #e2e8f0" : "1px solid #fecaca",
+                                      color: isPrimaryAdmin ? "#94a3b8" : "#dc2626",
+                                      borderRadius: "6px",
+                                      padding: "6px 11px",
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      cursor: isPrimaryAdmin ? "not-allowed" : "pointer",
+                                      opacity: isPrimaryAdmin ? 0.6 : 1,
+                                    }}
+                                    title={isPrimaryAdmin ? "Primary admin cannot be deleted" : "Delete user account"}
+                                  >
+                                    🗑️ Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* ADD USER MODAL */}
+      {userModalOpen && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(18, 4, 34, 0.6)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+            padding: "20px",
+          }}
+          onClick={() => !userFormSubmitting && setUserModalOpen(false)}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "460px",
+              padding: "28px",
+              boxShadow: "0 20px 50px rgba(18, 4, 34, 0.35)",
+              border: "1px solid #e9e5f0",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    background: "#f3e8ff",
+                    color: "#7c3aed",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "17px",
+                  }}
+                >
+                  👤
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#1e0836" }}>Add Login User</h3>
+                  <small style={{ color: "#6c5e7e" }}>Create a new portal login credential</small>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUserModalOpen(false)}
+                disabled={userFormSubmitting}
+                style={{ background: "none", border: "none", fontSize: "18px", color: "#8b7a9f", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {userFormError && (
+              <div
+                style={{
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#991b1b",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  marginBottom: "16px",
+                  fontSize: "12.5px",
+                }}
+              >
+                ⚠️ {userFormError}
+              </div>
+            )}
+
+            <form onSubmit={handleCreateUser}>
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1e0836", marginBottom: "6px" }}>
+                  Username (login identifier)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ""))}
+                  placeholder="e.g. manager_rahul"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #dcd2ea",
+                    fontSize: "13.5px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+                <small style={{ color: "#8b7a9f", fontSize: "11px", marginTop: "3px", display: "block" }}>
+                  Lowercase letters, numbers, and underscores only.
+                </small>
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1e0836", marginBottom: "6px" }}>
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newName}
+                  onChange={(e) => setNewName(e.target.value)}
+                  placeholder="e.g. Rahul Sharma"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #dcd2ea",
+                    fontSize: "13.5px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1e0836", marginBottom: "6px" }}>
+                  Password
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  placeholder="Minimum 4 characters"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #dcd2ea",
+                    fontSize: "13.5px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "22px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1e0836", marginBottom: "6px" }}>
+                  Assigned Role
+                </label>
+                <select
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value as any)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #dcd2ea",
+                    fontSize: "13.5px",
+                    outline: "none",
+                    background: "#ffffff",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <option value="admin">👑 Administrator (Full System Access)</option>
+                  <option value="owner">👁️ Business Owner (Read-Only Visibility)</option>
+                  <option value="manager">💼 Staff Wage Manager (Staff & Wages Only)</option>
+                </select>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setUserModalOpen(false)}
+                  disabled={userFormSubmitting}
+                  style={{
+                    padding: "9px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#475569",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={userFormSubmitting}
+                  style={{
+                    padding: "9px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: userFormSubmitting ? "not-allowed" : "pointer",
+                    boxShadow: "0 2px 8px rgba(124, 58, 237, 0.35)",
+                  }}
+                >
+                  {userFormSubmitting ? "Creating..." : "Create User"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* EDIT USER / RESET PASSWORD MODAL */}
+      {editUserModalOpen && editingUser && (
+        <div
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: "rgba(18, 4, 34, 0.6)",
+            backdropFilter: "blur(4px)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
+            zIndex: 9999,
+            padding: "20px",
+          }}
+          onClick={() => !editUserSubmitting && setEditUserModalOpen(false)}
+        >
+          <div
+            style={{
+              background: "#ffffff",
+              borderRadius: "16px",
+              width: "100%",
+              maxWidth: "460px",
+              padding: "28px",
+              boxShadow: "0 20px 50px rgba(18, 4, 34, 0.35)",
+              border: "1px solid #e9e5f0",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                <div
+                  style={{
+                    width: "36px",
+                    height: "36px",
+                    borderRadius: "10px",
+                    background: "#ede9fe",
+                    color: "#6d28d9",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    fontSize: "17px",
+                  }}
+                >
+                  ✏️
+                </div>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: "17px", fontWeight: 700, color: "#1e0836" }}>Edit User Account</h3>
+                  <small style={{ color: "#6c5e7e" }}>Update profile or reset password for @{editingUser.username}</small>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditUserModalOpen(false)}
+                disabled={editUserSubmitting}
+                style={{ background: "none", border: "none", fontSize: "18px", color: "#8b7a9f", cursor: "pointer" }}
+              >
+                ✕
+              </button>
+            </div>
+
+            {editUserError && (
+              <div
+                style={{
+                  background: "#fef2f2",
+                  border: "1px solid #fecaca",
+                  color: "#991b1b",
+                  padding: "10px 14px",
+                  borderRadius: "8px",
+                  marginBottom: "16px",
+                  fontSize: "12.5px",
+                }}
+              >
+                ⚠️ {editUserError}
+              </div>
+            )}
+
+            <form onSubmit={handleUpdateUser}>
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1e0836", marginBottom: "6px" }}>
+                  Username
+                </label>
+                <input
+                  type="text"
+                  disabled
+                  value={editingUser.username}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    background: "#f8fafc",
+                    color: "#64748b",
+                    fontSize: "13.5px",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1e0836", marginBottom: "6px" }}>
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #dcd2ea",
+                    fontSize: "13.5px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div style={{ marginBottom: "14px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1e0836", marginBottom: "6px" }}>
+                  Role
+                </label>
+                <select
+                  value={editRole}
+                  disabled={editingUser.username.toLowerCase() === "admin"}
+                  onChange={(e) => setEditRole(e.target.value as any)}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #dcd2ea",
+                    fontSize: "13.5px",
+                    outline: "none",
+                    background: editingUser.username.toLowerCase() === "admin" ? "#f8fafc" : "#ffffff",
+                    boxSizing: "border-box",
+                  }}
+                >
+                  <option value="admin">👑 Administrator (Full System Access)</option>
+                  <option value="owner">👁️ Business Owner (Read-Only Visibility)</option>
+                  <option value="manager">💼 Staff Wage Manager (Staff & Wages Only)</option>
+                </select>
+                {editingUser.username.toLowerCase() === "admin" && (
+                  <small style={{ color: "#8b7a9f", fontSize: "11px", marginTop: "3px", display: "block" }}>
+                    Primary admin role cannot be changed.
+                  </small>
+                )}
+              </div>
+
+              <div style={{ marginBottom: "22px" }}>
+                <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#1e0836", marginBottom: "6px" }}>
+                  New Password <span style={{ fontWeight: 400, color: "#8b7a9f" }}>(Leave blank to keep existing password)</span>
+                </label>
+                <input
+                  type="text"
+                  value={editPassword}
+                  onChange={(e) => setEditPassword(e.target.value)}
+                  placeholder="Enter new password (optional)"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #dcd2ea",
+                    fontSize: "13.5px",
+                    outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={() => setEditUserModalOpen(false)}
+                  disabled={editUserSubmitting}
+                  style={{
+                    padding: "9px 16px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    background: "#ffffff",
+                    color: "#475569",
+                    fontSize: "13px",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                  }}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={editUserSubmitting}
+                  style={{
+                    padding: "9px 18px",
+                    borderRadius: "8px",
+                    border: "none",
+                    background: "linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%)",
+                    color: "#ffffff",
+                    fontSize: "13px",
+                    fontWeight: 700,
+                    cursor: editUserSubmitting ? "not-allowed" : "pointer",
+                    boxShadow: "0 2px 8px rgba(124, 58, 237, 0.35)",
+                  }}
+                >
+                  {editUserSubmitting ? "Saving..." : "Save Changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       <GoogleDriveBackupModal isOpen={showDriveModal} onClose={() => setShowDriveModal(false)} />
     </main>
   );
