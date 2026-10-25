@@ -5,6 +5,8 @@ import datetime
 from urllib.parse import urlparse
 from dotenv import load_dotenv
 
+env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
+load_dotenv(env_path)
 load_dotenv()
 
 # Default permanent backup folder on D drive or fallback
