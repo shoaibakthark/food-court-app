@@ -129,7 +129,32 @@ function formatDate(dateStr: string | null | undefined): string {
 function isCreditExpense(method: string | null | undefined): boolean {
   if (!method) return false;
   const m = method.toLowerCase();
-  return m.includes("credit") || m.includes("account") || m.includes("due") || m.includes("payable");
+  return m.includes("credit") || m.includes("account") || m.includes("due") || m.includes("payable") || m.includes("khata");
+}
+
+function isPaidExpense(method: string | null | undefined, note?: string | null): boolean {
+  if (!method) return true;
+  const m = method.toLowerCase();
+  if (isCreditExpense(method)) {
+    if (m.includes("paid") || m.includes("settled") || m.includes("cleared")) return true;
+    const n = (note || "").toLowerCase();
+    if (n.includes("settled via") || n.includes("paid via")) return true;
+    return false;
+  }
+  return true;
+}
+
+function isUnpaidCreditExpense(method: string | null | undefined, note?: string | null): boolean {
+  return isCreditExpense(method) && !isPaidExpense(method, note);
+}
+
+function modeShortName(mode: string): string {
+  if (mode.includes("UPI")) return "UPI";
+  if (mode.includes("Cash")) return "Cash";
+  if (mode.includes("Bank") || mode.includes("NEFT")) return "Bank";
+  if (mode.includes("Cheque")) return "Cheque";
+  if (mode.includes("Card")) return "Card";
+  return mode;
 }
 
 export default function ExpensesPage() {
@@ -268,10 +293,17 @@ export default function ExpensesPage() {
       acc.totalBilled += amt;
       acc.billCount += 1;
 
-      if (isCreditExpense(e.payment_method)) {
+      const isCredit = isCreditExpense(e.payment_method);
+      const isUnpaid = isUnpaidCreditExpense(e.payment_method, e.note);
+
+      if (isCredit) {
         acc.totalCredit += amt;
         acc.creditBillCount += 1;
-        acc.pendingBalance += amt;
+        if (isUnpaid) {
+          acc.pendingBalance += amt;
+        } else {
+          acc.totalCleared += amt;
+        }
       } else {
         acc.totalDirectPaid += amt;
       }
@@ -299,9 +331,6 @@ export default function ExpensesPage() {
         };
       }
       const acc = map[vName];
-      const amt = Number(s.amount) || 0;
-      acc.totalCleared += amt;
-
       const d = (s.settlement_date || "").slice(0, 10);
       if (d > acc.lastDate) acc.lastDate = d;
       acc.settlements.push(s);
@@ -321,7 +350,7 @@ export default function ExpensesPage() {
 
   // Unpaid credit bills count & total
   const unpaidCreditBills = useMemo(() => {
-    return expenses.filter((e) => isCreditExpense(e.payment_method));
+    return expenses.filter((e) => isUnpaidCreditExpense(e.payment_method, e.note));
   }, [expenses]);
 
   const unpaidCreditTotal = useMemo(() => {
@@ -367,9 +396,9 @@ export default function ExpensesPage() {
         return false;
       }
 
-      const isCred = isCreditExpense(e.payment_method);
-      if (statusFilter === "unpaid" && !isCred) return false;
-      if (statusFilter === "paid" && isCred) return false;
+      const isUnpaid = isUnpaidCreditExpense(e.payment_method, e.note);
+      if (statusFilter === "unpaid" && !isUnpaid) return false;
+      if (statusFilter === "paid" && isUnpaid) return false;
 
       const expDate = (e.expense_date || "").slice(0, 10);
       if (dateFilter === "today") {
@@ -541,6 +570,9 @@ export default function ExpensesPage() {
         noteText = existingNote ? `${existingNote} • Paid via ${markPaidMode}` : `Paid via ${markPaidMode}`;
       }
 
+      const shortMode = modeShortName(markPaidMode);
+      const paidMethodString = `Credit (Paid - ${shortMode})`;
+
       // Record the clearance in expense_settlements if vendor is specified
       if (targetExpense.vendor && targetExpense.vendor.trim()) {
         await fetchWithAuth(`${API_URL}/expenses/settlements`, {
@@ -560,7 +592,7 @@ export default function ExpensesPage() {
       // CASE 1: Full Payment
       if (payAmt === originalAmt) {
         const payload = {
-          payment_method: markPaidMode,
+          payment_method: paidMethodString,
           expense_date: markPaidDate,
           note: noteText,
         };
@@ -578,33 +610,35 @@ export default function ExpensesPage() {
         // CASE 2: Partial Payment
         const remainingDue = originalAmt - payAmt;
 
-        // Step 1: Update current bill to the paid amount
+        // Step 1: Update current bill to the paid amount with paid status
         const resUpdate = await fetchWithAuth(`${API_URL}/expenses/${targetExpense.id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             amount: payAmt,
-            payment_method: markPaidMode,
+            payment_method: paidMethodString,
             expense_date: markPaidDate,
-            note: `${noteText} (Partial payment of ₹${formatMoney(payAmt)} from ₹${formatMoney(originalAmt)})`,
+            note: `${noteText} (Partial payment Rs. ${formatMoney(payAmt)} of original Rs. ${formatMoney(originalAmt)})`,
           }),
         });
 
         if (!resUpdate.ok) throw new Error("Failed to update bill for partial payment");
 
-        // Step 2: Create new credit bill for the remaining due
+        // Step 2: Create new credit bill for the remaining due with clean title
+        const cleanBaseTitle = targetExpense.title.replace(/\s*\((Balance Due|Remaining)\)/gi, "").trim();
+
         await fetchWithAuth(`${API_URL}/expenses`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: `${targetExpense.title} (Balance Due)`,
+            title: `${cleanBaseTitle} (Remaining)`,
             category: targetExpense.category,
             amount: remainingDue,
             expense_date: targetExpense.expense_date,
             payment_method: "Credit (On Account)",
             vendor: targetExpense.vendor,
             bill_number: targetExpense.bill_number,
-            note: `Remaining balance due (₹${formatMoney(remainingDue)}) after partial settlement of ₹${formatMoney(payAmt)} on ${targetExpense.title}.`,
+            note: `Balance due Rs. ${formatMoney(remainingDue)} after partial payment on #${targetExpense.id}.`,
             event_id: targetExpense.event_id,
           }),
         });
@@ -661,9 +695,12 @@ export default function ExpensesPage() {
         throw new Error(err?.detail || `Failed to record settlement (${res.status})`);
       }
 
+      const shortMode = modeShortName(settleMode);
+      const paidMethodString = `Credit (Paid - ${shortMode})`;
+
       // Automatically update corresponding unpaid credit bills for this vendor
       const unpaidVendorBills = expenses
-        .filter((exp) => exp.vendor && exp.vendor.trim().toLowerCase() === vendor.toLowerCase() && isCreditExpense(exp.payment_method))
+        .filter((exp) => exp.vendor && exp.vendor.trim().toLowerCase() === vendor.toLowerCase() && isUnpaidCreditExpense(exp.payment_method, exp.note))
         .sort((a, b) => (a.expense_date || "").localeCompare(b.expense_date || ""));
 
       let remainingToSettle = amt;
@@ -677,7 +714,7 @@ export default function ExpensesPage() {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              payment_method: settleMode,
+              payment_method: paidMethodString,
               expense_date: settleDate,
               note: (bill.note ? `${bill.note} • ` : "") + `Settled via ${settleMode}${settleRef ? ` (${settleRef})` : ""}`,
             }),
@@ -692,24 +729,25 @@ export default function ExpensesPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               amount: remainingToSettle,
-              payment_method: settleMode,
+              payment_method: paidMethodString,
               expense_date: settleDate,
-              note: (bill.note ? `${bill.note} • ` : "") + `Partial settlement of ₹${formatMoney(remainingToSettle)} via ${settleMode}`,
+              note: (bill.note ? `${bill.note} • ` : "") + `Partial settlement Rs. ${formatMoney(remainingToSettle)} via ${settleMode}`,
             }),
           });
-          // Create remaining due bill
+          // Create remaining due bill with clean title
+          const cleanBaseTitle = bill.title.replace(/\s*\((Balance Due|Remaining)\)/gi, "").trim();
           await fetchWithAuth(`${API_URL}/expenses`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              title: `${bill.title} (Balance Due)`,
+              title: `${cleanBaseTitle} (Remaining)`,
               category: bill.category,
               amount: remainingBillAmt,
               expense_date: bill.expense_date,
               payment_method: "Credit (On Account)",
               vendor: bill.vendor,
               bill_number: bill.bill_number,
-              note: `Remaining balance due (₹${formatMoney(remainingBillAmt)}) after settlement of ₹${formatMoney(remainingToSettle)} on ${bill.title}.`,
+              note: `Balance due Rs. ${formatMoney(remainingBillAmt)} after settlement on #${bill.id}.`,
               event_id: bill.event_id,
             }),
           });
@@ -1280,9 +1318,10 @@ export default function ExpensesPage() {
                       ) : (
                         filteredExpenses.map((exp) => {
                           const isCredit = isCreditExpense(exp.payment_method);
+                          const isUnpaid = isUnpaidCreditExpense(exp.payment_method, exp.note);
 
                           return (
-                            <tr key={exp.id} style={{ borderBottom: "1px solid #f1f5f9", background: isCredit ? "#fffafb" : "#ffffff" }}>
+                            <tr key={exp.id} style={{ borderBottom: "1px solid #f1f5f9", background: isUnpaid ? "#fffafb" : "#ffffff" }}>
                               <td style={{ padding: "12px 16px", color: "#0f172a", fontWeight: 600, whiteSpace: "nowrap" }}>
                                 {formatDate(exp.expense_date)}
                               </td>
@@ -1327,16 +1366,20 @@ export default function ExpensesPage() {
                                   <span style={{ color: "#94a3b8" }}>Direct / Store</span>
                                 )}
                               </td>
-                              <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 900, fontSize: "14px", color: isCredit ? "#dc2626" : "#0f172a" }}>
+                              <td style={{ padding: "12px 16px", textAlign: "right", fontWeight: 900, fontSize: "14px", color: isUnpaid ? "#dc2626" : "#0f172a" }}>
                                 ₹{formatMoney(exp.amount)}
                               </td>
                               <td style={{ padding: "12px 16px", whiteSpace: "nowrap" }}>
-                                {isCredit ? (
+                                {isUnpaid ? (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", fontSize: "11px", fontWeight: 800 }}>
                                     🔴 Unpaid Credit
                                   </span>
-                                ) : (
+                                ) : isCredit ? (
                                   <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", background: "#f0fdf4", color: "#059669", border: "1px solid #bbf7d0", fontSize: "11px", fontWeight: 700 }}>
+                                    ✓ Paid ({exp.payment_method})
+                                  </span>
+                                ) : (
+                                  <span style={{ display: "inline-flex", alignItems: "center", gap: "4px", padding: "4px 8px", borderRadius: "6px", background: "#f8fafc", color: "#475569", border: "1px solid #e2e8f0", fontSize: "11px", fontWeight: 600 }}>
                                     ✓ Paid ({exp.payment_method})
                                   </span>
                                 )}
@@ -1344,7 +1387,7 @@ export default function ExpensesPage() {
                               <td style={{ padding: "12px 16px", textAlign: "center" }}>
                                 <div style={{ display: "flex", justifyContent: "center", alignItems: "center", gap: "6px" }}>
                                   {/* THE CRITICAL "MARK AS PAID" BUTTON */}
-                                  {!isOwner && isCredit && (
+                                  {!isOwner && isUnpaid && (
                                     <button
                                       type="button"
                                       onClick={() => openMarkPaidModal(exp)}
@@ -1504,18 +1547,21 @@ export default function ExpensesPage() {
                             title: string;
                             billAmt: number;
                             settleAmt: number;
+                            isUnpaid?: boolean;
                             rawExpense?: ExpenseRecord;
                             rawSettlement?: ExpenseSettlementRecord;
                           }> = [];
 
                           activeStatementVendor.expenses.forEach((e) => {
                             if (isCreditExpense(e.payment_method)) {
+                              const isUnpaid = isUnpaidCreditExpense(e.payment_method, e.note);
                               items.push({
                                 date: (e.expense_date || "").slice(0, 10),
                                 type: "credit_bill",
                                 title: e.title,
                                 billAmt: e.amount || 0,
                                 settleAmt: 0,
+                                isUnpaid,
                                 rawExpense: e,
                               });
                             }
@@ -1528,6 +1574,7 @@ export default function ExpensesPage() {
                               title: `Clearance via ${s.payment_mode}${s.reference_no ? ` (${s.reference_no})` : ""}`,
                               billAmt: 0,
                               settleAmt: s.amount || 0,
+                              isUnpaid: false,
                               rawSettlement: s,
                             });
                           });
@@ -1549,12 +1596,18 @@ export default function ExpensesPage() {
                               <td style={{ padding: "10px 14px", fontWeight: 600 }}>{formatDate(it.date)}</td>
                               <td style={{ padding: "10px 14px" }}>
                                 {it.type === "credit_bill" ? (
-                                  <span style={{ background: "#fef2f2", color: "#dc2626", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 700 }}>
-                                    🔴 Unpaid Bill
-                                  </span>
+                                  it.isUnpaid ? (
+                                    <span style={{ background: "#fef2f2", color: "#dc2626", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 700 }}>
+                                      🔴 Unpaid Bill
+                                    </span>
+                                  ) : (
+                                    <span style={{ background: "#f0fdf4", color: "#059669", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 700 }}>
+                                      ✓ Paid ({it.rawExpense?.payment_method})
+                                    </span>
+                                  )
                                 ) : (
                                   <span style={{ background: "#ecfdf5", color: "#059669", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 700 }}>
-                                    🟢 Payment Cleared
+                                    🟢 Payment Clearance
                                   </span>
                                 )}
                               </td>
@@ -1566,7 +1619,7 @@ export default function ExpensesPage() {
                                 {it.settleAmt > 0 ? `- ₹${formatMoney(it.settleAmt)}` : "-"}
                               </td>
                               <td style={{ padding: "10px 14px", textAlign: "center" }}>
-                                {!isOwner && it.type === "credit_bill" && it.rawExpense && (
+                                {!isOwner && it.type === "credit_bill" && it.isUnpaid && it.rawExpense && (
                                   <button
                                     type="button"
                                     onClick={() => openMarkPaidModal(it.rawExpense!)}

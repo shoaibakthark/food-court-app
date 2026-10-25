@@ -357,19 +357,34 @@ export default function Home() {
   // EXPENSES & SUPPLIER KHATA CALCULATION
   // ==========================================================
 
+  const isCreditMethod = (method: string | null | undefined): boolean => {
+    if (!method) return false;
+    const m = method.toLowerCase();
+    return m.includes("credit") || m.includes("account") || m.includes("due") || m.includes("payable") || m.includes("khata");
+  };
+
+  const isUnpaidCreditMethod = (method: string | null | undefined, note?: string | null): boolean => {
+    if (!isCreditMethod(method)) return false;
+    const m = (method || "").toLowerCase();
+    const n = (note || "").toLowerCase();
+    if (m.includes("paid") || m.includes("settled") || m.includes("cleared")) return false;
+    if (n.includes("settled via") || n.includes("paid via")) return false;
+    return true;
+  };
+
   const totalExpenses = useMemo(() => {
     return expensesList.reduce((sum, e) => sum + Number(e.amount || 0), 0);
   }, [expensesList]);
 
   const directPaidExpenses = useMemo(() => {
     return expensesList
-      .filter((e) => (e.payment_method || "").toLowerCase() !== "credit / khata")
+      .filter((e) => !isCreditMethod(e.payment_method))
       .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   }, [expensesList]);
 
   const supplierCreditIncurred = useMemo(() => {
     return expensesList
-      .filter((e) => (e.payment_method || "").toLowerCase() === "credit / khata")
+      .filter((e) => isCreditMethod(e.payment_method))
       .reduce((sum, e) => sum + Number(e.amount || 0), 0);
   }, [expensesList]);
 
@@ -378,22 +393,23 @@ export default function Home() {
   }, [settlementsList]);
 
   const vendorPendingList = useMemo(() => {
-    const map: Record<string, { totalCredit: number; settled: number; count: number }> = {};
+    const map: Record<string, { totalCredit: number; settled: number; count: number; due: number }> = {};
     expensesList.forEach((e) => {
-      const isCredit = (e.payment_method || "").toLowerCase() === "credit / khata";
+      const isCredit = isCreditMethod(e.payment_method);
+      const isDue = isUnpaidCreditMethod(e.payment_method, e.note);
       const vendorName = (e.vendor || "").trim();
       if (!vendorName) return;
-      if (!map[vendorName]) map[vendorName] = { totalCredit: 0, settled: 0, count: 0 };
+      if (!map[vendorName]) map[vendorName] = { totalCredit: 0, settled: 0, count: 0, due: 0 };
       if (isCredit) {
-        map[vendorName].totalCredit += Number(e.amount || 0);
+        const amt = Number(e.amount || 0);
+        map[vendorName].totalCredit += amt;
         map[vendorName].count += 1;
+        if (isDue) {
+          map[vendorName].due += amt;
+        } else {
+          map[vendorName].settled += amt;
+        }
       }
-    });
-    settlementsList.forEach((s) => {
-      const vendorName = (s.vendor || "").trim();
-      if (!vendorName) return;
-      if (!map[vendorName]) map[vendorName] = { totalCredit: 0, settled: 0, count: 0 };
-      map[vendorName].settled += Number(s.amount || 0);
     });
 
     return Object.entries(map)
@@ -403,12 +419,12 @@ export default function Home() {
         creditIncurred: data.totalCredit,
         totalCredit: data.totalCredit,
         settled: data.settled,
-        balance: Math.max(0, data.totalCredit - data.settled),
+        balance: data.due,
         billsCount: data.count,
       }))
       .filter((v) => v.balance > 0)
       .sort((a, b) => b.balance - a.balance);
-  }, [expensesList, settlementsList]);
+  }, [expensesList]);
 
   const totalSupplierCreditPending = useMemo(() => {
     return vendorPendingList.reduce((sum, v) => sum + v.balance, 0);
