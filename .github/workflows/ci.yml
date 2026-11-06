@@ -1,0 +1,168 @@
+name: Food Court CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ============================================================
+  # 1. BACKEND CI (Python, Dependencies, Database & Routes)
+  # ============================================================
+  backend-ci:
+    name: Backend CI (FastAPI & PostgreSQL)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: food_court_test
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "backend/requirements.txt"
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Python Syntax & Compilation Check
+        run: |
+          python -m compileall backend/app
+
+      - name: Database Connection & Route Smoke Tests
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/food_court_test
+          SECRET_KEY: test-secret-key-for-ci-pipeline-2026
+        run: |
+          cd backend
+          python smoke_test.py
+
+  # ============================================================
+  # 2. FRONTEND CI (Next.js, TypeScript & Production Build)
+  # ============================================================
+  frontend-ci:
+    name: Frontend CI (Next.js & TypeScript)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: "frontend/package-lock.json"
+
+      - name: Install Frontend Dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: TypeScript Type Check
+        run: |
+          cd frontend
+          npx tsc --noEmit
+
+      - name: Next.js Production Build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+          NODE_ENV: production
+        run: |
+          cd frontend
+          npm run build
+
+  # ============================================================
+  # 3. DOCKER BUILD VALIDATION
+  # ============================================================
+  docker-validation:
+    name: Docker Build Validation
+    needs: [backend-ci, frontend-ci]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Validate Backend Docker Image Build
+        run: |
+          docker build -t foodcourt-backend:ci ./backend
+
+      - name: Validate Frontend Docker Image Build
+        run: |
+          docker build -t foodcourt-frontend:ci ./frontend
+
+      - name: Validate Docker Compose Configuration
+        run: |
+          docker compose config
+
+  # ============================================================
+  # 4. CONTINUOUS DEPLOYMENT (CD) - AUTOMATED OR ON-DEMAND
+  # ============================================================
+  deploy:
+    name: Deployment (VPS / Production Server)
+    needs: [docker-validation]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Deployment Credentials
+        id: check-secrets
+        run: |
+          if [ -n "${{ secrets.SSH_HOST }}" ] && [ -n "${{ secrets.SSH_KEY }}" ]; then
+            echo "configured=true" >> $GITHUB_OUTPUT
+            echo "Deployment secrets detected."
+          else
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "Notice: Deployment credentials (SSH_HOST / SSH_KEY) are not configured in GitHub Secrets yet."
+            echo "Automated tests and Docker validation succeeded."
+          fi
+
+      - name: Deploy to Server via SSH
+        if: steps.check-secrets.outputs.configured == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER || 'root' }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            echo "Deploying latest Food Court release..."
+            cd ${{ secrets.DEPLOY_PATH || '/opt/food-court-app' }}
+            git pull origin main
+            docker compose down || true
+            docker compose up -d --build
+            docker system prune -f
+            echo "Deployment completed successfully!"
