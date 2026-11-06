@@ -23,7 +23,7 @@ jobs:
 
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_DB: food_court_test
           POSTGRES_USER: postgres
