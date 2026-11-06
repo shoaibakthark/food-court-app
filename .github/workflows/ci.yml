@@ -154,13 +154,13 @@ jobs:
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
-          username: ${{ secrets.SSH_USER || 'root' }}
+          username: ${{ secrets.SSH_USER || 'ubuntu' }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
             set -e
             echo "Deploying latest Food Court release..."
-            cd ${{ secrets.DEPLOY_PATH || '/opt/food-court-app' }}
+            cd ${{ secrets.DEPLOY_PATH || '/home/ubuntu/food-court-app' }}
             git pull origin main
             docker compose down || true
             docker compose up -d --build
