@@ -1,6 +1,12 @@
 # Food Court Event Management & Catering Portal
 
+[![CI/CD Pipeline](https://github.com/shoaibakthark/food-court-app/actions/workflows/ci.yml/badge.svg)](https://github.com/shoaibakthark/food-court-app/actions/workflows/ci.yml)
+[![Live Server](https://img.shields.io/badge/Live_Server-13.127.45.22-success)](http://13.127.45.22)
+
 A comprehensive, full-stack event management, catering quotation, billing, staff payroll, and kitchen management application built for high-volume event catering operations.
+
+- **Live Production URL**: [http://13.127.45.22](http://13.127.45.22)
+- **Domain URL**: [https://foodcourt.work.gd](https://foodcourt.work.gd)
 
 ---
 
