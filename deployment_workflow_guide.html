@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Food Court App - Architecture, CI/CD Pipeline & Workflow Handbook</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 12mm 14mm 12mm 14mm;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      color: #0f172a;
+      background: #ffffff;
+      line-height: 1.5;
+      font-size: 11.5px;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+
+    .container {
+      width: 100%;
+    }
+
+    /* Header Banner */
+    .header-banner {
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #2563eb 100%);
+      color: #ffffff;
+      padding: 20px 24px;
+      border-radius: 8px;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 10px rgba(15, 23, 42, 0.15);
+    }
+
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+      padding-bottom: 6px;
+    }
+
+    .header-top .brand {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      color: #60a5fa;
+      text-transform: uppercase;
+    }
+
+    .header-top .doc-id {
+      font-size: 10px;
+      color: #cbd5e1;
+    }
+
+    .header-banner h1 {
+      font-size: 22px;
+      font-weight: 800;
+      margin-bottom: 4px;
+      letter-spacing: -0.3px;
+    }
+
+    .header-banner p {
+      font-size: 12px;
+      color: #e2e8f0;
+      margin-bottom: 10px;
+    }
+
+    .badge-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 9.5px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .badge-primary { background: #3b82f6; color: #ffffff; }
+    .badge-success { background: #10b981; color: #ffffff; }
+    .badge-dark { background: rgba(255, 255, 255, 0.15); color: #ffffff; border: 1px solid rgba(255, 255, 255, 0.3); }
+
+    /* Section Styling */
+    .section {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 14px 18px;
+      margin-bottom: 14px;
+      page-break-inside: avoid;
+    }
+
+    .section-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1e293b;
+      margin-bottom: 10px;
+      padding-bottom: 5px;
+      border-bottom: 2px solid #3b82f6;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .section-title span {
+      color: #3b82f6;
+    }
+
+    p {
+      margin-bottom: 8px;
+      color: #334155;
+    }
+
+    /* Tables */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 8px 0 12px 0;
+      font-size: 11px;
+    }
+
+    th {
+      background: #f1f5f9;
+      color: #1e293b;
+      font-weight: 700;
+      text-align: left;
+      padding: 7px 10px;
+      border: 1px solid #cbd5e1;
+    }
+
+    td {
+      padding: 6px 10px;
+      border: 1px solid #e2e8f0;
+      color: #334155;
+    }
+
+    tr:nth-child(even) {
+      background: #f8fafc;
+    }
+
+    /* Code Blocks */
+    pre {
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 10.5px;
+      line-height: 1.4;
+      overflow-x: auto;
+      margin: 8px 0 10px 0;
+      border-left: 3px solid #3b82f6;
+    }
+
+    code {
+      font-family: "Courier New", Courier, monospace;
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 1px 4px;
+      border-radius: 3px;
+      font-size: 10.5px;
+    }
+
+    pre code {
+      background: transparent;
+      color: inherit;
+      padding: 0;
+    }
+
+    /* Cards & Grids */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .card {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: #f8fafc;
+    }
+
+    .card-title {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: #0f172a;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .card-main { border-top: 3px solid #10b981; }
+    .card-test { border-top: 3px solid #f59e0b; }
+
+    /* Alert Boxes */
+    .alert {
+      padding: 8px 12px;
+      border-radius: 6px;
+      margin: 8px 0;
+      font-size: 11px;
+      border-left: 4px solid;
+    }
+
+    .alert-info { background: #eff6ff; border-color: #3b82f6; color: #1e40af; }
+    .alert-success { background: #f0fdf4; border-color: #10b981; color: #166534; }
+    .alert-warning { background: #fffbeb; border-color: #f59e0b; color: #92400e; }
+
+    /* Flow Steps */
+    .step-box {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 8px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      background: #2563eb;
+      color: #ffffff;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .step-content {
+      flex: 1;
+    }
+
+    .step-title {
+      font-weight: 700;
+      color: #0f172a;
+      font-size: 11.5px;
+    }
+
+    .page-break {
+      page-break-before: always;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+
+    <!-- Header Banner -->
+    <div class="header-banner">
+      <div class="header-top">
+        <span class="brand">Food Court Event Management System</span>
+        <span class="doc-id">DOC-ID: FC-ARCH-2026-V1</span>
+      </div>
+      <h1>System Architecture, CI/CD Pipeline & Workflow Handbook</h1>
+      <p>Official technical handbook for dual-environment deployment, automated CI/CD staging, and live production management.</p>
+      <div class="badge-row">
+        <span class="badge badge-success">Production: Live</span>
+        <span class="badge badge-primary">Test: Active (:8080)</span>
+        <span class="badge badge-dark">Host: AWS EC2 (13.127.45.22)</span>
+        <span class="badge badge-dark">Stack: Next.js 16 + FastAPI + PostgreSQL 18</span>
+      </div>
+    </div>
+
+    <!-- 1. Executive Summary & Dual Environments -->
+    <div class="section">
+      <div class="section-title"><span>01</span> Dual-Environment Quick Reference</div>
+      <p>The host server operates two entirely separated installations side-by-side using Docker Compose and Nginx. This architecture allows developers to test features without customer risk.</p>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Environment</th>
+            <th>Access URL</th>
+            <th>Ports (Front / Back)</th>
+            <th>Server Directory</th>
+            <th>Database</th>
+            <th>Git Branch</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>Main (Production)</strong></td>
+            <td><code>http://13.127.45.22</code><br><code>https://foodcourt.work.gd</code></td>
+            <td>Frontend: 3000<br>Backend: 8000</td>
+            <td><code>/home/ubuntu/food-court-app</code></td>
+            <td><code>food_court</code></td>
+            <td><code>main</code></td>
+          </tr>
+          <tr>
+            <td><strong>Test (Staging)</strong></td>
+            <td><code>http://13.127.45.22:8080</code><br><code>http://test.foodcourt.work.gd</code></td>
+            <td>Frontend: 3001<br>Backend: 8001</td>
+            <td><code>/home/ubuntu/food-court-test</code></td>
+            <td><code>food_court_test</code></td>
+            <td><code>test</code></td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div class="alert alert-success">
+        <strong>Database Isolation Guarantee:</strong> The test database is <code>food_court_test</code> and production is <code>food_court</code>. Any inserts, updates, or deletes conducted on the test site are strictly isolated from production data.
+      </div>
+    </div>
+
+    <!-- 2. System Architecture -->
+    <div class="section">
+      <div class="section-title"><span>02</span> High-Level System Architecture</div>
+      <p>Nginx acts as the single gateway on the host, decrypting SSL and routing traffic based on the incoming port and domain header.</p>
+
+      <pre>
+                              [ Client Traffic ]
+                                      │
+                       ┌──────────────┴──────────────┐
+                       │                             │
+                 Port 80 / 443                   Port 8080
+          (foodcourt.work.gd / IP:80)        (13.127.45.22:8080)
+                       │                             │
+                       ▼                             ▼
+       ┌─────────────────────────────────────────────────────────────┐
+       │                 HOST NGINX REVERSE PROXY                    │
+       └──────────────┬───────────────────────────────┬──────────────┘
+                      │                               │
+         ┌────────────┴────────────┐     ┌────────────┴────────────┐
+         │ MAIN / PRODUCTION       │     │ TEST / STAGING          │
+         │                         │     │                         │
+         │ Next.js Frontend (:3000)│     │ Next.js Frontend (:3001)│
+         │ FastAPI Backend  (:8000)│     │ FastAPI Backend  (:8001)│
+         │ PostgreSQL (food_court) │     │ PostgreSQL (fc_test)    │
+         └─────────────────────────┘     └─────────────────────────┘</pre>
+    </div>
+
+    <!-- Page Break for Clean Printing -->
+    <div class="page-break"></div>
+
+    <!-- 3. Nginx Reverse Proxy Configuration -->
+    <div class="section">
+      <div class="section-title"><span>03</span> Nginx Reverse Proxy & Routing Rules</div>
+      <p>Configuration located at <code>/etc/nginx/sites-available/foodcourt</code>:</p>
+      
+      <div class="grid-2">
+        <div class="card card-main">
+          <div class="card-title">Production Blocks (Port 80 & 443)</div>
+          <p>Routes domain <code>foodcourt.work.gd</code> and IP port 80 to port 3000 (UI) and port 8000 (/api/py/ FastAPI).</p>
+        </div>
+        <div class="card card-test">
+          <div class="card-title">Test Blocks (Port 8080 & Subdomain)</div>
+          <p>Routes port 8080 and <code>test.foodcourt.work.gd</code> to port 3001 (UI) and port 8001 (/api/py/ FastAPI).</p>
+        </div>
+      </div>
+
+      <div class="alert alert-info">
+        <strong>FastAPI Swagger Documentation Routing:</strong><br>
+        Swagger UI requires <code>/openapi.json</code>. An explicit Nginx rule proxies <code>location = /openapi.json</code> directly to FastAPI, preventing Next.js from capturing it and throwing 404 errors.
+      </div>
+    </div>
+
+    <!-- 4. Git Branching & Promotion Workflow -->
+    <div class="section">
+      <div class="section-title"><span>04</span> Git Branching & Promotion Strategy</div>
+      <p>Developers work strictly according to the staging-first workflow:</p>
+
+      <div class="step-box">
+        <div class="step-num">1</div>
+        <div class="step-content">
+          <div class="step-title">Develop on <code>test</code> Branch</div>
+          <p>All feature changes and fixes are developed locally on <code>test</code> and pushed to <code>origin test</code>.</p>
+        </div>
+      </div>
+
+      <div class="step-box">
+        <div class="step-num">2</div>
+        <div class="step-content">
+          <div class="step-title">Verify on Staging Server</div>
+          <p>Test the staging environment at <code>http://13.127.45.22:8080</code>. Check UI, database actions, and API docs.</p>
+        </div>
+      </div>
+
+      <div class="step-box">
+        <div class="step-num">3</div>
+        <div class="step-content">
+          <div class="step-title">Promote & Merge to <code>main</code></div>
+          <p>Once verified, merge <code>test</code> into <code>main</code>, push to GitHub, and deploy to live production.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. GitHub Actions CI/CD Pipeline -->
+    <div class="section">
+      <div class="section-title"><span>05</span> GitHub Actions CI/CD Pipeline</div>
+      <p>Configured in <code>.github/workflows/ci.yml</code>. Triggers automatically on push events to either <code>test</code> or <code>main</code>.</p>
+
+      <table>
+        <thead>
+          <tr>
+            <th>Job Name</th>
+            <th>Execution Condition</th>
+            <th>Primary Responsibility</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>backend-ci</strong></td>
+            <td>Every push & PR</td>
+            <td>PostgreSQL 18 service, Python syntax compilation, and route registration smoke tests.</td>
+          </tr>
+          <tr>
+            <td><strong>frontend-ci</strong></td>
+            <td>Every push & PR</td>
+            <td>Node.js 20 environment, TypeScript strict check (<code>npx tsc --noEmit</code>), and Next.js production build.</td>
+          </tr>
+          <tr>
+            <td><strong>docker-validation</strong></td>
+            <td>After CI passes</td>
+            <td>Builds both Dockerfiles via Buildx and validates multi-service <code>docker compose config</code>.</td>
+          </tr>
+          <tr>
+            <td><strong>deploy-test</strong></td>
+            <td>Push to <code>test</code></td>
+            <td>Automated SSH connection to <code>/home/ubuntu/food-court-test</code> and container rebuild.</td>
+          </tr>
+          <tr>
+            <td><strong>deploy-prod</strong></td>
+            <td>Push to <code>main</code></td>
+            <td>Automated SSH connection to <code>/home/ubuntu/food-court-app</code> and zero-downtime container release.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Page Break for Clean Printing -->
+    <div class="page-break"></div>
+
+    <!-- 6. Step-by-Step Daily Commands -->
+    <div class="section">
+      <div class="section-title"><span>06</span> Day-to-Day Deployment Commands</div>
+
+      <h4 style="margin: 6px 0 4px 0; color: #1e293b; font-size: 11px;">Phase 1: Deploying to Test Server</h4>
+      <pre>
+# 1. Switch to test branch and commit your work
+git checkout test
+git add .
+git commit -m "feat: your new feature"
+git push origin test
+
+# 2. Deploy directly to the test server
+ssh -i C:\Users\profe\.ssh\food-court.pem ubuntu@13.127.45.22 \
+  "cd /home/ubuntu/food-court-test && git pull origin test && docker compose -p foodcourt-test up -d --build"</pre>
+
+      <h4 style="margin: 10px 0 4px 0; color: #1e293b; font-size: 11px;">Phase 2: Promoting Test to Live Production</h4>
+      <pre>
+# 1. Merge verified test changes into main
+git checkout main
+git merge test
+git push origin main
+git checkout test
+
+# 2. Deploy to the live production server
+ssh -i C:\Users\profe\.ssh\food-court.pem ubuntu@13.127.45.22 \
+  "cd /home/ubuntu/food-court-app && git pull origin main && docker compose up -d --build"</pre>
+    </div>
+
+    <!-- 7. One-Click Batch Scripts -->
+    <div class="section">
+      <div class="section-title"><span>07</span> One-Click Windows Batch Scripts</div>
+      <p>Included in the repository root for single-command automation:</p>
+
+      <div class="grid-2">
+        <div class="card card-test">
+          <div class="card-title">deploy_test.bat</div>
+          <p>Automates git commit, push to <code>test</code>, and remote server update for port 8080.</p>
+          <pre style="margin: 4px 0 0 0;">.\deploy_test.bat "commit message"</pre>
+        </div>
+        <div class="card card-main">
+          <div class="card-title">deploy_prod.bat</div>
+          <p>Automates merge from <code>test</code> into <code>main</code>, push, and remote production server update.</p>
+          <pre style="margin: 4px 0 0 0;">.\deploy_prod.bat</pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8. Maintenance & AWS Security -->
+    <div class="section">
+      <div class="section-title"><span>08</span> Server Maintenance & AWS Security Rules</div>
+
+      <p><strong>Required AWS EC2 Security Group Inbound Rules:</strong></p>
+      <table>
+        <thead>
+          <tr>
+            <th>Protocol / Port</th>
+            <th>Port Range</th>
+            <th>Source</th>
+            <th>Purpose</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr><td>SSH</td><td>22</td><td>Anywhere (0.0.0.0/0)</td><td>Secure terminal administration & GitHub Actions CD</td></tr>
+          <tr><td>HTTP</td><td>80</td><td>Anywhere (0.0.0.0/0)</td><td>Production web application & SSL ACME challenges</td></tr>
+          <tr><td>HTTPS</td><td>443</td><td>Anywhere (0.0.0.0/0)</td><td>Production encrypted SSL traffic</td></tr>
+          <tr><td>Custom TCP</td><td>8080</td><td>Anywhere (0.0.0.0/0)</td><td>Test / Staging application web traffic</td></tr>
+        </tbody>
+      </table>
+
+      <p style="margin-top: 8px;"><strong>Server Health & Memory Check:</strong></p>
+      <pre>
+# Check active containers
+ssh -i C:\Users\profe\.ssh\food-court.pem ubuntu@13.127.45.22 "docker ps"
+
+# Check server memory & swap
+ssh -i C:\Users\profe\.ssh\food-court.pem ubuntu@13.127.45.22 "free -m"
+
+# Free unused Docker build cache
+ssh -i C:\Users\profe\.ssh\food-court.pem ubuntu@13.127.45.22 "docker system prune -f"</pre>
+    </div>
+
+  </div>
+</body>
+</html>
