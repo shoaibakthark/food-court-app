@@ -17,7 +17,7 @@ COPY . .
 
 # Disable Next.js telemetry during build and limit memory for low-spec servers
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NODE_OPTIONS="--max-old-space-size=768"
+ENV NODE_OPTIONS="--max-old-space-size=512"
 
 RUN npm run build
 
