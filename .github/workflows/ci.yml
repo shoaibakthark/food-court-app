@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - test
   pull_request:
     branches:
       - main
@@ -128,10 +129,48 @@ jobs:
           docker compose config
 
   # ============================================================
-  # 4. CONTINUOUS DEPLOYMENT (CD) - AUTOMATED OR ON-DEMAND
+  # 4. CONTINUOUS DEPLOYMENT (CD) - TEST / STAGING ENVIRONMENT
   # ============================================================
-  deploy:
-    name: Deployment (VPS / Production Server)
+  deploy-test:
+    name: Deploy to Test Environment
+    needs: [docker-validation]
+    if: github.ref == 'refs/heads/test' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check Deployment Credentials
+        id: check-secrets
+        run: |
+          if [ -n "${{ secrets.SSH_HOST }}" ] && [ -n "${{ secrets.SSH_KEY }}" ]; then
+            echo "configured=true" >> $GITHUB_OUTPUT
+            echo "Deployment secrets detected."
+          else
+            echo "configured=false" >> $GITHUB_OUTPUT
+            echo "Notice: Deployment credentials (SSH_HOST / SSH_KEY) are not configured in GitHub Secrets yet."
+          fi
+
+      - name: Deploy to Test Server via SSH
+        if: steps.check-secrets.outputs.configured == 'true'
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER || 'ubuntu' }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          script: |
+            set -e
+            echo "Deploying to Test environment..."
+            cd /home/ubuntu/food-court-test
+            git pull origin test
+            docker compose -p foodcourt-test up -d --build
+            docker system prune -f
+            echo "Test deployment completed successfully!"
+
+  # ============================================================
+  # 5. CONTINUOUS DEPLOYMENT (CD) - MAIN / PRODUCTION ENVIRONMENT
+  # ============================================================
+  deploy-prod:
+    name: Deploy to Production (Main)
     needs: [docker-validation]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
@@ -146,10 +185,9 @@ jobs:
           else
             echo "configured=false" >> $GITHUB_OUTPUT
             echo "Notice: Deployment credentials (SSH_HOST / SSH_KEY) are not configured in GitHub Secrets yet."
-            echo "Automated tests and Docker validation succeeded."
           fi
 
-      - name: Deploy to Server via SSH
+      - name: Deploy to Production Server via SSH
         if: steps.check-secrets.outputs.configured == 'true'
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -159,10 +197,9 @@ jobs:
           port: ${{ secrets.SSH_PORT || 22 }}
           script: |
             set -e
-            echo "Deploying latest Food Court release..."
+            echo "Deploying to Main Production release..."
             cd ${{ secrets.DEPLOY_PATH || '/home/ubuntu/food-court-app' }}
             git pull origin main
-            docker compose down || true
             docker compose up -d --build
             docker system prune -f
-            echo "Deployment completed successfully!"
+            echo "Production deployment completed successfully!"

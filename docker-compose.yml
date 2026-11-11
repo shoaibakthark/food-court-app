@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:18-alpine
-    container_name: foodcourt-db
+    container_name: ${CONTAINER_PREFIX:-foodcourt}-db
     restart: always
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-food_court}
@@ -22,7 +22,7 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: foodcourt-backend
+    container_name: ${CONTAINER_PREFIX:-foodcourt}-backend
     restart: always
     depends_on:
       db:
@@ -33,7 +33,7 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
     command: sh -c "alembic upgrade head || true && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2"
     ports:
-      - "8000:8000"
+      - "${BACKEND_PORT:-8000}:8000"
     networks:
       - foodcourt-net
 
@@ -41,7 +41,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: foodcourt-frontend
+    container_name: ${CONTAINER_PREFIX:-foodcourt}-frontend
     restart: always
     depends_on:
       - backend
@@ -50,7 +50,7 @@ services:
       PORT: 3000
       BACKEND_INTERNAL_URL: http://backend:8000
     ports:
-      - "3000:3000"
+      - "${FRONTEND_PORT:-3000}:3000"
     networks:
       - foodcourt-net
 

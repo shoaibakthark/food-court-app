@@ -49,6 +49,12 @@ export default function LoginPage() {
       });
 
       if (!res.ok) {
+        if (res.status === 401) {
+          throw new Error("Invalid username or password.");
+        }
+        if (res.status === 500 || res.status === 502 || res.status === 503) {
+          throw new Error("Backend API is not responding. Please make sure the FastAPI backend is running on port 8000.");
+        }
         const err = await res.json().catch(() => null);
         throw new Error(err?.detail || "Invalid username or password.");
       }

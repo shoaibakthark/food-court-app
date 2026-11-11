@@ -1,15 +1,18 @@
-# Sample Nginx Configuration for AWS Lightsail / EC2 Host
-# Place this at /etc/nginx/sites-available/foodcourt
-# Then enable it: sudo ln -s /etc/nginx/sites-available/foodcourt /etc/nginx/sites-enabled/
+# Nginx Configuration for AWS Lightsail / EC2 Host (Dual Environment: Main + Test)
+# Location on server: /etc/nginx/sites-available/foodcourt
+# Enable link: sudo ln -s /etc/nginx/sites-available/foodcourt /etc/nginx/sites-enabled/
 
+# ============================================================
+# 1. MAIN / PRODUCTION (foodcourt.work.gd & Direct IP :80)
+# ============================================================
+
+# Direct IP access to Main
 server {
     listen 80;
-    server_name foodcourt.work.gd;
-
+    server_name 13.127.45.22;
 
     client_max_body_size 50M;
 
-    # Direct reverse proxy to FastAPI backend
     location /api/py/ {
         proxy_pass http://127.0.0.1:8000/;
         proxy_http_version 1.1;
@@ -22,9 +25,122 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
-    # Forward all page traffic to Next.js
     location / {
         proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Domain HTTP -> HTTPS redirect for Main
+server {
+    listen 80;
+    listen [::]:80;
+    server_name foodcourt.work.gd;
+    return 301 https://$host$request_uri;
+}
+
+# Domain HTTPS for Main
+server {
+    listen 443 ssl;
+    server_name foodcourt.work.gd;
+
+    ssl_certificate /etc/letsencrypt/live/foodcourt.work.gd/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/foodcourt.work.gd/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    client_max_body_size 50M;
+
+    location /api/py/ {
+        proxy_pass http://127.0.0.1:8000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# ============================================================
+# 2. TEST / STAGING (test.foodcourt.work.gd & Direct IP :8080)
+# ============================================================
+
+# Domain test access (test.foodcourt.work.gd)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name test.foodcourt.work.gd;
+
+    client_max_body_size 50M;
+
+    location /api/py/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+
+# Direct IP port 8080 access to Test
+server {
+    listen 8080;
+    server_name _;
+
+    client_max_body_size 50M;
+
+    location /api/py/ {
+        proxy_pass http://127.0.0.1:8001/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:3001;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';
