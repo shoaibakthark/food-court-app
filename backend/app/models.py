@@ -1,8 +1,11 @@
+from datetime import datetime
 from sqlalchemy import (
     Column,
     Integer,
     String,
     Date,
+    DateTime,
+    Text,
     Numeric,
     ForeignKey
 )
@@ -678,3 +681,29 @@ class ExpenseSettlement(Base):
     payment_mode = Column(String(50), nullable=False, default="Cash")  # 'Cash', 'UPI', 'Bank Transfer', 'Cheque', 'Company Card'
     reference_no = Column(String(100), nullable=True)
     note = Column(String(500), nullable=True)
+
+
+# ============================================================
+# EVENT FOOD QUOTATION (BILLS OUT)
+# ============================================================
+
+class Quotation(Base):
+    __tablename__ = "quotations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    quotation_no = Column(String(50), nullable=True, index=True)
+    date = Column(String(50), nullable=False)  # "14 - Nov - 2026" or YYYY-MM-DD
+    client_name = Column(String(150), nullable=False)
+    venue = Column(String(150), nullable=True)
+    event_name = Column(String(150), nullable=True)
+    guest_count = Column(Integer, nullable=True, default=0)
+    event_id = Column(Integer, ForeignKey("events.id", ondelete="SET NULL"), nullable=True)
+    phone = Column(String(50), nullable=True, default="+91 8592991909")
+    location_tag = Column(String(150), nullable=True, default="BASED IN ATHAHAKKAD - KOTTAMELAD")
+    coverage_tag = Column(String(150), nullable=True, default="TRAVEL ALL OVER TN")
+    terms = Column(String(500), nullable=True, default="Prices are subject to final guest count.")
+    total_amount = Column(Numeric(12, 2), nullable=True)
+    items_json = Column(Text, nullable=False, default="[]")
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+

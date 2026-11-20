@@ -3703,6 +3703,23 @@ export default function EventDetailsPage() {
 
             <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
               <Link
+                href={`/billing?tab=quotations&eventId=${event.id}`}
+                className="btn"
+                style={{
+                  textDecoration: "none",
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  borderColor: "#c5a059",
+                  color: "#6b1d25",
+                  background: "#fdf8ee",
+                  fontWeight: 700,
+                }}
+              >
+                📜 Royal Food Quotation (Bill Out)
+              </Link>
+
+              <Link
                 href={`/billing?eventId=${event.id}&print=1`}
                 className="btn"
                 style={{

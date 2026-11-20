@@ -9,7 +9,7 @@ from typing import Optional
 from fastapi import FastAPI, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, field_validator
-from sqlalchemy import text, func
+from sqlalchemy import text, func, or_
 from sqlalchemy.orm import Session
 
 from app.database import SessionLocal, engine
@@ -3714,3 +3714,134 @@ def get_suggested_paths():
     })
 
     return {"suggestions": suggestions}
+
+
+# ============================================================
+# EVENT FOOD QUOTATION (BILLS OUT)
+# ============================================================
+
+@app.get("/quotations", response_model=list[schemas.QuotationResponse])
+def get_quotations(
+    search: str | None = None,
+    event_id: int | None = None,
+    db: Session = Depends(get_db),
+):
+    query = db.query(models.Quotation)
+    if event_id:
+        query = query.filter(models.Quotation.event_id == event_id)
+    if search:
+        s = f"%{search.strip()}%"
+        query = query.filter(
+            or_(
+                models.Quotation.client_name.ilike(s),
+                models.Quotation.quotation_no.ilike(s),
+                models.Quotation.venue.ilike(s),
+                models.Quotation.event_name.ilike(s),
+            )
+        )
+    return query.order_by(models.Quotation.id.desc()).all()
+
+
+@app.post("/quotations", response_model=schemas.QuotationResponse, status_code=201)
+def create_quotation(
+    payload: schemas.QuotationCreate,
+    db: Session = Depends(get_db),
+):
+    try:
+        q_no = payload.quotation_no
+        if not q_no:
+            count = db.query(models.Quotation).count() + 1
+            q_no = f"FC-QT-{count:04d}"
+
+        new_q = models.Quotation(
+            quotation_no=q_no,
+            date=payload.date.strip(),
+            client_name=payload.client_name.strip(),
+            venue=payload.venue.strip() if payload.venue else None,
+            event_name=payload.event_name.strip() if payload.event_name else None,
+            guest_count=payload.guest_count or 0,
+            event_id=payload.event_id,
+            phone=payload.phone or "+91 8592991909",
+            location_tag=payload.location_tag or "BASED IN ATHAHAKKAD - KOTTAMELAD",
+            coverage_tag=payload.coverage_tag or "TRAVEL ALL OVER TN",
+            terms=payload.terms or "Prices are subject to final guest count.",
+            total_amount=payload.total_amount,
+            items_json=payload.items_json or "[]",
+        )
+        db.add(new_q)
+        db.commit()
+        db.refresh(new_q)
+        return new_q
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to create quotation: {str(e)}")
+
+
+@app.get("/quotations/{quotation_id}", response_model=schemas.QuotationResponse)
+def get_quotation(quotation_id: int, db: Session = Depends(get_db)):
+    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+    return q
+
+
+@app.put("/quotations/{quotation_id}", response_model=schemas.QuotationResponse)
+def update_quotation(
+    quotation_id: int,
+    payload: schemas.QuotationUpdate,
+    db: Session = Depends(get_db),
+):
+    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    try:
+        if payload.quotation_no is not None:
+            q.quotation_no = payload.quotation_no
+        if payload.date is not None:
+            q.date = payload.date.strip()
+        if payload.client_name is not None:
+            q.client_name = payload.client_name.strip()
+        if payload.venue is not None:
+            q.venue = payload.venue.strip()
+        if payload.event_name is not None:
+            q.event_name = payload.event_name.strip()
+        if payload.guest_count is not None:
+            q.guest_count = payload.guest_count
+        if payload.event_id is not None:
+            q.event_id = payload.event_id
+        if payload.phone is not None:
+            q.phone = payload.phone
+        if payload.location_tag is not None:
+            q.location_tag = payload.location_tag
+        if payload.coverage_tag is not None:
+            q.coverage_tag = payload.coverage_tag
+        if payload.terms is not None:
+            q.terms = payload.terms
+        if payload.total_amount is not None:
+            q.total_amount = payload.total_amount
+        if payload.items_json is not None:
+            q.items_json = payload.items_json
+
+        db.commit()
+        db.refresh(q)
+        return q
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to update quotation: {str(e)}")
+
+
+@app.delete("/quotations/{quotation_id}")
+def delete_quotation(quotation_id: int, db: Session = Depends(get_db)):
+    q = db.query(models.Quotation).filter(models.Quotation.id == quotation_id).first()
+    if not q:
+        raise HTTPException(status_code=404, detail="Quotation not found")
+
+    try:
+        db.delete(q)
+        db.commit()
+        return {"message": "Quotation deleted successfully", "id": quotation_id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to delete quotation: {str(e)}")
+

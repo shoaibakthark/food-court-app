@@ -8,6 +8,7 @@ import { AppSidebar, MobileMenuButton } from "../components/NavDrawer";
 import { TopbarUserBadge, OwnerBanner } from "../components/AuthBar";
 import { exportEntireDatabaseToExcel } from "../lib/excelBackup";
 import { GoogleDriveBackupModal } from "../components/GoogleDriveBackupModal";
+import { FoodQuotationSection } from "./FoodQuotationSection";
 
 const API_URL = typeof window !== "undefined" ? "/api/py" : "http://127.0.0.1:8000";
 
@@ -214,6 +215,18 @@ function BillingContent() {
   // Filter & Search states
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "due" | "partial" | "settled">("all");
+
+  // Section switcher: "quotations" (Event Food Quotation / Bills Out) vs "invoices" (Tax Invoices & Ledger)
+  const [billingTab, setBillingTab] = useState<"quotations" | "invoices">("quotations");
+
+  useEffect(() => {
+    const tabParam = searchParams.get("tab") || searchParams.get("section");
+    if (tabParam === "invoices" || searchParams.get("eventId") || searchParams.get("print")) {
+      setBillingTab("invoices");
+    } else if (tabParam === "quotations") {
+      setBillingTab("quotations");
+    }
+  }, [searchParams]);
 
   // Selected event for Invoice Modal & Printing
   const [activeEvent, setActiveEvent] = useState<BillingEvent | null>(null);
@@ -707,6 +720,119 @@ function BillingContent() {
             </div>
           )}
 
+          {/* Section Navigation Switcher */}
+          <div
+            className="no-print"
+            style={{
+              display: "flex",
+              gap: "10px",
+              borderBottom: "2px solid #e2e8f0",
+              paddingBottom: "14px",
+              marginBottom: "24px",
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => setBillingTab("quotations")}
+              style={{
+                background:
+                  billingTab === "quotations"
+                    ? "linear-gradient(135deg, #6b1d25 0%, #4a121c 100%)"
+                    : "#ffffff",
+                color: billingTab === "quotations" ? "#ffffff" : "#4a121c",
+                border:
+                  billingTab === "quotations"
+                    ? "1.5px solid #c5a059"
+                    : "1px solid #e2d9cc",
+                borderRadius: "10px",
+                padding: "10px 20px",
+                fontWeight: 800,
+                fontSize: "14px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                boxShadow:
+                  billingTab === "quotations"
+                    ? "0 4px 14px rgba(107, 29, 37, 0.25)"
+                    : "none",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>📜</span>
+              <span>Event Food Quotation (Bills Out)</span>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  background:
+                    billingTab === "quotations" ? "#c5a059" : "#f5ede0",
+                  color:
+                    billingTab === "quotations" ? "#2b0b14" : "#8a6b2d",
+                  padding: "2px 8px",
+                  borderRadius: "10px",
+                  marginLeft: "4px",
+                }}
+              >
+                Royal Catering Style
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setBillingTab("invoices")}
+              style={{
+                background:
+                  billingTab === "invoices"
+                    ? "linear-gradient(135deg, #180828 0%, #2b0c4c 100%)"
+                    : "#ffffff",
+                color: billingTab === "invoices" ? "#ffffff" : "#1e0836",
+                border:
+                  billingTab === "invoices"
+                    ? "1px solid #7c3aed"
+                    : "1px solid #e2e8f0",
+                borderRadius: "10px",
+                padding: "10px 20px",
+                fontWeight: 800,
+                fontSize: "14px",
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                boxShadow:
+                  billingTab === "invoices"
+                    ? "0 4px 14px rgba(124, 58, 237, 0.25)"
+                    : "none",
+                transition: "all 0.15s ease",
+              }}
+            >
+              <span style={{ fontSize: "16px" }}>🧾</span>
+              <span>Tax Invoices & Ledger</span>
+              <span
+                style={{
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  background:
+                    billingTab === "invoices"
+                      ? "rgba(124, 58, 237, 0.4)"
+                      : "#ede9fe",
+                  color:
+                    billingTab === "invoices" ? "#e9d5ff" : "#6d28d9",
+                  padding: "2px 8px",
+                  borderRadius: "10px",
+                  marginLeft: "4px",
+                }}
+              >
+                {metrics.totalCount} Invoices
+              </span>
+            </button>
+          </div>
+
+          {billingTab === "quotations" && <FoodQuotationSection />}
+
+          {billingTab === "invoices" && (
+            <>
           {/* Metric Overview Cards */}
           <div
             className="no-print"
@@ -1167,6 +1293,8 @@ function BillingContent() {
               </div>
             )}
           </div>
+          </>
+          )}
         </div>
       </div>
 

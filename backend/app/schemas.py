@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, Field
@@ -613,6 +613,65 @@ class KitchenDutyResponse(BaseModel):
     paid_amount: Decimal = Decimal("0.00")
     payment_mode: str = "Cash"
     note: str | None = None
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+# ============================================================
+# EVENT FOOD QUOTATION (BILLS OUT)
+# ============================================================
+
+class QuotationCreate(BaseModel):
+    quotation_no: str | None = None
+    date: str
+    client_name: str
+    venue: str | None = None
+    event_name: str | None = None
+    guest_count: int | None = 0
+    event_id: int | None = None
+    phone: str | None = "+91 8592991909"
+    location_tag: str | None = "BASED IN ATHAHAKKAD - KOTTAMELAD"
+    coverage_tag: str | None = "TRAVEL ALL OVER TN"
+    terms: str | None = "Prices are subject to final guest count."
+    total_amount: Decimal | None = None
+    items_json: str = "[]"
+
+
+class QuotationUpdate(BaseModel):
+    quotation_no: str | None = None
+    date: str | None = None
+    client_name: str | None = None
+    venue: str | None = None
+    event_name: str | None = None
+    guest_count: int | None = None
+    event_id: int | None = None
+    phone: str | None = None
+    location_tag: str | None = None
+    coverage_tag: str | None = None
+    terms: str | None = None
+    total_amount: Decimal | None = None
+    items_json: str | None = None
+
+
+class QuotationResponse(BaseModel):
+    id: int
+    quotation_no: str | None = None
+    date: str
+    client_name: str
+    venue: str | None = None
+    event_name: str | None = None
+    guest_count: int | None = 0
+    event_id: int | None = None
+    phone: str | None = None
+    location_tag: str | None = None
+    coverage_tag: str | None = None
+    terms: str | None = None
+    total_amount: Decimal | None = None
+    items_json: str
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
 
     model_config = {
         "from_attributes": True

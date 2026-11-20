@@ -25,3 +25,8 @@ __pycache__/
 !backend/food_court_backup.dump
 .DS_Store
 Thumbs.db
+
+# Secrets & Keys
+*.pem
+*.key
+
