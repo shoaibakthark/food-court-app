@@ -30,3 +30,7 @@ Thumbs.db
 *.pem
 *.key
 
+# Documents & Binaries
+*.pdf
+
+
