@@ -1,7 +1,3 @@
-# Nginx Configuration for AWS Lightsail / EC2 Host (Dual Environment: Main + Test)
-# Location on server: /etc/nginx/sites-available/foodcourt
-# Enable link: sudo ln -s /etc/nginx/sites-available/foodcourt /etc/nginx/sites-enabled/
-
 # ============================================================
 # 1. MAIN / PRODUCTION (foodcourt.work.gd & Direct IP :80)
 # ============================================================
@@ -97,11 +93,16 @@ server {
 # 2. TEST / STAGING (test.foodcourt.work.gd & Direct IP :8080)
 # ============================================================
 
-# Domain test access (test.foodcourt.work.gd)
+# Domain HTTPS for Test
 server {
-    listen 80;
-    listen [::]:80;
     server_name test.foodcourt.work.gd;
+
+    listen [::]:443 ssl ipv6only=on;
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/test.foodcourt.work.gd/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/test.foodcourt.work.gd/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
 
     client_max_body_size 50M;
 
@@ -133,6 +134,19 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
+}
+
+# Domain HTTP -> HTTPS redirect for Test
+server {
+    listen 80;
+    listen [::]:80;
+    server_name test.foodcourt.work.gd;
+
+    if ($host = test.foodcourt.work.gd) {
+        return 301 https://$host$request_uri;
+    }
+
+    return 404;
 }
 
 # Direct IP port 8080 access to Test
