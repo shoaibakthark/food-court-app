@@ -47,8 +47,8 @@ export const DEFAULT_SHADI_MAHAL_SAMPLE: FoodQuotation = {
   event_name: "1500 Guests",
   guest_count: 1500,
   phone: "+91 8592991909",
-  location_tag: "BASED IN ATHAHAKKAD - KOTTAMELAD",
-  coverage_tag: "TRAVEL ALL OVER TN",
+  location_tag: "BASED IN ATHAVANAD - KATTILANGADI",
+  coverage_tag: "TRAVEL ALL OVER THE 🌍",
   terms: "Prices are subject to final guest count.",
   total_amount: "",
   categories: [
@@ -719,9 +719,14 @@ export function FoodQuotationSection({
               alignItems: "center",
               justifyContent: "center",
               boxShadow: "0 4px 12px rgba(0,0,0,0.4)",
+              overflow: "hidden",
             }}
           >
-            <ChefHatIcon />
+            <img
+              src="/food-court-logo.jpg"
+              alt="Food Court Logo"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
           </div>
           <div>
             <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
@@ -1412,6 +1417,26 @@ export function FoodQuotationSection({
                       }}
                     />
                   </div>
+
+                  {/* Contact Phone (on Logo) */}
+                  <div>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 700, color: "#555", marginBottom: "4px" }}>
+                      📞 Phone Number (on Logo)
+                    </label>
+                    <input
+                      type="text"
+                      value={draft.phone}
+                      onChange={(e) => setDraft((prev) => ({ ...prev, phone: e.target.value }))}
+                      placeholder="+91 8592991909"
+                      style={{
+                        width: "100%",
+                        padding: "8px 10px",
+                        borderRadius: "6px",
+                        border: "1px solid #ccc",
+                        fontSize: "13px",
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -2043,84 +2068,73 @@ function PrintableCateringQuotation({ quotation }: { quotation: FoodQuotation })
           padding: "4px 8px",
         }}
       >
-        {/* Left: Chef Hat Medallion Logo */}
+        {/* Left: Official Food Court Medallion Logo */}
         <div style={{ display: "flex", alignItems: "center", width: "230px" }}>
           <div
             style={{
-              width: "105px",
-              height: "105px",
+              width: "120px",
+              height: "120px",
               borderRadius: "50%",
-              background: "#181415",
-              border: "3px solid #D4AF37",
-              boxShadow: "0 0 0 2px #8A6B2D, 0 4px 10px rgba(0,0,0,0.3)",
+              background: "#0d0a0b",
+              border: "3.5px solid #D4AF37",
+              boxShadow: "0 0 0 2.5px #8A6B2D, 0 6px 14px rgba(0,0,0,0.35)",
+              position: "relative",
+              overflow: "hidden",
               display: "flex",
               flexDirection: "column",
               alignItems: "center",
               justifyContent: "center",
               textAlign: "center",
-              padding: "4px",
-              color: "#ffffff",
               flexShrink: 0,
             }}
           >
-            <ChefHatIcon />
-            <span
+            {/* Official Food Court Logo Graphic with Embedded Phone Number */}
+            <img
+              src="/food-court-logo.jpg"
+              alt="Food Court Catering & Event Planners"
               style={{
-                fontFamily: "'Playfair Display', Georgia, cursive, serif",
-                fontSize: "14px",
-                fontWeight: 900,
-                color: "#F7E7B4",
-                marginTop: "1px",
-                lineHeight: 1,
+                width: "100%",
+                height: "100%",
+                objectFit: "cover",
+                display: "block",
               }}
-            >
-              Food Court
-            </span>
-            <span
-              style={{
-                fontSize: "6.5px",
-                fontWeight: 800,
-                letterSpacing: "0.5px",
-                color: "#D4AF37",
-                marginTop: "2px",
-                lineHeight: 1,
-              }}
-            >
-              CATERING & EVENT PLANNERS
-            </span>
-            <span
-              style={{
-                fontSize: "7.5px",
-                fontWeight: 700,
-                color: "#ffffff",
-                marginTop: "2px",
-                lineHeight: 1,
-              }}
-            >
-              📞 {q.phone || "+91 8592991909"}
-            </span>
-            <span
-              style={{
-                fontSize: "5.5px",
-                fontWeight: 600,
-                color: "#E2D3B3",
-                marginTop: "1.5px",
-                lineHeight: 1,
-              }}
-            >
-              {q.location_tag || "BASED IN ATHAHAKKAD - KOTTAMELAD"}
-            </span>
-            <span
-              style={{
-                fontSize: "5.5px",
-                fontWeight: 700,
-                color: "#F7E7B4",
-                marginTop: "1px",
-                lineHeight: 1,
-              }}
-            >
-              {q.coverage_tag || "TRAVEL ALL OVER TN"} 📍
-            </span>
+            />
+
+            {/* Custom Phone Number Badge if user changed phone number from default */}
+            {q.phone && q.phone !== "+91 8592991909" && (
+              <div
+                style={{
+                  position: "absolute",
+                  bottom: "4px",
+                  left: "6px",
+                  right: "6px",
+                  background: "linear-gradient(135deg, rgba(20, 6, 9, 0.96) 0%, rgba(45, 12, 19, 0.96) 100%)",
+                  border: "1.5px solid #D4AF37",
+                  borderRadius: "12px",
+                  padding: "2px 4px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "4px",
+                  boxShadow: "0 2px 8px rgba(0,0,0,0.6)",
+                  zIndex: 2,
+                }}
+              >
+                <span style={{ fontSize: "8px", color: "#F7E7B4" }}>📞</span>
+                <span
+                  style={{
+                    fontSize: "9px",
+                    fontWeight: 900,
+                    letterSpacing: "0.3px",
+                    color: "#FFFFFF",
+                    fontFamily: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {q.phone}
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
